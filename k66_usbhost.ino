@@ -2,6 +2,8 @@
 
 void setup()
 {
+	pinMode(32, OUTPUT);	// pin 32 = USB switch, high=connect device
+	digitalWrite(32, LOW);
 	while (!Serial) ; // wait
 	print("USB Host Testing");
 	MCG_C1 |= MCG_C1_IRCLKEN;  // enable MCGIRCLK 32kHz
@@ -24,25 +26,109 @@ void setup()
 		count++;
 	}
 	print("PLL locked, waited ", count);
+	USBPHY_PLL_SIC |= USBPHY_PLL_SIC_PLL_EN_USB_CLKS;
+	USBPHY_PWD = 0;
+	delay(10);
 
 	// sanity check, connect 470K pullup & 100K pulldown and watch D+ voltage change
 	//USBPHY_ANACTRL_CLR = (1<<10); // turn off both 15K pulldowns... works! :)
 
-	SIM_SOPT2 = SIM_SOPT2 & (~SIM_SOPT2_CLKOUTSEL(7)) | SIM_SOPT2_CLKOUTSEL(3); // LPO 1kHz
-	SIM_SOPT2 = SIM_SOPT2 & (~SIM_SOPT2_CLKOUTSEL(7)) | SIM_SOPT2_CLKOUTSEL(2); // Flash
-	SIM_SOPT2 = SIM_SOPT2 & (~SIM_SOPT2_CLKOUTSEL(7)) | SIM_SOPT2_CLKOUTSEL(6); // XTAL
-	SIM_SOPT2 = SIM_SOPT2 & (~SIM_SOPT2_CLKOUTSEL(7)) | SIM_SOPT2_CLKOUTSEL(7); // IRC 48MHz
-	SIM_SOPT2 = SIM_SOPT2 & (~SIM_SOPT2_CLKOUTSEL(7)) | SIM_SOPT2_CLKOUTSEL(4); // MCGIRCLK
-	CORE_PIN9_CONFIG = PORT_PCR_MUX(5);  // CLKOUT on PTC3 Alt5 (Arduino pin 9)
+	// sanity check, output clocks on pin 9 for testing
+	//SIM_SOPT2 = SIM_SOPT2 & (~SIM_SOPT2_CLKOUTSEL(7)) | SIM_SOPT2_CLKOUTSEL(3); // LPO 1kHz
+	//SIM_SOPT2 = SIM_SOPT2 & (~SIM_SOPT2_CLKOUTSEL(7)) | SIM_SOPT2_CLKOUTSEL(2); // Flash
+	//SIM_SOPT2 = SIM_SOPT2 & (~SIM_SOPT2_CLKOUTSEL(7)) | SIM_SOPT2_CLKOUTSEL(6); // XTAL
+	//SIM_SOPT2 = SIM_SOPT2 & (~SIM_SOPT2_CLKOUTSEL(7)) | SIM_SOPT2_CLKOUTSEL(7); // IRC 48MHz
+	//SIM_SOPT2 = SIM_SOPT2 & (~SIM_SOPT2_CLKOUTSEL(7)) | SIM_SOPT2_CLKOUTSEL(4); // MCGIRCLK
+	//CORE_PIN9_CONFIG = PORT_PCR_MUX(5);  // CLKOUT on PTC3 Alt5 (Arduino pin 9)
 
+// EHCI registers         page  default
+// --------------         ----  -------
+// USBHS_USBCMD           1599  00080000
+// USBHS_USBSTS           1602  00000000
+// USBHS_USBINTR          1606  00000000
+// USBHS_FRINDEX          1609  00000000
+// USBHS_PERIODICLISTBASE 1610  undefine
+// USBHS_ASYNCLISTADDR    1612  undefine
+// USBHS_PORTSC           1619  00002000
+// USBHS_USBMODE          1629  00005000
 
+	USBHS_USBINTR = 0;
+	USBHS_PERIODICLISTBASE = 0; // TODO: data..
+	USBHS_ASYNCLISTADDR = 0;    // TODO: data..
 
+	// turn on the USBHS controller
+	USBHS_USBMODE = USBHS_USBMODE_TXHSD(5) | USBHS_USBMODE_CM(3); // host mode
+	USBHS_USBCMD = USBHS_USBCMD_ITC(8) | USBHS_USBCMD_RS |
+		USBHS_USBCMD_FS2 | USBHS_USBCMD_FS(0); // periodic table is 64 pointers
+	USBHS_PORTSC1 |= USBHS_PORTSC_PP;
+}
+
+void port_status()
+{
+	uint32_t n;
+
+	Serial.print("Port: ");
+	n = USBHS_PORTSC1;
+	if (n & USBHS_PORTSC_PR) {
+		Serial.print("reset ");
+	}
+	if (n & USBHS_PORTSC_PP) {
+		Serial.print("on ");
+	} else {
+		Serial.print("off ");
+	}
+
+	if (n & USBHS_PORTSC_PE) {
+		if (USBHS_PORTSC_SUSP) {
+			Serial.print("suspend ");
+		} else {
+			Serial.print("enable ");   // not working... why?
+		}
+	} else {
+		Serial.print("disable ");
+	}
+	Serial.print("speed=");
+	switch ((n >> 26) & 3) {
+	  case 0: Serial.print("12 Mbps "); break;
+	  case 1: Serial.print("1.5 Mbps "); break;
+	  case 2: Serial.print("480 Mbps "); break;
+	  default: Serial.print("(undef) ");
+	}
+	if (n & USBHS_PORTSC_HSP) {
+		Serial.print("highspeed ");
+	}
+	if (n & USBHS_PORTSC_OCA) {
+		Serial.print("overcurrent ");
+	}
+	if (n & USBHS_PORTSC_CCS) {
+		Serial.print("connected");
+	} else {
+		Serial.print("not-connected");
+	}
+	Serial.println();
 }
 
 
 void loop()
 {
-	// do nothing (yet)
+	static unsigned int count=0;
+
+	port_status();
+	delay(1);
+	count++;
+	if (count == 2) {
+		Serial.println("Plug in device...");
+		digitalWrite(32, HIGH); // connect device
+	}
+	if (count == 6) {
+		Serial.println("Initiate Reset Sequence...");
+		USBHS_PORTSC1 |= USBHS_PORTSC_PR;
+	}
+	if (count == 16) {
+		Serial.println("End Reset Sequence...");
+		USBHS_PORTSC1 &= ~USBHS_PORTSC_PR;
+	}
+
 }
 
 void print(const char *s)
