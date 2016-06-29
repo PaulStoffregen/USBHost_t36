@@ -1,7 +1,7 @@
 // usb host experiments....
 
 
-uint32_t periodictable[64] __attribute__ ((aligned(4096)));
+uint32_t periodictable[64] __attribute__ ((aligned(4096), used));
 uint32_t qh[12] __attribute__ ((aligned(64)));
 uint32_t qtd_setup[8] __attribute__ ((aligned(32)));
 uint32_t qtd_in[8] __attribute__ ((aligned(32)));
@@ -14,8 +14,8 @@ void setup()
 	digitalWrite(32, LOW);
 	while (!Serial) ; // wait
 	print("USB Host Testing");
-	//MPU_RGDAAC0 |= 0x30000000;
-	MPU_RGDAAC0 |= 0xF0000000;
+	print_mpu();
+	MPU_RGDAAC0 |= 0x30000000;
 	MCG_C1 |= MCG_C1_IRCLKEN;  // enable MCGIRCLK 32kHz
 	OSC0_CR |= OSC_ERCLKEN;
 	SIM_SOPT2 |= SIM_SOPT2_USBREGEN; // turn on USB regulator
@@ -67,18 +67,17 @@ void setup()
 	USBHS_USBCMD |= USBHS_USBCMD_RST;
 	count = 0;
 	while (USBHS_USBCMD & USBHS_USBCMD_RST) {
-		count;
+		count++;
 	}
 	print(" reset waited ", count);
 
 	for (int i=0; i < 64; i++) {
-		//periodictable[i] = (void *)1;
 		periodictable[i] = 1;
 	}
 	qh[0] = ((uint32_t)qh) | 2;
 	qh[1] = 0x0040E000; // addr=0, ep=0
 	qh[2] = 0x40000000;
-	qh[3] = 0;
+	qh[3] = (uint32_t)qtd_setup;
 	qh[4] = 1;
 	qh[5] = 0;
 	qh[6] = 0;
@@ -87,23 +86,34 @@ void setup()
 	qh[9] = 0;
 	qh[10] = 0;
 	qh[11] = 0;
+	qtd_setup[0] = 1;
+	qtd_setup[1] = 1;
+	qtd_setup[2] = 0; // 0 = not active
+	qtd_setup[3] = 0;
+	qtd_setup[4] = 0;
+	qtd_setup[5] = 0;
+	qtd_setup[6] = 0;
+	qtd_setup[7] = 0;
 
+	// turn on the USBHS controller
+	USBHS_USBMODE = USBHS_USBMODE_TXHSD(5) | USBHS_USBMODE_CM(3); // host mode
 	USBHS_USBINTR = 0;
 	USBHS_PERIODICLISTBASE = (uint32_t)periodictable;
 	USBHS_FRINDEX = 0;
 	USBHS_ASYNCLISTADDR = (uint32_t)qh;
-
-	// turn on the USBHS controller
-	USBHS_USBMODE = USBHS_USBMODE_TXHSD(5) | USBHS_USBMODE_CM(3); // host mode
 	USBHS_USBCMD = USBHS_USBCMD_ITC(0) | USBHS_USBCMD_RS | USBHS_USBCMD_ASP(3) |
 		USBHS_USBCMD_FS2 | USBHS_USBCMD_FS(0) | // periodic table is 64 pointers
-		0;
-		//USBHS_USBCMD_ASE;  // TODO: halts with error, but why?
-		//USBHS_USBCMD_PSE | USBHS_USBCMD_ASE;  // TODO: halts with error, but why?
-
+		USBHS_USBCMD_PSE | USBHS_USBCMD_ASE;
 	USBHS_PORTSC1 |= USBHS_PORTSC_PP;
 	//USBHS_PORTSC1 |= USBHS_PORTSC_PFSC; // force 12 Mbit/sec
 	//USBHS_PORTSC1 |= USBHS_PORTSC_PHCD; // phy off
+
+	Serial.print("USBHS_ASYNCLISTADDR = ");
+	Serial.println(USBHS_ASYNCLISTADDR, HEX);
+	Serial.print("USBHS_PERIODICLISTBASE = ");
+	Serial.println(USBHS_PERIODICLISTBASE, HEX);
+	Serial.print("periodictable = ");
+	Serial.println((uint32_t)periodictable, HEX);
 }
 
 void port_status()
@@ -165,6 +175,10 @@ void port_status()
 	Serial.print(USBHS_FRINDEX);            // periodic index
 
 	Serial.println();
+	if (USBHS_USBSTS & 16) {
+		print_mpu();
+		USBHS_USBSTS = 16; // clear error
+	}
 }
 
 
@@ -205,3 +219,8 @@ void print(const char *s, int num)
 	delay(10);
 }
 
+void print_mpu()
+{
+	Serial.print("MPU: CESR=");
+	Serial.println(MPU_CESR, HEX);
+}
