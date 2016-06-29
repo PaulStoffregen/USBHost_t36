@@ -1,8 +1,11 @@
 // usb host experiments....
 
 
-//void * periodictable[64]  __attribute__ ((section(".dmabuffers"), used, aligned(4096)))
 uint32_t periodictable[64] __attribute__ ((aligned(4096)));
+uint32_t qh[12] __attribute__ ((aligned(64)));
+uint32_t qtd_setup[8] __attribute__ ((aligned(32)));
+uint32_t qtd_in[8] __attribute__ ((aligned(32)));
+uint32_t qtd_outack[8] __attribute__ ((aligned(32)));
 
 
 void setup()
@@ -11,7 +14,8 @@ void setup()
 	digitalWrite(32, LOW);
 	while (!Serial) ; // wait
 	print("USB Host Testing");
-	MPU_RGDAAC0 |= 0x30000000;
+	//MPU_RGDAAC0 |= 0x30000000;
+	MPU_RGDAAC0 |= 0xF0000000;
 	MCG_C1 |= MCG_C1_IRCLKEN;  // enable MCGIRCLK 32kHz
 	OSC0_CR |= OSC_ERCLKEN;
 	SIM_SOPT2 |= SIM_SOPT2_USBREGEN; // turn on USB regulator
@@ -23,17 +27,17 @@ void setup()
 	USBHSDCD_CLOCK = 33 << 2;
 	print("init USBHS PHY & PLL");
 	// init process: page 1681-1682
-	USBPHY_CTRL &= ~USBPHY_CTRL_SFTRST;	// CTRL pg 1698
-	USBPHY_CTRL &= ~USBPHY_CTRL_CLKGATE;
-	USBPHY_PLL_SIC |= USBPHY_PLL_SIC_PLL_POWER;
-	USBPHY_PLL_SIC |= USBPHY_PLL_SIC_PLL_DIV_SEL(1);  // PLL_SIC pg 1708
+	USBPHY_CTRL_CLR = (USBPHY_CTRL_SFTRST | USBPHY_CTRL_CLKGATE); // // CTRL pg 1698
+	USBPHY_TRIM_OVERRIDE_EN_SET = 1;
+	USBPHY_PLL_SIC = USBPHY_PLL_SIC_PLL_POWER | USBPHY_PLL_SIC_PLL_ENABLE |
+		USBPHY_PLL_SIC_PLL_DIV_SEL(1) | USBPHY_PLL_SIC_PLL_EN_USB_CLKS;
 	// wait for the PLL to lock
 	int count=0;
 	while ((USBPHY_PLL_SIC & USBPHY_PLL_SIC_PLL_LOCK) == 0) {
 		count++;
 	}
 	print("PLL locked, waited ", count);
-	USBPHY_PLL_SIC |= USBPHY_PLL_SIC_PLL_EN_USB_CLKS;
+	// turn on power to PHY
 	USBPHY_PWD = 0;
 	delay(10);
 
@@ -71,16 +75,31 @@ void setup()
 		//periodictable[i] = (void *)1;
 		periodictable[i] = 1;
 	}
+	qh[0] = ((uint32_t)qh) | 2;
+	qh[1] = 0x0040E000; // addr=0, ep=0
+	qh[2] = 0x40000000;
+	qh[3] = 0;
+	qh[4] = 1;
+	qh[5] = 0;
+	qh[6] = 0;
+	qh[7] = 0;
+	qh[8] = 0;
+	qh[9] = 0;
+	qh[10] = 0;
+	qh[11] = 0;
+
 	USBHS_USBINTR = 0;
 	USBHS_PERIODICLISTBASE = (uint32_t)periodictable;
 	USBHS_FRINDEX = 0;
-	USBHS_ASYNCLISTADDR = 0;    // TODO: data..
+	USBHS_ASYNCLISTADDR = (uint32_t)qh;
 
 	// turn on the USBHS controller
 	USBHS_USBMODE = USBHS_USBMODE_TXHSD(5) | USBHS_USBMODE_CM(3); // host mode
 	USBHS_USBCMD = USBHS_USBCMD_ITC(0) | USBHS_USBCMD_RS | USBHS_USBCMD_ASP(3) |
 		USBHS_USBCMD_FS2 | USBHS_USBCMD_FS(0) | // periodic table is 64 pointers
-		USBHS_USBCMD_PSE;
+		0;
+		//USBHS_USBCMD_ASE;  // TODO: halts with error, but why?
+		//USBHS_USBCMD_PSE | USBHS_USBCMD_ASE;  // TODO: halts with error, but why?
 
 	USBHS_PORTSC1 |= USBHS_PORTSC_PP;
 	//USBHS_PORTSC1 |= USBHS_PORTSC_PFSC; // force 12 Mbit/sec
