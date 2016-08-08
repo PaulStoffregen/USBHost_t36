@@ -13,8 +13,13 @@ uint32_t inbuf[16] __attribute__ ((aligned(64)));
 
 void setup()
 {
+	// Test board has a USB data mux (this won't be on final Teensy 3.6)
 	pinMode(32, OUTPUT);	// pin 32 = USB switch, high=connect device
 	digitalWrite(32, LOW);
+	// Teensy 3.6 has USB host power controlled by PTE6
+	PORTE_PCR6 = PORT_PCR_MUX(1);
+	GPIOE_PDDR |= (1<<6);
+	GPIOE_PSOR = (1<<6); // turn on USB host power
 	while (!Serial) ; // wait
 	print("USB Host Testing");
 	print_mpu();
