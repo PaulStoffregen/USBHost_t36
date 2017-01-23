@@ -9,13 +9,20 @@ uint32_t qtd_in[8] __attribute__ ((aligned(32)));
 uint32_t qtd_outack[8] __attribute__ ((aligned(32)));
 uint32_t setupbuf[2] __attribute__ ((aligned(8)));
 uint32_t inbuf[16] __attribute__ ((aligned(64)));
-
+uint8_t port_state;
+#define PORT_STATE_DISCONNECTED   0
+#define PORT_STATE_DEBOUNCE       1
+#define PORT_STATE_RESET          2
+#define PORT_STATE_RECOVERY       3
+#define PORT_STATE_ACTIVE         4
 
 void setup()
 {
 	// Test board has a USB data mux (this won't be on final Teensy 3.6)
 	pinMode(32, OUTPUT);	// pin 32 = USB switch, high=connect device
 	digitalWrite(32, LOW);
+	pinMode(30, OUTPUT);	// pin 30 = debug info - use oscilloscope
+	digitalWrite(30, LOW);
 	// Teensy 3.6 has USB host power controlled by PTE6
 	PORTE_PCR6 = PORT_PCR_MUX(1);
 	GPIOE_PDDR |= (1<<6);
@@ -60,17 +67,6 @@ void setup()
 	//SIM_SOPT2 = SIM_SOPT2 & (~SIM_SOPT2_CLKOUTSEL(7)) | SIM_SOPT2_CLKOUTSEL(4); // MCGIRCLK
 	//CORE_PIN9_CONFIG = PORT_PCR_MUX(5);  // CLKOUT on PTC3 Alt5 (Arduino pin 9)
 
-// EHCI registers         page  default
-// --------------         ----  -------
-// USBHS_USBCMD           1599  00080000
-// USBHS_USBSTS           1602  00000000
-// USBHS_USBINTR          1606  00000000
-// USBHS_FRINDEX          1609  00000000
-// USBHS_PERIODICLISTBASE 1610  undefine
-// USBHS_ASYNCLISTADDR    1612  undefine
-// USBHS_PORTSC           1619  00002000
-// USBHS_USBMODE          1629  00005000
-
 	print("begin ehci reset");
 	USBHS_USBCMD |= USBHS_USBCMD_RST;
 	count = 0;
@@ -102,6 +98,7 @@ void setup()
 	qtd_dummy[5] = 0;
 	qtd_dummy[6] = 0;
 	qtd_dummy[7] = 0;
+	port_state = PORT_STATE_DISCONNECTED;
 
 	// turn on the USBHS controller
 	USBHS_USBMODE = USBHS_USBMODE_TXHSD(5) | USBHS_USBMODE_CM(3); // host mode
@@ -113,6 +110,8 @@ void setup()
 		USBHS_USBCMD_FS2 | USBHS_USBCMD_FS(0) | // periodic table is 64 pointers
 		// USBHS_USBCMD_PSE |
 		USBHS_USBCMD_ASE;
+
+	//USBHS_PORTSC1 = USBHS_PORTSC_PP;
 	USBHS_PORTSC1 |= USBHS_PORTSC_PP;
 	//USBHS_PORTSC1 |= USBHS_PORTSC_PFSC; // force 12 Mbit/sec
 	//USBHS_PORTSC1 |= USBHS_PORTSC_PHCD; // phy off
@@ -123,7 +122,113 @@ void setup()
 	Serial.println(USBHS_PERIODICLISTBASE, HEX);
 	Serial.print("periodictable = ");
 	Serial.println((uint32_t)periodictable, HEX);
+
+	NVIC_ENABLE_IRQ(IRQ_USBHS);
+	USBHS_USBINTR = USBHS_USBINTR_UE | USBHS_USBINTR_PCE | USBHS_USBINTR_TIE0;
+
+	delay(25);
+	Serial.println("Plug in device...");
+	digitalWrite(32, HIGH); // connect device
 }
+
+void pulse(int usec)
+{
+	// connect oscilloscope to see these pulses....
+	digitalWriteFast(30, HIGH);
+	delayMicroseconds(usec);
+	digitalWriteFast(30, LOW);
+}
+
+// EHCI registers         page  default
+// --------------         ----  -------
+// USBHS_USBCMD           1599  00080000  USB Command
+// USBHS_USBSTS           1602  00000000  USB Status
+// USBHS_USBINTR          1606  00000000  USB Interrupt Enable
+// USBHS_FRINDEX          1609  00000000  Frame Index Register
+// USBHS_PERIODICLISTBASE 1610  undefine  Periodic Frame List Base Address
+// USBHS_ASYNCLISTADDR    1612  undefine  Asynchronous List Address
+// USBHS_PORTSC1          1619  00002000  Port Status and Control
+// USBHS_USBMODE          1629  00005000  USB Mode
+// USBHS_GPTIMERnCTL      1591  00000000  General Purpose Timer n Control
+
+// PORT_STATE_DISCONNECTED   0
+// PORT_STATE_DEBOUNCE       1
+// PORT_STATE_RESET          2
+// PORT_STATE_RECOVERY       3
+// PORT_STATE_ACTIVE         4
+
+void usbhs_isr(void) // USBHS_ISR_HOST
+{
+	uint32_t stat = USBHS_USBSTS;
+	USBHS_USBSTS = stat; // clear pending interrupts
+	//stat &= USBHS_USBINTR; // mask away unwanted interrupts
+	Serial.print("isr:");
+	Serial.print(stat, HEX);
+	Serial.println();
+
+	if (stat & USBHS_USBSTS_PCI) { // port change detected
+		const uint32_t portstat = USBHS_PORTSC1;
+		Serial.print("port change: ");
+		Serial.print(portstat, HEX);
+		Serial.println();
+		USBHS_PORTSC1 = portstat | (USBHS_PORTSC_OCC|USBHS_PORTSC_PEC|USBHS_PORTSC_CSC);
+		if (portstat & USBHS_PORTSC_OCC) {
+			Serial.println("  overcurrent change");
+		}
+		if (portstat & USBHS_PORTSC_CSC) {
+			if (portstat & USBHS_PORTSC_CCS) {
+				Serial.println("    connect");
+				if (port_state == PORT_STATE_DISCONNECTED
+				  || port_state == PORT_STATE_DEBOUNCE) {
+					// 100 ms debounce (USB 2.0: TATTDB, page 150 & 188)
+					port_state = PORT_STATE_DEBOUNCE;
+					USBHS_GPTIMER0LD = 100000; // microseconds
+					USBHS_GPTIMER0CTL =
+						USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
+					stat &= ~USBHS_USBSTS_TI0;
+				}
+			} else {
+				Serial.println("    disconnect");
+				port_state = PORT_STATE_DISCONNECTED;
+				// TODO: delete & clean up device state...
+			}
+		}
+		if (portstat & USBHS_PORTSC_PEC) {
+			// PEC bit only detects disable
+			Serial.println("  disable");
+		} else if (port_state == PORT_STATE_RESET && portstat & USBHS_PORTSC_PE) {
+			Serial.println("  port enabled");
+			port_state = PORT_STATE_RECOVERY;
+			// 10 ms reset recover (USB 2.0: TRSTRCY, page 151 & 188)
+			USBHS_GPTIMER0LD = 10000; // microseconds
+			USBHS_GPTIMER0CTL = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
+
+		}
+		if (portstat & USBHS_PORTSC_FPR) {
+			Serial.println("  force resume");
+
+		}
+
+		 pulse(1);
+	}
+	if (stat & USBHS_USBSTS_TI0) { // timer 0
+		Serial.println("timer");
+		 pulse(2);
+		if (port_state == PORT_STATE_DEBOUNCE) {
+			port_state = PORT_STATE_RESET;
+			USBHS_PORTSC1 |= USBHS_PORTSC_PR; // begin reset sequence
+			Serial.println("  begin reset");
+		} else if (port_state == PORT_STATE_RECOVERY) {
+			port_state = PORT_STATE_ACTIVE;
+			Serial.println("  end recovery");
+
+		}
+	}
+
+}
+
+
+
 
 void port_status()
 {
@@ -240,11 +345,13 @@ void read_descriptor(uint16_t value, uint16_t index, uint32_t len)
 	Serial.println(qtd_in[2], HEX);
 	Serial.println(qtd_outack[2], HEX);
 	Serial.println(qtd_setup[2], HEX);
+
 }
 
 
 void loop()
 {
+/*
 	static unsigned int count=0;
 
 	port_status();
@@ -265,9 +372,10 @@ void loop()
 	if (count == 22) {
 		read_descriptor(1, 0, 8); // device descriptor
 	}
-	if (count > 5000) {
+	if (count > 500) {
 		while (1) ; // stop here
 	}
+*/
 }
 
 void print(const char *s)
