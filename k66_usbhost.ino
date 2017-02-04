@@ -32,6 +32,8 @@ void setup()
 	Serial.println(sizeof(Transfer_t));
 
 	MPU_RGDAAC0 |= 0x30000000;
+	Serial.print("MPU_RGDAAC0 = ");
+	Serial.println(MPU_RGDAAC0, HEX);
 	MCG_C1 |= MCG_C1_IRCLKEN;  // enable MCGIRCLK 32kHz
 	OSC0_CR |= OSC_ERCLKEN;
 	SIM_SOPT2 |= SIM_SOPT2_USBREGEN; // turn on USB regulator
@@ -52,7 +54,8 @@ void setup()
 	while ((USBPHY_PLL_SIC & USBPHY_PLL_SIC_PLL_LOCK) == 0) {
 		count++;
 	}
-	print("PLL locked, waited ", count);
+	Serial.print("PLL locked, waited ");
+	Serial.println(count);
 	// turn on power to PHY
 	USBPHY_PWD = 0;
 	delay(10);
@@ -81,13 +84,17 @@ void setup()
 	}
 	port_state = PORT_STATE_DISCONNECTED;
 
+	USBHS_USB_SBUSCFG = 1; //  System Bus Interface Configuration
+
 	// turn on the USBHS controller
-	USBHS_USBMODE = USBHS_USBMODE_TXHSD(5) | USBHS_USBMODE_CM(3); // host mode
+	//USBHS_USBMODE = USBHS_USBMODE_TXHSD(5) | USBHS_USBMODE_CM(3); // host mode
+	USBHS_USBMODE = USBHS_USBMODE_CM(3); // host mode
 	USBHS_USBINTR = 0;
 	USBHS_PERIODICLISTBASE = (uint32_t)periodictable;
 	USBHS_FRINDEX = 0;
 	USBHS_ASYNCLISTADDR = 0;
-	USBHS_USBCMD = USBHS_USBCMD_ITC(0) | USBHS_USBCMD_RS | USBHS_USBCMD_ASP(3) |
+	USBHS_USBCMD = USBHS_USBCMD_ITC(8) | USBHS_USBCMD_RS |
+		USBHS_USBCMD_ASP(3) | USBHS_USBCMD_ASPE |
 		USBHS_USBCMD_FS2 | USBHS_USBCMD_FS(1);  // periodic table is 32 pointers
 
 	//USBHS_PORTSC1 = USBHS_PORTSC_PP;
@@ -104,10 +111,18 @@ void setup()
 
 	NVIC_ENABLE_IRQ(IRQ_USBHS);
 	USBHS_USBINTR = USBHS_USBINTR_UE | USBHS_USBINTR_PCE | USBHS_USBINTR_TIE0;
+	USBHS_USBINTR |= USBHS_USBINTR_UEE | USBHS_USBINTR_SEE;
+	USBHS_USBINTR |= USBHS_USBINTR_AAE;
 
 	delay(25);
 	Serial.println("Plug in device...");
 	digitalWrite(32, HIGH); // connect device
+
+
+	delay(5000);
+	Serial.println();
+	Serial.println("Ring Doorbell");
+	USBHS_USBCMD |= USBHS_USBCMD_IAA;
 }
 
 void loop()
@@ -146,9 +161,28 @@ void usbhs_isr(void)
 	uint32_t stat = USBHS_USBSTS;
 	USBHS_USBSTS = stat; // clear pending interrupts
 	//stat &= USBHS_USBINTR; // mask away unwanted interrupts
-	Serial.print("isr:");
+	Serial.println();
+	Serial.print("ISR: ");
 	Serial.print(stat, HEX);
 	Serial.println();
+	if (stat & USBHS_USBSTS_UI)  Serial.println(" USB Interrupt");
+	if (stat & USBHS_USBSTS_UEI) Serial.println(" USB Error");
+	if (stat & USBHS_USBSTS_PCI) Serial.println(" Port Change");
+	if (stat & USBHS_USBSTS_FRI) Serial.println(" Frame List Rollover");
+	if (stat & USBHS_USBSTS_SEI) Serial.println(" System Error");
+	if (stat & USBHS_USBSTS_AAI) Serial.println(" Async Advance (doorbell)");
+	if (stat & USBHS_USBSTS_URI) Serial.println(" Reset Recv");
+	if (stat & USBHS_USBSTS_SRI) Serial.println(" SOF");
+	if (stat & USBHS_USBSTS_SLI) Serial.println(" Suspend");
+	if (stat & USBHS_USBSTS_HCH) Serial.println(" Host Halted");
+	if (stat & USBHS_USBSTS_RCL) Serial.println(" Reclamation");
+	if (stat & USBHS_USBSTS_PS)  Serial.println(" Periodic Sched En");
+	if (stat & USBHS_USBSTS_AS)  Serial.println(" Async Sched En");
+	if (stat & USBHS_USBSTS_NAKI) Serial.println(" NAK");
+	if (stat & USBHS_USBSTS_UAI) Serial.println(" USB Async");
+	if (stat & USBHS_USBSTS_UPI) Serial.println(" USB Periodic");
+	if (stat & USBHS_USBSTS_TI0) Serial.println(" Timer0");
+	if (stat & USBHS_USBSTS_TI1) Serial.println(" Timer1");
 
 	if (stat & USBHS_USBSTS_PCI) { // port change detected
 		const uint32_t portstat = USBHS_PORTSC1;
@@ -171,6 +205,7 @@ void usbhs_isr(void)
 						USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
 					stat &= ~USBHS_USBSTS_TI0;
 				}
+				// TODO: should ENHOSTDISCONDETECT be set? K66 ref, page 1701
 			} else {
 				Serial.println("    disconnect");
 				port_state = PORT_STATE_DISCONNECTED;
@@ -241,12 +276,14 @@ Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port)
 	dev->setup.bRequest = 0x06; // 6=GET_DESCRIPTOR
 	dev->setup.wValue = 0x0100;
 	dev->setup.wIndex = 0x0000;
-	dev->setup.wLength = 8;
+	dev->setup.wLength = 0;
 	Transfer_t *transfer = new_Transfer(dev->control_pipe, buffer, 8);
 	if (transfer) queue_Transfer(transfer);
 
 	return dev;
 }
+
+
 
 static uint32_t QH_capabilities1(uint32_t nak_count_reload, uint32_t control_endpoint_flag,
 	uint32_t max_packet_length, uint32_t head_of_list, uint32_t data_toggle_control,
@@ -264,8 +301,6 @@ static uint32_t QH_capabilities2(uint32_t high_bw_mult, uint32_t hub_port_number
         return ( (high_bw_mult << 30) | (hub_port_number << 23) | (hub_address << 16) |
 		(split_completion_mask << 8) | (interrupt_schedule_mask << 0) );
 }
-
-
 
 Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint, uint32_t direction,
 	uint32_t max_packet_len)
@@ -285,20 +320,24 @@ Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint, uint32_t dire
 	pipe->qh.buffer[2] = 0;
 	pipe->qh.buffer[3] = 0;
 	pipe->qh.buffer[4] = 0;
-	if (pipe->type == 0) {
+	pipe->active = 0;
+	pipe->direction = direction;
+	pipe->type = type;
+	if (type == 0) {
 		// control
 		if (dev->speed < 2) c = 1;
 		dtc = 1;
-	} else if (pipe->type == 2) {
+	} else if (type == 2) {
 		// bulk
-	} else if (pipe->type == 3) {
+	} else if (type == 3) {
 		// interrupt
 	}
 	pipe->qh.capabilities[0] = QH_capabilities1(15, c, max_packet_len, 0,
 		dtc, dev->speed, endpoint, 0, dev->address);
 	pipe->qh.capabilities[1] = QH_capabilities2(1, dev->hub_port,
 		dev->hub_address, 0, 0);
-	if (pipe->type == 0 || pipe->type == 2) {
+#if 0
+	if (type == 0 || type == 2) {
 		// control or bulk: add to async queue
 		Pipe_t *list = (Pipe_t *)USBHS_ASYNCLISTADDR;
 		if (list == NULL) {
@@ -313,10 +352,12 @@ Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint, uint32_t dire
 			list->qh.horizontal_link = (uint32_t)&(pipe->qh) | 2;
 			Serial.println("  added to async list");
 		}
-	} else if (pipe->type == 3) {
+		pipe->active = 1;
+	} else if (type == 3) {
 		// interrupt: add to periodic schedule
 		// TODO: link it into the periodic table
 	}
+#endif
 	return pipe;
 }
 
@@ -335,7 +376,7 @@ void init_qTD(volatile Transfer_t *t, void *buf, uint32_t len,
 {
 	t->qtd.alt_next = 1; // 1=terminate
 	if (data01) data01 = 0x80000000;
-	t->qtd.token = data01 | (len << 16) | (irq ? 0x8000 : 0) | (pid << 8);
+	t->qtd.token = data01 | (len << 16) | (irq ? 0x8000 : 0) | (pid << 8) | 0x8000;
 	uint32_t addr = (uint32_t)buf;
 	t->qtd.buffer[0] = addr;
 	addr &= 0xFFFFF000;
@@ -398,15 +439,49 @@ Transfer_t * new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 void queue_Transfer(Transfer_t *transfer)
 {
 	Serial.println("queue_Transfer");
-	Pipe_t *pipe = transfer->pipe;
-	Transfer_t *last = (Transfer_t *)(pipe->qh.next);
-	if ((uint32_t)last & 1) {
-		pipe->qh.next = (uint32_t)transfer;
-		Serial.println("  first on QH");
+	volatile Pipe_t *pipe = transfer->pipe;
+
+	if (!pipe->active) {
+		if (pipe->type == 0 || pipe->type == 2) {
+			// control or bulk: add to async queue
+			pipe->qh.next = (uint32_t)transfer;
+			volatile Pipe_t *list = (Pipe_t *)USBHS_ASYNCLISTADDR;
+			if (list == NULL) {
+				Serial.println("  first in async list, with qTD");
+				pipe->qh.capabilities[0] |= 0x8000; // H bit
+				pipe->qh.horizontal_link = (uint32_t)(&(pipe->qh)) | 2; // 2=QH
+				USBHS_ASYNCLISTADDR = (uint32_t)pipe;
+				Serial.println(USBHS_USBSTS & USBHS_USBSTS_AS, HEX);
+				Serial.println(USBHS_USBCMD & USBHS_USBCMD_ASE, HEX);
+				//USBHS_USBCMD |= USBHS_USBCMD_IAA;
+				USBHS_USBCMD |= USBHS_USBCMD_ASE; // enable async schedule
+				uint32_t count=0;
+				while (!(USBHS_USBSTS & USBHS_USBSTS_AS)) count++;
+				Serial.print("    waited ");
+				Serial.println(count);
+				Serial.println(USBHS_USBCMD & USBHS_USBCMD_ASE, HEX);
+				Serial.println(USBHS_USBSTS & USBHS_USBSTS_AS, HEX);
+			} else {
+				// EHCI 1.0: section 4.8.1, page 72
+				pipe->qh.horizontal_link = list->qh.horizontal_link;
+				list->qh.horizontal_link = (uint32_t)&(pipe->qh) | 2;
+				Serial.println("  added to async list, with qTD");
+			}
+			pipe->active = 1;
+		} else if (pipe->type == 3) {
+			// interrupt: add to periodic schedule
+			// TODO: link it into the periodic table
+		}
 	} else {
-		while ((last->qtd.next & 1) == 0) last = (Transfer_t *)(last->qtd.next);
-		last->qtd.next = (uint32_t)transfer;
-		Serial.println("  added to qTD list");
+		Transfer_t *last = (Transfer_t *)(pipe->qh.next);
+		if ((uint32_t)last & 1) {
+			pipe->qh.next = (uint32_t)transfer;
+			Serial.println("  first on QH");
+		} else {
+			while ((last->qtd.next & 1) == 0) last = (Transfer_t *)(last->qtd.next);
+			last->qtd.next = (uint32_t)transfer;
+			Serial.println("  added to qTD list");
+		}
 	}
 }
 

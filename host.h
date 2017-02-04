@@ -38,20 +38,21 @@ struct Device_struct {
 struct Pipe_struct {
 	// Queue Head (QH), EHCI page 46-50
 	struct {  // must be aligned to 32 byte boundary
-		uint32_t horizontal_link;
-		uint32_t capabilities[2];
-		uint32_t current;
-		uint32_t next;
-		uint32_t alt_next;
-		uint32_t token;
-		uint32_t buffer[5];
+		volatile uint32_t horizontal_link;
+		volatile uint32_t capabilities[2];
+		volatile uint32_t current;
+		volatile uint32_t next;
+		volatile uint32_t alt_next;
+		volatile uint32_t token;
+		volatile uint32_t buffer[5];
 	} qh;
 	Device_t *device;
 	uint8_t  type; // 0=control, 1=isochronous, 2=bulk, 3=interrupt
 	uint8_t  direction; // 0=out, 1=in
+	uint8_t  active;
 	//uint8_t  endpoint;  // 0 to 15
 	//uint8_t  data01;    // next packet DATA0 or DATA1
-	uint8_t  unusedbyte[2];
+	uint8_t  unusedbyte[1];
 	uint32_t unused[2];
 };
 
@@ -59,10 +60,10 @@ struct Pipe_struct {
 struct Transfer_struct {
 	// Queue Element Transfer Descriptor (qTD), EHCI pg 40-45
 	struct {  // must be aligned to 32 byte boundary
-		uint32_t next;
-		uint32_t alt_next;
-		uint32_t token;
-		uint32_t buffer[5];
+		volatile uint32_t next;
+		volatile uint32_t alt_next;
+		volatile uint32_t token;
+		volatile uint32_t buffer[5];
 	} qtd;
 	Pipe_t   *pipe;
 	void     *callback;
