@@ -279,9 +279,7 @@ Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port)
 	dev->setup.wValue = 0x0100;
 	dev->setup.wIndex = 0x0000;
 	dev->setup.wLength = 8;
-	Transfer_t *transfer = new_Transfer(dev->control_pipe, buffer, 8);
-	//print(dev->control_pipe);
-	if (transfer) queue_Transfer(transfer);
+	new_Transfer(dev->control_pipe, buffer, 8);
 
 	return dev;
 }
@@ -309,21 +307,24 @@ Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint, uint32_t dire
 	uint32_t max_packet_len)
 {
 	Pipe_t *pipe;
+	Transfer_t *halt;
 	uint32_t c=0, dtc=0;
 
 	Serial.println("new_Pipe");
 	pipe = allocate_Pipe();
 	if (!pipe) return NULL;
+	halt = allocate_Transfer();
+	if (!halt) {
+		free_Pipe(pipe);
+		return NULL;
+	}
+	memset(pipe, 0, sizeof(Pipe_t));
+	memset(halt, 0, sizeof(Transfer_t));
+	halt->qtd.next = 1;
+	halt->qtd.token = 0x40;
 	pipe->device = dev;
-	pipe->qh.current = 0;
-	pipe->qh.next = 1;
+	pipe->qh.next = (uint32_t)halt;
 	pipe->qh.alt_next = 1;
-	pipe->qh.token = 0;
-	pipe->qh.buffer[0] = 0;
-	pipe->qh.buffer[1] = 0;
-	pipe->qh.buffer[2] = 0;
-	pipe->qh.buffer[3] = 0;
-	pipe->qh.buffer[4] = 0;
 	pipe->direction = direction;
 	pipe->type = type;
 	if (type == 0) {
@@ -339,7 +340,7 @@ Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint, uint32_t dire
 		dtc, dev->speed, endpoint, 0, dev->address);
 	pipe->qh.capabilities[1] = QH_capabilities2(1, dev->hub_port,
 		dev->hub_address, 0, 0);
-#if 1
+
 	if (type == 0 || type == 2) {
 		// control or bulk: add to async queue
 		Pipe_t *list = (Pipe_t *)USBHS_ASYNCLISTADDR;
@@ -359,7 +360,6 @@ Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint, uint32_t dire
 		// interrupt: add to periodic schedule
 		// TODO: link it into the periodic table
 	}
-#endif
 	return pipe;
 }
 
@@ -388,13 +388,13 @@ void init_qTD(volatile Transfer_t *t, void *buf, uint32_t len,
 	t->qtd.buffer[4] = addr + 0x4000;
 }
 
-// Create a list of Transfers
+// Create a Transfer and queue it
 //
-Transfer_t * new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
+bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 {
 	Serial.println("new_Transfer");
 	Transfer_t *transfer = allocate_Transfer();
-	if (!transfer) return NULL;
+	if (!transfer) return false;
 	transfer->pipe = pipe;
 	if (pipe->type == 0) {
 		// control transfer
@@ -402,19 +402,19 @@ Transfer_t * new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 		uint32_t status_direction;
 		if (len > 16384) {
 			free_Transfer(transfer);
-			return NULL;
+			return false;
 		}
 		status = allocate_Transfer();
 		if (!status) {
 			free_Transfer(transfer);
-			return NULL;
+			return false;
 		}
 		if (len > 0) {
 			data = allocate_Transfer();
 			if (!data) {
 				free_Transfer(transfer);
 				free_Transfer(status);
-				return NULL;
+				return false;
 			}
 			init_qTD(data, buffer, len, pipe->direction, 1, false);
 			transfer->qtd.next = (uint32_t)data;
@@ -434,26 +434,26 @@ Transfer_t * new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 	} else {
 		// bulk, interrupt or isochronous transfer
 		free_Transfer(transfer);
-		return NULL;
+		return false;
 	}
-	return transfer;
-}
-
-
-void queue_Transfer(Transfer_t *transfer)
-{
-	Serial.println("queue_Transfer");
-	Pipe_t *pipe = transfer->pipe;
-	Transfer_t *last = (Transfer_t *)(pipe->qh.next);
-	if ((uint32_t)last & 1) {
-		pipe->qh.next = (uint32_t)transfer;
-		Serial.println("  first on QH");
-	} else {
-		while ((last->qtd.next & 1) == 0) last = (Transfer_t *)(last->qtd.next);
-		// TODO: what happens if qTD is completed before we write to it?
-		last->qtd.next = (uint32_t)transfer;
-		Serial.println("  added to qTD list");
-	}
+	Transfer_t *halt = (Transfer_t *)(pipe->qh.next);
+	while (!(halt->qtd.token & 0x40)) halt = (Transfer_t *)(halt->qtd.next);
+	uint32_t token = transfer->qtd.token;
+	transfer->qtd.token = 0x40; // transfer becomes new halt qTD
+	halt->qtd.next = transfer->qtd.next;
+	halt->qtd.alt_next = transfer->qtd.alt_next;
+	halt->qtd.buffer[0] = transfer->qtd.buffer[0];
+	halt->qtd.buffer[1] = transfer->qtd.buffer[1];
+	halt->qtd.buffer[2] = transfer->qtd.buffer[2];
+	halt->qtd.buffer[3] = transfer->qtd.buffer[3];
+	halt->qtd.buffer[4] = transfer->qtd.buffer[4];
+	halt->pipe = pipe;
+	Transfer_t *last = transfer;
+	while ((uint32_t)(last->qtd.next) != 1) last = (Transfer_t *)(last->qtd.next);
+	last->qtd.next = (uint32_t)transfer;
+	transfer->qtd.next = 1;
+	halt->qtd.token = token; // old halt becomes new transfer
+	return true;
 }
 
 

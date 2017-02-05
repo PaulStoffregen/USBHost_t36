@@ -49,7 +49,6 @@ struct Pipe_struct {
 	Device_t *device;
 	uint8_t  type; // 0=control, 1=isochronous, 2=bulk, 3=interrupt
 	uint8_t  direction; // 0=out, 1=in
-	//uint8_t  endpoint;  // 0 to 15
 	//uint8_t  data01;    // next packet DATA0 or DATA1
 	uint8_t  unusedbyte[2];
 	uint32_t unused[2];
@@ -69,40 +68,6 @@ struct Transfer_struct {
 	void     *callback_arg;
 	uint32_t unused[5];
 };
-
-#if 0
-#define EHCI_QH_CAPABILITIES1( \
-		nak_count_reload, \
-		control_endpoint_flag, \
-		max_packet_length, \
-		head_of_list, \
-		data_toggle_control, \
-		speed, \
-		endpoint_number, \
-		inactivate, \
-		address) \
-	( ((nak_count_reload) << 28) | \
-	((control_endpoint_flag) << 27) | \
-	((max_packet_length) << 16) | \
-	((head_of_list) << 15) | \
-	((data_toggle_control) << 14) | \
-	((speed) << 12) | \
-	((endpoint_number) << 8) | \
-	((inactivate) << 7) | \
-	((address) << 0) )
-
-#define EHCI_QH_CAPABILITIES2( \
-		high_bw_mult, \
-		hub_port_number, \
-		hub_address, \
-		split_completion_mask, \
-		interrupt_schedule_mask) \
-	( ((high_bw_mult) << 30) | \
-	((hub_port_number) << 23) | \
-	((hub_address) << 16) | \
-	((split_completion_mask) << 8) | \
-	((interrupt_schedule_mask) << 0) )
-#endif
 
 Device_t * allocate_Device(void);
 void free_Device(Device_t *q);
