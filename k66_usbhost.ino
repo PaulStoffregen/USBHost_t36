@@ -324,7 +324,6 @@ Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint, uint32_t dire
 	pipe->qh.buffer[2] = 0;
 	pipe->qh.buffer[3] = 0;
 	pipe->qh.buffer[4] = 0;
-	pipe->active = 0;
 	pipe->direction = direction;
 	pipe->type = type;
 	if (type == 0) {
@@ -340,7 +339,7 @@ Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint, uint32_t dire
 		dtc, dev->speed, endpoint, 0, dev->address);
 	pipe->qh.capabilities[1] = QH_capabilities2(1, dev->hub_port,
 		dev->hub_address, 0, 0);
-#if 0
+#if 1
 	if (type == 0 || type == 2) {
 		// control or bulk: add to async queue
 		Pipe_t *list = (Pipe_t *)USBHS_ASYNCLISTADDR;
@@ -356,7 +355,6 @@ Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint, uint32_t dire
 			list->qh.horizontal_link = (uint32_t)&(pipe->qh) | 2;
 			Serial.println("  added to async list");
 		}
-		pipe->active = 1;
 	} else if (type == 3) {
 		// interrupt: add to periodic schedule
 		// TODO: link it into the periodic table
@@ -446,49 +444,15 @@ void queue_Transfer(Transfer_t *transfer)
 {
 	Serial.println("queue_Transfer");
 	Pipe_t *pipe = transfer->pipe;
-
-	if (!pipe->active) {
-		if (pipe->type == 0 || pipe->type == 2) {
-			// control or bulk: add to async queue
-			pipe->qh.next = (uint32_t)transfer;
-			Pipe_t *list = (Pipe_t *)USBHS_ASYNCLISTADDR;
-			if (list == NULL) {
-				Serial.println("  first in async list, with qTD");
-				pipe->qh.capabilities[0] |= 0x8000; // H bit
-				pipe->qh.horizontal_link = (uint32_t)(&(pipe->qh)) | 2; // 2=QH
-				USBHS_ASYNCLISTADDR = (uint32_t)pipe;
-				print(pipe);
-				Serial.println(USBHS_USBSTS & USBHS_USBSTS_AS, HEX);
-				Serial.println(USBHS_USBCMD & USBHS_USBCMD_ASE, HEX);
-				//USBHS_USBCMD |= USBHS_USBCMD_IAA;
-				USBHS_USBCMD |= USBHS_USBCMD_ASE; // enable async schedule
-				uint32_t count=0;
-				while (!(USBHS_USBSTS & USBHS_USBSTS_AS)) count++;
-				Serial.print("    waited ");
-				Serial.println(count);
-				Serial.println(USBHS_USBCMD & USBHS_USBCMD_ASE, HEX);
-				Serial.println(USBHS_USBSTS & USBHS_USBSTS_AS, HEX);
-			} else {
-				// EHCI 1.0: section 4.8.1, page 72
-				pipe->qh.horizontal_link = list->qh.horizontal_link;
-				list->qh.horizontal_link = (uint32_t)&(pipe->qh) | 2;
-				Serial.println("  added to async list, with qTD");
-			}
-			pipe->active = 1;
-		} else if (pipe->type == 3) {
-			// interrupt: add to periodic schedule
-			// TODO: link it into the periodic table
-		}
+	Transfer_t *last = (Transfer_t *)(pipe->qh.next);
+	if ((uint32_t)last & 1) {
+		pipe->qh.next = (uint32_t)transfer;
+		Serial.println("  first on QH");
 	} else {
-		Transfer_t *last = (Transfer_t *)(pipe->qh.next);
-		if ((uint32_t)last & 1) {
-			pipe->qh.next = (uint32_t)transfer;
-			Serial.println("  first on QH");
-		} else {
-			while ((last->qtd.next & 1) == 0) last = (Transfer_t *)(last->qtd.next);
-			last->qtd.next = (uint32_t)transfer;
-			Serial.println("  added to qTD list");
-		}
+		while ((last->qtd.next & 1) == 0) last = (Transfer_t *)(last->qtd.next);
+		// TODO: what happens if qTD is completed before we write to it?
+		last->qtd.next = (uint32_t)transfer;
+		Serial.println("  added to qTD list");
 	}
 }
 

@@ -49,10 +49,9 @@ struct Pipe_struct {
 	Device_t *device;
 	uint8_t  type; // 0=control, 1=isochronous, 2=bulk, 3=interrupt
 	uint8_t  direction; // 0=out, 1=in
-	uint8_t  active;
 	//uint8_t  endpoint;  // 0 to 15
 	//uint8_t  data01;    // next packet DATA0 or DATA1
-	uint8_t  unusedbyte[1];
+	uint8_t  unusedbyte[2];
 	uint32_t unused[2];
 };
 
