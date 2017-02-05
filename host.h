@@ -66,7 +66,8 @@ struct Transfer_struct {
 	Pipe_t   *pipe;
 	void     *callback;
 	void     *callback_arg;
-	uint32_t unused[5];
+	Transfer_t *next_followup;
+	uint32_t unused[4];
 };
 
 Device_t * allocate_Device(void);

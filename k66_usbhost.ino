@@ -10,6 +10,10 @@ uint8_t port_state;
 #define PORT_STATE_RECOVERY       3
 #define PORT_STATE_ACTIVE         4
 Device_t *rootdev=NULL;
+Transfer_t *async_followup_first=NULL;
+Transfer_t *async_followup_last=NULL;
+Transfer_t *periodic_followup_first=NULL;
+Transfer_t *periodic_followup_last=NULL;
 
 void setup()
 {
@@ -110,9 +114,10 @@ void setup()
 	Serial.println((uint32_t)periodictable, HEX);
 
 	NVIC_ENABLE_IRQ(IRQ_USBHS);
-	USBHS_USBINTR = USBHS_USBINTR_UE | USBHS_USBINTR_PCE | USBHS_USBINTR_TIE0;
+	USBHS_USBINTR = USBHS_USBINTR_PCE | USBHS_USBINTR_TIE0;
 	USBHS_USBINTR |= USBHS_USBINTR_UEE | USBHS_USBINTR_SEE;
 	USBHS_USBINTR |= USBHS_USBINTR_AAE;
+	USBHS_USBINTR |= USBHS_USBINTR_UPIE | USBHS_USBINTR_UAIE;
 
 	delay(25);
 	Serial.println("Plug in device...");
@@ -184,6 +189,35 @@ void usbhs_isr(void)
 	if (stat & USBHS_USBSTS_UPI) Serial.println(" USB Periodic");
 	if (stat & USBHS_USBSTS_TI0) Serial.println(" Timer0");
 	if (stat & USBHS_USBSTS_TI1) Serial.println(" Timer1");
+
+	if (stat & USBHS_USBSTS_UAI) {
+		Serial.println("Async Followup");
+
+		Transfer_t *p, *prev=NULL, *next;
+
+		p = async_followup_first;
+		while (p) {
+
+			next = p->next_followup;
+			if (followup_Transfer(p)) {
+				// transfer completed
+				if (prev) {
+					prev->next_followup = next;
+				} else {
+					async_followup_first = next;
+				}
+			} else {
+				// transfer still pending
+				prev = p;
+			}
+			p = next;
+		}
+		async_followup_last = prev;
+
+	}
+	if (stat & USBHS_USBSTS_UPI) {
+
+	}
 
 	if (stat & USBHS_USBSTS_PCI) { // port change detected
 		const uint32_t portstat = USBHS_PORTSC1;
@@ -388,6 +422,7 @@ void init_qTD(volatile Transfer_t *t, void *buf, uint32_t len,
 	t->qtd.buffer[4] = addr + 0x4000;
 }
 
+
 // Create a Transfer and queue it
 //
 bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
@@ -436,10 +471,14 @@ bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 		free_Transfer(transfer);
 		return false;
 	}
+	// find halt qTD
 	Transfer_t *halt = (Transfer_t *)(pipe->qh.next);
 	while (!(halt->qtd.token & 0x40)) halt = (Transfer_t *)(halt->qtd.next);
+	// transfer's token
 	uint32_t token = transfer->qtd.token;
-	transfer->qtd.token = 0x40; // transfer becomes new halt qTD
+	// transfer becomes new halt qTD
+	transfer->qtd.token = 0x40;
+	// copy transfer non-token fields to halt
 	halt->qtd.next = transfer->qtd.next;
 	halt->qtd.alt_next = transfer->qtd.alt_next;
 	halt->qtd.buffer[0] = transfer->qtd.buffer[0];
@@ -448,14 +487,58 @@ bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 	halt->qtd.buffer[3] = transfer->qtd.buffer[3];
 	halt->qtd.buffer[4] = transfer->qtd.buffer[4];
 	halt->pipe = pipe;
-	Transfer_t *last = transfer;
+	// find the last qTD we're adding
+	Transfer_t *last = halt;
 	while ((uint32_t)(last->qtd.next) != 1) last = (Transfer_t *)(last->qtd.next);
+	// last points to transfer (which becomes new halt)
 	last->qtd.next = (uint32_t)transfer;
 	transfer->qtd.next = 1;
-	halt->qtd.token = token; // old halt becomes new transfer
+	// link all the new qTD by next_followup
+	Transfer_t *p = halt;
+	while (p->qtd.next != (uint32_t)transfer) {
+		Transfer_t *n = (Transfer_t *)p->qtd.next;
+		p->next_followup = n;
+		p = n;
+	}
+	p->next_followup = NULL;
+	// add them to a followup list
+	if (pipe->type == 0 || pipe->type == 2) {
+		// control or bulk
+		if (async_followup_first == NULL) {
+			async_followup_first = halt;
+		} else {
+			async_followup_last->next_followup = halt;
+		}
+		async_followup_last = p;
+	} else {
+		// interrupt
+		if (periodic_followup_first == NULL) {
+			periodic_followup_first = halt;
+		} else {
+			periodic_followup_last->next_followup = halt;
+		}
+		periodic_followup_last = p;
+	}
+	// old halt becomes new transfer, this commits all new qTDs to QH
+	halt->qtd.token = token;
 	return true;
 }
 
+bool followup_Transfer(Transfer_t *transfer)
+{
+	Serial.print("  Followup ");
+	Serial.println((uint32_t)transfer, HEX);
+
+	if (!(transfer->qtd.token & 0x80)) {
+		// TODO: check error status
+		// do callback function...
+		Serial.println("    completed");
+		free_Transfer(transfer);
+		return true;
+
+	}
+	return false;
+}
 
 void print(const Transfer_t *transfer)
 {
