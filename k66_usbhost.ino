@@ -123,6 +123,7 @@ void setup()
 	Serial.println();
 	Serial.println("Ring Doorbell");
 	USBHS_USBCMD |= USBHS_USBCMD_IAA;
+	if (rootdev) print(rootdev->control_pipe);
 }
 
 void loop()
@@ -240,7 +241,8 @@ void usbhs_isr(void)
 			Serial.println("  end recovery");
 
 			//  HCSPARAMS  TTCTRL  page 1671
-			rootdev = new_Device((USBHS_PORTSC1 >> 26) & 3, 0, 0);
+			uint32_t speed = (USBHS_PORTSC1 >> 26) & 3;
+			rootdev = new_Device(speed, 0, 0);
 		}
 	}
 
@@ -261,7 +263,7 @@ Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port)
 	dev = allocate_Device();
 	if (!dev) return NULL;
 	dev->speed = speed;
-	dev->address = 1; // TODO: dynamic assign address
+	dev->address = 0;
 	dev->hub_address = hub_addr;
 	dev->hub_port = hub_port;
 	dev->control_pipe = new_Pipe(dev, 0, 0, 0, 8);
@@ -278,6 +280,7 @@ Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port)
 	dev->setup.wIndex = 0x0000;
 	dev->setup.wLength = 0;
 	Transfer_t *transfer = new_Transfer(dev->control_pipe, buffer, 8);
+	//print(dev->control_pipe);
 	if (transfer) queue_Transfer(transfer);
 
 	return dev;
@@ -311,6 +314,7 @@ Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint, uint32_t dire
 	Serial.println("new_Pipe");
 	pipe = allocate_Pipe();
 	if (!pipe) return NULL;
+	pipe->device = dev;
 	pipe->qh.current = 0;
 	pipe->qh.next = 1;
 	pipe->qh.alt_next = 1;
@@ -423,7 +427,9 @@ Transfer_t * new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 			transfer->qtd.next = (uint32_t)status;
 			status_direction = 1; // always IN, USB 2.0 page 226
 		}
-		init_qTD(transfer, &(pipe->device->setup), 8, 2, 0, false);
+		Serial.print("setup address ");
+		Serial.println((uint32_t)&pipe->device->setup, HEX);
+		init_qTD(transfer, &pipe->device->setup, 8, 2, 0, false);
 		init_qTD(status, NULL, 0, status_direction, 1, true);
 		status->pipe = pipe;
 		status->qtd.next = 1;
@@ -439,18 +445,19 @@ Transfer_t * new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 void queue_Transfer(Transfer_t *transfer)
 {
 	Serial.println("queue_Transfer");
-	volatile Pipe_t *pipe = transfer->pipe;
+	Pipe_t *pipe = transfer->pipe;
 
 	if (!pipe->active) {
 		if (pipe->type == 0 || pipe->type == 2) {
 			// control or bulk: add to async queue
 			pipe->qh.next = (uint32_t)transfer;
-			volatile Pipe_t *list = (Pipe_t *)USBHS_ASYNCLISTADDR;
+			Pipe_t *list = (Pipe_t *)USBHS_ASYNCLISTADDR;
 			if (list == NULL) {
 				Serial.println("  first in async list, with qTD");
 				pipe->qh.capabilities[0] |= 0x8000; // H bit
 				pipe->qh.horizontal_link = (uint32_t)(&(pipe->qh)) | 2; // 2=QH
 				USBHS_ASYNCLISTADDR = (uint32_t)pipe;
+				print(pipe);
 				Serial.println(USBHS_USBSTS & USBHS_USBSTS_AS, HEX);
 				Serial.println(USBHS_USBCMD & USBHS_USBCMD_ASE, HEX);
 				//USBHS_USBCMD |= USBHS_USBCMD_IAA;
@@ -483,6 +490,66 @@ void queue_Transfer(Transfer_t *transfer)
 			Serial.println("  added to qTD list");
 		}
 	}
+}
+
+
+void print(const Transfer_t *transfer)
+{
+	if (!((uint32_t)transfer & 0xFFFFFFE0)) return;
+	Serial.print("Transfer @ ");
+	Serial.println(((uint32_t)transfer & 0xFFFFFFE0), HEX);
+	Serial.print("   next:  ");
+	Serial.println(transfer->qtd.next, HEX);
+	Serial.print("   anext: ");
+	Serial.println(transfer->qtd.alt_next, HEX);
+	Serial.print("   token: ");
+	Serial.println(transfer->qtd.token, HEX);
+	Serial.print("   bufs:  ");
+	for (int i=0; i < 5; i++) {
+		Serial.print(transfer->qtd.buffer[i], HEX);
+		if (i < 4) Serial.print(',');
+	}
+	Serial.println();
+}
+
+void print(const Pipe_t *pipe)
+{
+	if (!((uint32_t)pipe & 0xFFFFFFE0)) return;
+	Serial.print("Pipe ");
+	if (pipe->type == 0) Serial.print("control");
+	else if (pipe->type == 1) Serial.print("isochronous");
+	else if (pipe->type == 2) Serial.print("bulk");
+	else if (pipe->type == 3) Serial.print("interrupt");
+	Serial.print(pipe->direction ? " IN" : " OUT");
+	Serial.print("  @ ");
+	Serial.println((uint32_t)pipe, HEX);
+	Serial.print("  horiz link:  ");
+	Serial.println(pipe->qh.horizontal_link, HEX);
+	Serial.print("  capabilities: ");
+	Serial.print(pipe->qh.capabilities[0], HEX);
+	Serial.print(',');
+	Serial.println(pipe->qh.capabilities[1], HEX);
+	Serial.println("  overlay:");
+	Serial.print("    cur:   ");
+	Serial.println(pipe->qh.current, HEX);
+	Serial.print("    next:  ");
+	Serial.println(pipe->qh.next, HEX);
+	Serial.print("    anext: ");
+	Serial.println(pipe->qh.alt_next, HEX);
+	Serial.print("    token: ");
+	Serial.println(pipe->qh.token, HEX);
+	Serial.print("    bufs:  ");
+	for (int i=0; i < 5; i++) {
+		Serial.print(pipe->qh.buffer[i], HEX);
+		if (i < 4) Serial.print(',');
+	}
+	Serial.println();
+	const Transfer_t *t = (Transfer_t *)pipe->qh.next;
+	while (((uint32_t)t & 0xFFFFFFE0)) {
+		print(t);
+		t = (Transfer_t *)t->qtd.next;
+	}
+	//Serial.print();
 }
 
 
