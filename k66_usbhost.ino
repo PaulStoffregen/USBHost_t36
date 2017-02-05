@@ -380,7 +380,7 @@ void init_qTD(volatile Transfer_t *t, void *buf, uint32_t len,
 {
 	t->qtd.alt_next = 1; // 1=terminate
 	if (data01) data01 = 0x80000000;
-	t->qtd.token = data01 | (len << 16) | (irq ? 0x8000 : 0) | (pid << 8) | 0x8000;
+	t->qtd.token = data01 | (len << 16) | (irq ? 0x8000 : 0) | (pid << 8) | 0x80;
 	uint32_t addr = (uint32_t)buf;
 	t->qtd.buffer[0] = addr;
 	addr &= 0xFFFFF000;
