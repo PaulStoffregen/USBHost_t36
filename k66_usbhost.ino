@@ -278,7 +278,7 @@ Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port)
 	dev->setup.bRequest = 0x06; // 6=GET_DESCRIPTOR
 	dev->setup.wValue = 0x0100;
 	dev->setup.wIndex = 0x0000;
-	dev->setup.wLength = 0;
+	dev->setup.wLength = 8;
 	Transfer_t *transfer = new_Transfer(dev->control_pipe, buffer, 8);
 	//print(dev->control_pipe);
 	if (transfer) queue_Transfer(transfer);
