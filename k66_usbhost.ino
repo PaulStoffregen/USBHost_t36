@@ -1,4 +1,25 @@
-// usb host experiments....
+/* USB EHCI Host for Teensy 3.6
+ * Copyright 2017 Paul Stoffregen (paul@pjrc.com)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the
+ * "Software"), to deal in the Software without restriction, including
+ * without limitation the rights to use, copy, modify, merge, publish,
+ * distribute, sublicense, and/or sell copies of the Software, and to
+ * permit persons to whom the Software is furnished to do so, subject to
+ * the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
 #include "host.h"
 
@@ -35,9 +56,12 @@ void setup()
 	Serial.print("sizeof Transfer = ");
 	Serial.println(sizeof(Transfer_t));
 
+	// configure the MPU to allow USBHS DMA to access memory
 	MPU_RGDAAC0 |= 0x30000000;
 	Serial.print("MPU_RGDAAC0 = ");
 	Serial.println(MPU_RGDAAC0, HEX);
+
+	// turn on clocks
 	MCG_C1 |= MCG_C1_IRCLKEN;  // enable MCGIRCLK 32kHz
 	OSC0_CR |= OSC_ERCLKEN;
 	SIM_SOPT2 |= SIM_SOPT2_USBREGEN; // turn on USB regulator
@@ -60,6 +84,7 @@ void setup()
 	}
 	Serial.print("PLL locked, waited ");
 	Serial.println(count);
+
 	// turn on power to PHY
 	USBPHY_PWD = 0;
 	delay(10);
@@ -75,6 +100,7 @@ void setup()
 	//SIM_SOPT2 = SIM_SOPT2 & (~SIM_SOPT2_CLKOUTSEL(7)) | SIM_SOPT2_CLKOUTSEL(4); // MCGIRCLK
 	//CORE_PIN9_CONFIG = PORT_PCR_MUX(5);  // CLKOUT on PTC3 Alt5 (Arduino pin 9)
 
+	// now with the PHY up and running, start up USBHS
 	print("begin ehci reset");
 	USBHS_USBCMD |= USBHS_USBCMD_RST;
 	count = 0;
@@ -101,6 +127,7 @@ void setup()
 		USBHS_USBCMD_ASP(3) | USBHS_USBCMD_ASPE |
 		USBHS_USBCMD_FS2 | USBHS_USBCMD_FS(1);  // periodic table is 32 pointers
 
+	// turn on the USB port
 	//USBHS_PORTSC1 = USBHS_PORTSC_PP;
 	USBHS_PORTSC1 |= USBHS_PORTSC_PP;
 	//USBHS_PORTSC1 |= USBHS_PORTSC_PFSC; // force 12 Mbit/sec
@@ -113,6 +140,7 @@ void setup()
 	Serial.print("periodictable = ");
 	Serial.println((uint32_t)periodictable, HEX);
 
+	// enable interrupts, after this point interruts to all the work
 	NVIC_ENABLE_IRQ(IRQ_USBHS);
 	USBHS_USBINTR = USBHS_USBINTR_PCE | USBHS_USBINTR_TIE0;
 	USBHS_USBINTR |= USBHS_USBINTR_UEE | USBHS_USBINTR_SEE;
@@ -190,7 +218,7 @@ void usbhs_isr(void)
 	if (stat & USBHS_USBSTS_TI0) Serial.println(" Timer0");
 	if (stat & USBHS_USBSTS_TI1) Serial.println(" Timer1");
 
-	if (stat & USBHS_USBSTS_UAI) {
+	if (stat & USBHS_USBSTS_UAI) { // completed qTD(s) from the async schedule
 		Serial.println("Async Followup");
 
 		Transfer_t *p, *prev=NULL, *next;
@@ -215,7 +243,7 @@ void usbhs_isr(void)
 		async_followup_last = prev;
 
 	}
-	if (stat & USBHS_USBSTS_UPI) {
+	if (stat & USBHS_USBSTS_UPI) { // completed qTD(s) from the periodic schedule
 
 	}
 
@@ -282,6 +310,8 @@ void usbhs_isr(void)
 
 }
 
+// Create a new device and begin the enumeration process
+//
 Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port)
 {
 	Device_t *dev;
@@ -337,6 +367,9 @@ static uint32_t QH_capabilities2(uint32_t high_bw_mult, uint32_t hub_port_number
 		(split_completion_mask << 8) | (interrupt_schedule_mask << 0) );
 }
 
+// Create a new pipe.  It's QH is added to the async or periodic schedule,
+// and a halt qTD is added to the QH, so we can grow the qTD list later.
+//
 Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint, uint32_t direction,
 	uint32_t max_packet_len)
 {
