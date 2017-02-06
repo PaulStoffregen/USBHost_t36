@@ -95,6 +95,7 @@ struct Transfer_struct {
 	uint32_t unused[4];
 };
 
+void init_Device_Pipe_Transfer_memory(void);
 Device_t * allocate_Device(void);
 void free_Device(Device_t *q);
 Pipe_t * allocate_Pipe(void);
