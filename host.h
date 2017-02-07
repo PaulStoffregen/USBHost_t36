@@ -59,6 +59,7 @@ struct Device_struct {
 	uint8_t  address;
 	uint8_t  hub_address;
 	uint8_t  hub_port;
+	uint8_t  enum_state;
 };
 
 struct Pipe_struct {

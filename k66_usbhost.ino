@@ -152,12 +152,13 @@ void setup()
 	Serial.println("Plug in device...");
 	digitalWrite(32, HIGH); // connect device
 
-
+#if 0
 	delay(5000);
 	Serial.println();
 	Serial.println("Ring Doorbell");
 	USBHS_USBCMD |= USBHS_USBCMD_IAA;
 	if (rootdev) print(rootdev->control_pipe);
+#endif
 }
 
 void loop()
@@ -307,6 +308,15 @@ void usbhs_isr(void)
 
 }
 
+void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
+		uint32_t wValue, uint32_t wIndex, uint32_t wLength)
+{
+	s.word1 = bmRequestType | (bRequest << 8) | (wValue << 16);
+	s.word2 = wIndex | (wLength << 16);
+}
+
+static uint8_t enumbuf[255];
+
 void enumeration(const Transfer_t *transfer)
 {
 	Serial.print("      CALLBACK: ");
@@ -316,9 +326,58 @@ void enumeration(const Transfer_t *transfer)
 		Serial.print(' ');
 	}
 	Serial.println();
-	print(transfer);
+	//print(transfer);
+	Device_t *dev = transfer->pipe->device;
+
+	switch (dev->enum_state) {
+	case 0: // read 8 bytes of device desc, set max packet, and send set address
+		pipe_set_maxlen(dev->control_pipe, enumbuf[7]);
+		mk_setup(dev->setup, 0, 5, assign_addr(), 0, 0); // 5=SET_ADDRESS
+		new_Transfer(dev->control_pipe, NULL, 0);
+		dev->enum_state = 1;
+		break;
+
+	case 1: // request all 18 bytes of device descriptor
+		break;
+
+
+	case 2: // read 18 device desc bytes, request first 9 bytes of config desc
+		break;
+
+
+	case 3: // read 9 bytes, request all of config desc
+		break;
+
+
+	case 4: // read all config desc, send set config
+		break;
+
+	default:
+		break;
+	}
 
 }
+
+uint32_t assign_addr(void)
+{
+	return 29; // TODO: when multiple devices, assign a unique address
+}
+
+void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen)
+{
+	Serial.print("pipe_set_maxlen ");
+	Serial.println(maxlen);
+	pipe->qh.capabilities[0] = (pipe->qh.capabilities[0] & 0x8000FFFF) | (maxlen << 16);
+}
+
+void pipe_set_addr(Pipe_t *pipe, uint32_t addr)
+{
+	Serial.print("pipe_set_addr ");
+	Serial.println(addr);
+	pipe->qh.capabilities[0] = (pipe->qh.capabilities[0] & 0xFFFFFF80) | addr;
+}
+
+
 
 // Create a new device and begin the enumeration process
 //
@@ -336,6 +395,7 @@ Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port)
 	Serial.println(" Mbit/sec");
 	dev = allocate_Device();
 	if (!dev) return NULL;
+	memset(dev, 0, sizeof(Device_t));
 	dev->speed = speed;
 	dev->address = 0;
 	dev->hub_address = hub_addr;
@@ -346,15 +406,9 @@ Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port)
 		return NULL;
 	}
 	dev->control_pipe->callback_function = &enumeration;
-
-	static uint8_t buffer[8];
 	dev->control_pipe->direction = 1; // 1=IN
-	dev->setup.bmRequestType = 0x80;
-	dev->setup.bRequest = 0x06; // 6=GET_DESCRIPTOR
-	dev->setup.wValue = 0x0100;
-	dev->setup.wIndex = 0x0000;
-	dev->setup.wLength = 8;
-	new_Transfer(dev->control_pipe, buffer, 8);
+	mk_setup(dev->setup, 0x80, 6, 0x0100, 0, 8); // 6=GET_DESCRIPTOR
+	new_Transfer(dev->control_pipe, enumbuf, 8);
 
 	return dev;
 }
