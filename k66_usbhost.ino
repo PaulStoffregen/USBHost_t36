@@ -221,13 +221,10 @@ void usbhs_isr(void)
 
 	if (stat & USBHS_USBSTS_UAI) { // completed qTD(s) from the async schedule
 		Serial.println("Async Followup");
-
-		Transfer_t *p, *prev=NULL, *next;
-
-		p = async_followup_first;
+		Transfer_t *prev=NULL;
+		Transfer_t *p = async_followup_first;
 		while (p) {
-
-			next = p->next_followup;
+			Transfer_t *next = p->next_followup;
 			if (followup_Transfer(p)) {
 				// transfer completed
 				if (prev) {
@@ -242,7 +239,6 @@ void usbhs_isr(void)
 			p = next;
 		}
 		async_followup_last = prev;
-
 	}
 	if (stat & USBHS_USBSTS_UPI) { // completed qTD(s) from the periodic schedule
 
@@ -311,6 +307,19 @@ void usbhs_isr(void)
 
 }
 
+void enumeration(const Transfer_t *transfer)
+{
+	Serial.print("      CALLBACK: ");
+	uint8_t *p = (uint8_t *)transfer->buffer;
+	for (uint32_t i=0; i < transfer->length; i++) {
+		Serial.print(*p++, HEX);
+		Serial.print(' ');
+	}
+	Serial.println();
+	print(transfer);
+
+}
+
 // Create a new device and begin the enumeration process
 //
 Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port)
@@ -336,6 +345,7 @@ Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port)
 		free_Device(dev);
 		return NULL;
 	}
+	dev->control_pipe->callback_function = &enumeration;
 
 	static uint8_t buffer[8];
 	dev->control_pipe->direction = 1; // 1=IN
@@ -464,12 +474,13 @@ bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 	Serial.println("new_Transfer");
 	Transfer_t *transfer = allocate_Transfer();
 	if (!transfer) return false;
-	transfer->pipe = pipe;
 	if (pipe->type == 0) {
 		// control transfer
 		Transfer_t *data, *status;
 		uint32_t status_direction;
 		if (len > 16384) {
+			// hopefully we never need more
+			// than 16K in a control transfer
 			free_Transfer(transfer);
 			return false;
 		}
@@ -488,7 +499,6 @@ bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 			init_qTD(data, buffer, len, pipe->direction, 1, false);
 			transfer->qtd.next = (uint32_t)data;
 			data->qtd.next = (uint32_t)status;
-			data->pipe = pipe;
 			status_direction = pipe->direction ^ 1;
 		} else {
 			transfer->qtd.next = (uint32_t)status;
@@ -499,6 +509,8 @@ bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 		init_qTD(transfer, &pipe->device->setup, 8, 2, 0, false);
 		init_qTD(status, NULL, 0, status_direction, 1, true);
 		status->pipe = pipe;
+		status->buffer = buffer;
+		status->length = len;
 		status->qtd.next = 1;
 	} else {
 		// bulk, interrupt or isochronous transfer
@@ -515,7 +527,7 @@ bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 	// copy transfer non-token fields to halt
 	halt->qtd.next = transfer->qtd.next;
 	halt->qtd.alt_next = transfer->qtd.alt_next;
-	halt->qtd.buffer[0] = transfer->qtd.buffer[0];
+	halt->qtd.buffer[0] = transfer->qtd.buffer[0]; // TODO: optimize...
 	halt->qtd.buffer[1] = transfer->qtd.buffer[1];
 	halt->qtd.buffer[2] = transfer->qtd.buffer[2];
 	halt->qtd.buffer[3] = transfer->qtd.buffer[3];
@@ -565,11 +577,17 @@ bool followup_Transfer(Transfer_t *transfer)
 
 	if (!(transfer->qtd.token & 0x80)) {
 		// TODO: check error status
+		if (transfer->qtd.token & 0x8000) {
+			// this transfer caused an interrupt
+			if (transfer->pipe->callback_function) {
+				// do the callback
+				(*(transfer->pipe->callback_function))(transfer);
+			}
+		}
 		// do callback function...
 		Serial.println("    completed");
 		free_Transfer(transfer);
 		return true;
-
 	}
 	return false;
 }

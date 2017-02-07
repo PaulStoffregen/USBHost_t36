@@ -30,6 +30,7 @@ typedef struct Device_struct    Device_t;
 typedef struct Pipe_struct      Pipe_t;
 typedef struct Transfer_struct  Transfer_t;
 
+
 typedef union {
  struct {
   union {
@@ -73,10 +74,10 @@ struct Pipe_struct {
 	} qh;
 	Device_t *device;
 	uint8_t  type; // 0=control, 1=isochronous, 2=bulk, 3=interrupt
-	uint8_t  direction; // 0=out, 1=in
-	//uint8_t  data01;    // next packet DATA0 or DATA1
+	uint8_t  direction; // 0=out, 1=in (changes for control, others fixed)
 	uint8_t  unusedbyte[2];
-	uint32_t unused[2];
+	void     *callback_object; // TODO: C++ callbacks??
+	void     (*callback_function)(const Transfer_t *);
 };
 
 
@@ -88,10 +89,12 @@ struct Transfer_struct {
 		volatile uint32_t token;
 		volatile uint32_t buffer[5];
 	} qtd;
-	Pipe_t   *pipe;
-	void     *callback;
-	void     *callback_arg;
+	// linked list of queued, not-yet-completed transfers
 	Transfer_t *next_followup;
+	// data to be used by callback function
+	Pipe_t   *pipe;
+	void     *buffer;
+	uint32_t length;
 	uint32_t unused[4];
 };
 
