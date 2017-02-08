@@ -92,11 +92,12 @@ struct Transfer_struct {
 	} qtd;
 	// linked list of queued, not-yet-completed transfers
 	Transfer_t *next_followup;
+	Transfer_t *prev_followup;
 	// data to be used by callback function
 	Pipe_t   *pipe;
 	void     *buffer;
 	uint32_t length;
-	uint32_t unused[4];
+	uint32_t unused[3];
 };
 
 void init_Device_Pipe_Transfer_memory(void);

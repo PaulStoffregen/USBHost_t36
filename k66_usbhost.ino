@@ -192,6 +192,7 @@ void pulse(int usec)
 // PORT_STATE_RECOVERY       3
 // PORT_STATE_ACTIVE         4
 
+
 void usbhs_isr(void)
 {
 	uint32_t stat = USBHS_USBSTS;
@@ -222,27 +223,37 @@ void usbhs_isr(void)
 
 	if (stat & USBHS_USBSTS_UAI) { // completed qTD(s) from the async schedule
 		Serial.println("Async Followup");
-		Transfer_t *prev=NULL;
+		print(async_followup_first, async_followup_last);
 		Transfer_t *p = async_followup_first;
 		while (p) {
-			Transfer_t *next = p->next_followup;
 			if (followup_Transfer(p)) {
 				// transfer completed
-				if (prev) {
-					prev->next_followup = next;
-				} else {
-					async_followup_first = next;
-				}
+				Transfer_t *next = p->next_followup;
+				remove_from_async_followup_list(p);
+				free_Transfer(p);
+				p = next;
 			} else {
 				// transfer still pending
-				prev = p;
+				p = p->next_followup;
 			}
-			p = next;
 		}
-		async_followup_last = prev;
+		print(async_followup_first, async_followup_last);
 	}
 	if (stat & USBHS_USBSTS_UPI) { // completed qTD(s) from the periodic schedule
-
+		Serial.println("Periodic Followup");
+		Transfer_t *p = periodic_followup_first;
+		while (p) {
+			if (followup_Transfer(p)) {
+				// transfer completed
+				Transfer_t *next = p->next_followup;
+				remove_from_periodic_followup_list(p);
+				free_Transfer(p);
+				p = next;
+			} else {
+				// transfer still pending
+				p = p->next_followup;
+			}
+		}
 	}
 
 	if (stat & USBHS_USBSTS_PCI) { // port change detected
@@ -338,6 +349,7 @@ void enumeration(const Transfer_t *transfer)
 		break;
 
 	case 1: // request all 18 bytes of device descriptor
+		Serial.println("TODO: request 18 byte device descriptor");
 		break;
 
 
@@ -593,31 +605,25 @@ bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 	// last points to transfer (which becomes new halt)
 	last->qtd.next = (uint32_t)transfer;
 	transfer->qtd.next = 1;
-	// link all the new qTD by next_followup
+	// link all the new qTD by next_followup & prev_followup
+	Transfer_t *prev = NULL;
 	Transfer_t *p = halt;
 	while (p->qtd.next != (uint32_t)transfer) {
 		Transfer_t *n = (Transfer_t *)p->qtd.next;
+		p->prev_followup = prev;
 		p->next_followup = n;
+		prev = p;
 		p = n;
 	}
 	p->next_followup = NULL;
+	print(halt, p);
 	// add them to a followup list
 	if (pipe->type == 0 || pipe->type == 2) {
 		// control or bulk
-		if (async_followup_first == NULL) {
-			async_followup_first = halt;
-		} else {
-			async_followup_last->next_followup = halt;
-		}
-		async_followup_last = p;
+		add_to_async_followup_list(halt, p);
 	} else {
 		// interrupt
-		if (periodic_followup_first == NULL) {
-			periodic_followup_first = halt;
-		} else {
-			periodic_followup_last->next_followup = halt;
-		}
-		periodic_followup_last = p;
+		add_to_periodic_followup_list(halt, p);
 	}
 	// old halt becomes new transfer, this commits all new qTDs to QH
 	halt->qtd.token = token;
@@ -640,10 +646,67 @@ bool followup_Transfer(Transfer_t *transfer)
 		}
 		// do callback function...
 		Serial.println("    completed");
-		free_Transfer(transfer);
 		return true;
 	}
 	return false;
+}
+
+static void add_to_async_followup_list(Transfer_t *first, Transfer_t *last)
+{
+	last->next_followup = NULL; // always add to end of list
+	if (async_followup_last == NULL) {
+		first->prev_followup = NULL;
+		async_followup_first = first;
+	} else {
+		first->prev_followup = async_followup_last;
+		async_followup_last->next_followup = first;
+	}
+	async_followup_last = last;
+}
+
+static void remove_from_async_followup_list(Transfer_t *transfer)
+{
+	Transfer_t *next = transfer->next_followup;
+	Transfer_t *prev = transfer->prev_followup;
+	if (prev) {
+		prev->next_followup = next;
+	} else {
+		async_followup_first = next;
+	}
+	if (next) {
+		next->prev_followup = prev;
+	} else {
+		async_followup_last = prev;
+	}
+}
+
+static void add_to_periodic_followup_list(Transfer_t *first, Transfer_t *last)
+{
+	last->next_followup = NULL; // always add to end of list
+	if (periodic_followup_last == NULL) {
+		first->prev_followup = NULL;
+		periodic_followup_first = first;
+	} else {
+		first->prev_followup = periodic_followup_last;
+		periodic_followup_last->next_followup = first;
+	}
+	periodic_followup_last = last;
+}
+
+static void remove_from_periodic_followup_list(Transfer_t *transfer)
+{
+	Transfer_t *next = transfer->next_followup;
+	Transfer_t *prev = transfer->prev_followup;
+	if (prev) {
+		prev->next_followup = next;
+	} else {
+		periodic_followup_first = next;
+	}
+	if (next) {
+		next->prev_followup = prev;
+	} else {
+		periodic_followup_last = prev;
+	}
 }
 
 void print(const Transfer_t *transfer)
@@ -663,6 +726,47 @@ void print(const Transfer_t *transfer)
 		if (i < 4) Serial.print(',');
 	}
 	Serial.println();
+}
+
+void print(const Transfer_t *first, const Transfer_t *last)
+{
+	Serial.print("Transfer Followup List ");
+	Serial.print((uint32_t)first, HEX);
+	Serial.print(" to ");
+	Serial.println((uint32_t)last, HEX);
+	Serial.println("    forward:");
+	while (first) {
+		Serial.print("    ");
+		Serial.print((uint32_t)first, HEX);
+		print_token(first->qtd.token);
+		first = first->next_followup;
+	}
+	Serial.println("    backward:");
+	while (last) {
+		Serial.print("    ");
+		Serial.print((uint32_t)last, HEX);
+		print_token(last->qtd.token);
+		last = last->prev_followup;
+	}
+}
+
+void print_token(uint32_t token)
+{
+	switch ((token >> 8) & 3) {
+	case 0:
+		Serial.print(" OUT ");
+		Serial.println((token >> 16) & 0x7FFF);
+		break;
+	case 1:
+		Serial.print(" IN ");
+		Serial.println((token >> 16) & 0x7FFF);
+		break;
+	case 2:
+		Serial.println(" SETUP");
+		break;
+	default:
+		Serial.println(" unknown");
+	}
 }
 
 void print(const Pipe_t *pipe)
