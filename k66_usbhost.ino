@@ -609,12 +609,13 @@ bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 	Transfer_t *prev = NULL;
 	Transfer_t *p = halt;
 	while (p->qtd.next != (uint32_t)transfer) {
-		Transfer_t *n = (Transfer_t *)p->qtd.next;
+		Transfer_t *next = (Transfer_t *)p->qtd.next;
 		p->prev_followup = prev;
-		p->next_followup = n;
+		p->next_followup = next;
 		prev = p;
-		p = n;
+		p = next;
 	}
+	p->prev_followup = prev;
 	p->next_followup = NULL;
 	print(halt, p);
 	// add them to a followup list
