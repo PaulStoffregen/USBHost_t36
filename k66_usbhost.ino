@@ -330,13 +330,10 @@ static uint8_t enumbuf[255];
 
 void enumeration(const Transfer_t *transfer)
 {
+	uint32_t len;
+
 	Serial.print("      CALLBACK: ");
-	uint8_t *p = (uint8_t *)transfer->buffer;
-	for (uint32_t i=0; i < transfer->length; i++) {
-		Serial.print(*p++, HEX);
-		Serial.print(' ');
-	}
-	Serial.println();
+	print_hexbytes(transfer->buffer, transfer->length);
 	//print(transfer);
 	Device_t *dev = transfer->pipe->device;
 
@@ -347,23 +344,44 @@ void enumeration(const Transfer_t *transfer)
 		new_Transfer(dev->control_pipe, NULL, 0);
 		dev->enum_state = 1;
 		break;
-
 	case 1: // request all 18 bytes of device descriptor
-		Serial.println("TODO: request 18 byte device descriptor");
+		pipe_set_addr(dev->control_pipe, dev->setup.wValue);
+		mk_setup(dev->setup, 0x80, 6, 0x0100, 0, 18); // 6=GET_DESCRIPTOR
+		new_Transfer(dev->control_pipe, enumbuf, 18);
+		dev->enum_state = 2;
 		break;
-
-
 	case 2: // read 18 device desc bytes, request first 9 bytes of config desc
+		// TODO: actually do something with device descriptor?
+		mk_setup(dev->setup, 0x80, 6, 0x0200, 0, 9); // 6=GET_DESCRIPTOR
+		new_Transfer(dev->control_pipe, enumbuf, 9);
+		dev->enum_state = 3;
 		break;
-
-
 	case 3: // read 9 bytes, request all of config desc
+		len = enumbuf[2] | (enumbuf[3] << 8);
+		Serial.print("Config data length = ");
+		Serial.println(len);
+		if (len > sizeof(enumbuf)) {
+			// TODO: how to handle device with too much config data
+		}
+		mk_setup(dev->setup, 0x80, 6, 0x0200, 0, len); // 6=GET_DESCRIPTOR
+		new_Transfer(dev->control_pipe, enumbuf, len);
+		dev->enum_state = 4;
 		break;
-
-
 	case 4: // read all config desc, send set config
+		Serial.print("bNumInterfaces = ");
+		Serial.println(enumbuf[4]);
+		Serial.print("bConfigurationValue = ");
+		Serial.println(enumbuf[5]);
+		// TODO: actually do something with interface descriptor?
+		mk_setup(dev->setup, 0, 9, enumbuf[5], 0, 0); // 9=SET_CONFIGURATION
+		new_Transfer(dev->control_pipe, NULL, 0);
+		dev->enum_state = 5;
 		break;
-
+	case 5: // device is now configured
+		// TODO: initialize drivers??
+		dev->enum_state = 6;
+		break;
+	case 6:	// control transfers for other stuff??
 	default:
 		break;
 	}
@@ -389,6 +407,10 @@ void pipe_set_addr(Pipe_t *pipe, uint32_t addr)
 	pipe->qh.capabilities[0] = (pipe->qh.capabilities[0] & 0xFFFFFF80) | addr;
 }
 
+uint32_t pipe_get_addr(Pipe_t *pipe)
+{
+	return pipe->qh.capabilities[0] & 0xFFFFFF80;
+}
 
 
 // Create a new device and begin the enumeration process
@@ -811,6 +833,17 @@ void print(const Pipe_t *pipe)
 }
 
 
+void print_hexbytes(const void *ptr, uint32_t len)
+{
+	if (ptr == NULL || len == 0) return;
+	const uint8_t *p = (const uint8_t *)ptr;
+	do {
+		if (*p < 16) Serial.print('0');
+		Serial.print(*p++, HEX);
+		Serial.print(' ');
+	} while (--len);
+	Serial.println();
+}
 
 void print(const char *s)
 {
