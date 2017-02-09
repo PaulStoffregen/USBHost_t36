@@ -277,10 +277,10 @@ void usbhs_isr(void)
 						USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
 					stat &= ~USBHS_USBSTS_TI0;
 				}
-				// TODO: should ENHOSTDISCONDETECT be set? K66 ref, page 1701
 			} else {
 				Serial.println("    disconnect");
 				port_state = PORT_STATE_DISCONNECTED;
+				USBPHY_CTRL_CLR = USBPHY_CTRL_ENHOSTDISCONDETECT;
 				// TODO: delete & clean up device state...
 			}
 		}
@@ -293,6 +293,10 @@ void usbhs_isr(void)
 			// 10 ms reset recover (USB 2.0: TRSTRCY, page 151 & 188)
 			USBHS_GPTIMER0LD = 10000; // microseconds
 			USBHS_GPTIMER0CTL = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
+			if (USBHS_PORTSC1 & USBHS_PORTSC_HSP) {
+				// turn on high-speed disconnect detector
+				USBPHY_CTRL_SET = USBPHY_CTRL_ENHOSTDISCONDETECT;
+			}
 		}
 		if (portstat & USBHS_PORTSC_FPR) {
 			Serial.println("  force resume");
