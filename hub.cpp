@@ -21,51 +21,33 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <Arduino.h>
 #include "USBHost.h"
 
-USBHost myusb;
-USBHub hub1;
-USBHub hub2;
-USBHub hub3;
-
-void setup()
+USBHub::USBHub()
 {
-	// Test board has a USB data mux (this won't be on final Teensy 3.6)
-	pinMode(32, OUTPUT);	// pin 32 = USB switch, high=connect device
-	digitalWrite(32, LOW);
-	pinMode(30, OUTPUT);	// pin 30 = debug info - use oscilloscope
-	digitalWrite(30, LOW);
-
-	while (!Serial) ; // wait for Arduino Serial Monitor
-	Serial.println("USB Host Testing");
-
-	myusb.begin();
-
-	delay(25);
-	Serial.println("Plug in device...");
-	digitalWrite(32, HIGH); // connect device
-
-#if 0
-	delay(5000);
-	Serial.println();
-	Serial.println("Ring Doorbell");
-	USBHS_USBCMD |= USBHS_USBCMD_IAA;
-	if (rootdev) print(rootdev->control_pipe);
-#endif
+	// TODO: free Device_t, Pipe_t & Transfer_t we will need
+	driver_ready_for_device(this);
 }
 
-
-void loop()
+bool USBHub::claim_device(Device_t *dev, const uint8_t *descriptors)
 {
+	Serial.print("USBHub claim_device this=");
+	Serial.println((uint32_t)this, HEX);
+
+	if (dev->bDeviceClass != 9 || dev->bDeviceSubClass != 0) return false;
+
+	// bDeviceProtocol = 0 is full speed
+	// bDeviceProtocol = 1 is high speed single TT
+	// bDeviceProtocol = 2 is high speed multiple TT
+
+	Serial.print("bDeviceClass = ");
+	Serial.println(dev->bDeviceClass);
+	Serial.print("bDeviceSubClass = ");
+	Serial.println(dev->bDeviceSubClass);
+	Serial.print("bDeviceProtocol = ");
+	Serial.println(dev->bDeviceProtocol);
+
+	return true;
 }
-
-
-void pulse(int usec)
-{
-	// connect oscilloscope to see these pulses....
-	digitalWriteFast(30, HIGH);
-	delayMicroseconds(usec);
-	digitalWriteFast(30, LOW);
-}
-
 

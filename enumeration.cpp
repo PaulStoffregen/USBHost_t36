@@ -25,15 +25,31 @@
 #include "USBHost.h"
 
 
+static USBHostDriver *available_drivers = NULL;
 static uint8_t enumbuf[256] __attribute__ ((aligned(16)));
 
 
 static void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
 		uint32_t wValue, uint32_t wIndex, uint32_t wLength);
+static void claim_drivers(Device_t *dev);
 static uint32_t assign_addr(void);
 static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen);
 static void pipe_set_addr(Pipe_t *pipe, uint32_t addr);
 
+
+
+void USBHost::driver_ready_for_device(USBHostDriver *driver)
+{
+	driver->next = NULL;
+	if (available_drivers == NULL) {
+		available_drivers = driver;
+	} else {
+		// append to end of list
+		USBHostDriver *last = available_drivers;
+		while (last->next) last = last->next;
+		last->next = driver;
+	}
+}
 
 // Create a new device and begin the enumeration process
 //
@@ -63,6 +79,9 @@ Device_t * USBHost::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_p
 	}
 	dev->control_pipe->callback_function = &enumeration;
 	dev->control_pipe->direction = 1; // 1=IN
+	// TODO: exclusive access to enumeration process
+	// any new devices detected while enumerating would
+	// go onto a waiting list
 	mk_setup(dev->setup, 0x80, 6, 0x0100, 0, 8); // 6=GET_DESCRIPTOR
 	new_Transfer(dev->control_pipe, enumbuf, 8);
 
@@ -193,14 +212,37 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 14;
 			return;
 		case 14: // device is now configured
-			// TODO: initialize drivers??
+			claim_drivers(dev);
 			dev->enum_state = 15;
+			// TODO: unlock exclusive access to enumeration process
+			// if any detected devices are waiting, start the first
 			return;
 		case 15: // control transfers for other stuff??
 		default:
 			return;
 		}
 	}
+}
+
+static void claim_drivers(Device_t *dev)
+{
+	USBHostDriver *driver, *prev=NULL;
+
+	// first check if any driver wishes to claim the entire device
+	for (driver=available_drivers; driver != NULL; driver = driver->next) {
+		if (driver->claim_device(dev, enumbuf + 9)) {
+			if (prev) {
+				prev->next = driver->next;
+			} else {
+				available_drivers = driver->next;
+			}
+			driver->next = NULL;
+			return;
+		}
+		prev = driver;
+	}
+	// TODO: parse interfaces from config descriptor
+	// try claim_interface on drivers
 }
 
 static uint32_t assign_addr(void)

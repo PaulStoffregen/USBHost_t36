@@ -141,14 +141,12 @@ void USBHost::print_hexbytes(const void *ptr, uint32_t len)
 void USBHost::print(const char *s)
 {
 	Serial.println(s);
-	delay(10);
 }
 
 void USBHost::print(const char *s, int num)
 {
 	Serial.print(s);
 	Serial.println(num);
-	delay(10);
 }
 
 

@@ -71,6 +71,8 @@ struct Device_struct {
 	uint8_t  bDeviceClass;
 	uint8_t  bDeviceSubClass;
 	uint8_t  bDeviceProtocol;
+	uint8_t  bmAttributes;
+	uint8_t  bMaxPower;
 	uint16_t idVendor;
 	uint16_t idProduct;
 	uint16_t LanguageID;
@@ -139,6 +141,7 @@ protected:
 	static bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len);
 	static Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port);
 	static void enumeration(const Transfer_t *transfer);
+	static void driver_ready_for_device(USBHostDriver *driver);
 private:
 	static void isr();
 	static void init_Device_Pipe_Transfer_memory(void);
@@ -165,10 +168,10 @@ protected:
 
 class USBHostDriver : public USBHost {
 public:
-	virtual bool claim_device(Device_t *device) {
+	virtual bool claim_device(Device_t *device, const uint8_t *descriptors) {
 		return false;
 	}
-	virtual bool claim_interface(Device_t *device) {
+	virtual bool claim_interface(Device_t *device, const uint8_t *descriptors) {
 		return false;
 	}
 	virtual void disconnect() {
@@ -178,8 +181,9 @@ public:
 };
 
 class USBHub : public USBHostDriver {
-
-
+public:
+	USBHub(); // { driver_ready_for_device(this); }
+	virtual bool claim_device(Device_t *device, const uint8_t *descriptors);
 
 };
 

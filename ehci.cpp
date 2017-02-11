@@ -38,7 +38,6 @@ static Transfer_t *periodic_followup_first=NULL;
 static Transfer_t *periodic_followup_last=NULL;
 
 
-static void isr();
 static void init_qTD(volatile Transfer_t *t, void *buf, uint32_t len,
               uint32_t pid, uint32_t data01, bool irq);
 static bool followup_Transfer(Transfer_t *transfer);
