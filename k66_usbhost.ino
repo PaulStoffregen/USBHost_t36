@@ -23,6 +23,8 @@
 
 #include "USBHost.h"
 
+USBHost myusb;
+
 void setup()
 {
 	// Test board has a USB data mux (this won't be on final Teensy 3.6)
@@ -34,7 +36,7 @@ void setup()
 	while (!Serial) ; // wait for Arduino Serial Monitor
 	Serial.println("USB Host Testing");
 
-	begin();
+	myusb.begin();
 
 	delay(25);
 	Serial.println("Plug in device...");

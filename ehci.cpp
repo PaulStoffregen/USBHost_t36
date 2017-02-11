@@ -24,21 +24,30 @@
 #include <Arduino.h>
 #include "USBHost.h"
 
-
-uint32_t periodictable[32] __attribute__ ((aligned(4096), used));
-uint8_t port_state;
+static uint32_t periodictable[32] __attribute__ ((aligned(4096), used));
+static uint8_t port_state;
 #define PORT_STATE_DISCONNECTED   0
 #define PORT_STATE_DEBOUNCE       1
 #define PORT_STATE_RESET          2
 #define PORT_STATE_RECOVERY       3
 #define PORT_STATE_ACTIVE         4
-Device_t *rootdev=NULL;
-Transfer_t *async_followup_first=NULL;
-Transfer_t *async_followup_last=NULL;
-Transfer_t *periodic_followup_first=NULL;
-Transfer_t *periodic_followup_last=NULL;
+static Device_t *rootdev=NULL;
+static Transfer_t *async_followup_first=NULL;
+static Transfer_t *async_followup_last=NULL;
+static Transfer_t *periodic_followup_first=NULL;
+static Transfer_t *periodic_followup_last=NULL;
 
-void begin()
+
+static void isr();
+static void init_qTD(volatile Transfer_t *t, void *buf, uint32_t len,
+              uint32_t pid, uint32_t data01, bool irq);
+static bool followup_Transfer(Transfer_t *transfer);
+static void add_to_async_followup_list(Transfer_t *first, Transfer_t *last);
+static void remove_from_async_followup_list(Transfer_t *transfer);
+static void add_to_periodic_followup_list(Transfer_t *first, Transfer_t *last);
+static void remove_from_periodic_followup_list(Transfer_t *transfer);
+
+void USBHost::begin()
 {
 	// Teensy 3.6 has USB host power controlled by PTE6
 	PORTE_PCR6 = PORT_PCR_MUX(1);
@@ -139,6 +148,7 @@ void begin()
 	Serial.println((uint32_t)periodictable, HEX);
 
 	// enable interrupts, after this point interruts to all the work
+	attachInterruptVector(IRQ_USBHS, isr);
 	NVIC_ENABLE_IRQ(IRQ_USBHS);
 	USBHS_USBINTR = USBHS_USBINTR_PCE | USBHS_USBINTR_TIE0;
 	USBHS_USBINTR |= USBHS_USBINTR_UEE | USBHS_USBINTR_SEE;
@@ -167,7 +177,7 @@ void begin()
 // PORT_STATE_ACTIVE         4
 
 
-void usbhs_isr()
+void USBHost::isr()
 {
 	uint32_t stat = USBHS_USBSTS;
 	USBHS_USBSTS = stat; // clear pending interrupts
@@ -316,8 +326,8 @@ static uint32_t QH_capabilities2(uint32_t high_bw_mult, uint32_t hub_port_number
 // Create a new pipe.  It's QH is added to the async or periodic schedule,
 // and a halt qTD is added to the QH, so we can grow the qTD list later.
 //
-Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint, uint32_t direction,
-	uint32_t max_packet_len)
+Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
+	uint32_t direction, uint32_t max_packet_len)
 {
 	Pipe_t *pipe;
 	Transfer_t *halt;
@@ -386,7 +396,7 @@ Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint, uint32_t dire
 //   data01  value of DATA0/DATA1 toggle on 1st packet
 //   irq     whether to generate an interrupt when transfer complete
 //
-void init_qTD(volatile Transfer_t *t, void *buf, uint32_t len,
+static void init_qTD(volatile Transfer_t *t, void *buf, uint32_t len,
               uint32_t pid, uint32_t data01, bool irq)
 {
 	t->qtd.alt_next = 1; // 1=terminate
@@ -404,7 +414,7 @@ void init_qTD(volatile Transfer_t *t, void *buf, uint32_t len,
 
 // Create a Transfer and queue it
 //
-bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
+bool USBHost::new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 {
 	Serial.println("new_Transfer");
 	Transfer_t *transfer = allocate_Transfer();
@@ -500,7 +510,7 @@ bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
 	return true;
 }
 
-bool followup_Transfer(Transfer_t *transfer)
+static bool followup_Transfer(Transfer_t *transfer)
 {
 	Serial.print("  Followup ");
 	Serial.println((uint32_t)transfer, HEX);
@@ -521,7 +531,7 @@ bool followup_Transfer(Transfer_t *transfer)
 	return false;
 }
 
-void add_to_async_followup_list(Transfer_t *first, Transfer_t *last)
+static void add_to_async_followup_list(Transfer_t *first, Transfer_t *last)
 {
 	last->next_followup = NULL; // always add to end of list
 	if (async_followup_last == NULL) {
@@ -534,7 +544,7 @@ void add_to_async_followup_list(Transfer_t *first, Transfer_t *last)
 	async_followup_last = last;
 }
 
-void remove_from_async_followup_list(Transfer_t *transfer)
+static void remove_from_async_followup_list(Transfer_t *transfer)
 {
 	Transfer_t *next = transfer->next_followup;
 	Transfer_t *prev = transfer->prev_followup;
@@ -550,7 +560,7 @@ void remove_from_async_followup_list(Transfer_t *transfer)
 	}
 }
 
-void add_to_periodic_followup_list(Transfer_t *first, Transfer_t *last)
+static void add_to_periodic_followup_list(Transfer_t *first, Transfer_t *last)
 {
 	last->next_followup = NULL; // always add to end of list
 	if (periodic_followup_last == NULL) {
@@ -563,7 +573,7 @@ void add_to_periodic_followup_list(Transfer_t *first, Transfer_t *last)
 	periodic_followup_last = last;
 }
 
-void remove_from_periodic_followup_list(Transfer_t *transfer)
+static void remove_from_periodic_followup_list(Transfer_t *transfer)
 {
 	Transfer_t *next = transfer->next_followup;
 	Transfer_t *prev = transfer->prev_followup;

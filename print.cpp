@@ -25,7 +25,7 @@
 #include "USBHost.h"
 
 
-void print(const Transfer_t *transfer)
+void USBHost::print(const Transfer_t *transfer)
 {
 	if (!((uint32_t)transfer & 0xFFFFFFE0)) return;
 	Serial.print("Transfer @ ");
@@ -44,7 +44,7 @@ void print(const Transfer_t *transfer)
 	Serial.println();
 }
 
-void print(const Transfer_t *first, const Transfer_t *last)
+void USBHost::print(const Transfer_t *first, const Transfer_t *last)
 {
 	Serial.print("Transfer Followup List ");
 	Serial.print((uint32_t)first, HEX);
@@ -66,7 +66,7 @@ void print(const Transfer_t *first, const Transfer_t *last)
 	}
 }
 
-void print_token(uint32_t token)
+void USBHost::print_token(uint32_t token)
 {
 	switch ((token >> 8) & 3) {
 	case 0:
@@ -85,7 +85,7 @@ void print_token(uint32_t token)
 	}
 }
 
-void print(const Pipe_t *pipe)
+void USBHost::print(const Pipe_t *pipe)
 {
 	if (!((uint32_t)pipe & 0xFFFFFFE0)) return;
 	Serial.print("Pipe ");
@@ -126,7 +126,7 @@ void print(const Pipe_t *pipe)
 }
 
 
-void print_hexbytes(const void *ptr, uint32_t len)
+void USBHost::print_hexbytes(const void *ptr, uint32_t len)
 {
 	if (ptr == NULL || len == 0) return;
 	const uint8_t *p = (const uint8_t *)ptr;
@@ -138,13 +138,13 @@ void print_hexbytes(const void *ptr, uint32_t len)
 	Serial.println();
 }
 
-void print(const char *s)
+void USBHost::print(const char *s)
 {
 	Serial.println(s);
 	delay(10);
 }
 
-void print(const char *s, int num)
+void USBHost::print(const char *s, int num)
 {
 	Serial.print(s);
 	Serial.println(num);

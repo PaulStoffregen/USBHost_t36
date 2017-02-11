@@ -25,19 +25,19 @@
 #include "USBHost.h"
 
 
-void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
-		uint32_t wValue, uint32_t wIndex, uint32_t wLength)
-{
-	s.word1 = bmRequestType | (bRequest << 8) | (wValue << 16);
-	s.word2 = wIndex | (wLength << 16);
-}
-
 static uint8_t enumbuf[256] __attribute__ ((aligned(16)));
+
+
+static void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
+		uint32_t wValue, uint32_t wIndex, uint32_t wLength);
+static uint32_t assign_addr(void);
+static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen);
+static void pipe_set_addr(Pipe_t *pipe, uint32_t addr);
 
 
 // Create a new device and begin the enumeration process
 //
-Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port)
+Device_t * USBHost::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port)
 {
 	Device_t *dev;
 
@@ -71,7 +71,7 @@ Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port)
 
 
 
-void enumeration(const Transfer_t *transfer)
+void USBHost::enumeration(const Transfer_t *transfer)
 {
 	uint32_t len;
 
@@ -203,28 +203,35 @@ void enumeration(const Transfer_t *transfer)
 	}
 }
 
-uint32_t assign_addr(void)
+static uint32_t assign_addr(void)
 {
 	return 29; // TODO: when multiple devices, assign a unique address
 }
 
-void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen)
+static void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
+		uint32_t wValue, uint32_t wIndex, uint32_t wLength)
+{
+	s.word1 = bmRequestType | (bRequest << 8) | (wValue << 16);
+	s.word2 = wIndex | (wLength << 16);
+}
+
+static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen)
 {
 	Serial.print("pipe_set_maxlen ");
 	Serial.println(maxlen);
 	pipe->qh.capabilities[0] = (pipe->qh.capabilities[0] & 0x8000FFFF) | (maxlen << 16);
 }
 
-void pipe_set_addr(Pipe_t *pipe, uint32_t addr)
+static void pipe_set_addr(Pipe_t *pipe, uint32_t addr)
 {
 	Serial.print("pipe_set_addr ");
 	Serial.println(addr);
 	pipe->qh.capabilities[0] = (pipe->qh.capabilities[0] & 0xFFFFFF80) | addr;
 }
 
-uint32_t pipe_get_addr(Pipe_t *pipe)
-{
-	return pipe->qh.capabilities[0] & 0xFFFFFF80;
-}
+//static uint32_t pipe_get_addr(Pipe_t *pipe)
+//{
+//	return pipe->qh.capabilities[0] & 0xFFFFFF80;
+//}
 
 

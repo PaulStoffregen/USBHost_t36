@@ -31,11 +31,11 @@ static Device_t memory_Device[3];
 static Pipe_t memory_Pipe[6] __attribute__ ((aligned(64)));
 static Transfer_t memory_Transfer[24] __attribute__ ((aligned(64)));
 
-Device_t * free_Device_list = NULL;
-Pipe_t * free_Pipe_list = NULL;
-Transfer_t * free_Transfer_list = NULL;
+static Device_t * free_Device_list = NULL;
+static Pipe_t * free_Pipe_list = NULL;
+static Transfer_t * free_Transfer_list = NULL;
 
-void init_Device_Pipe_Transfer_memory(void)
+void USBHost::init_Device_Pipe_Transfer_memory(void)
 {
 	Device_t *end_device = memory_Device + sizeof(memory_Device)/sizeof(Device_t);
 	for (Device_t *device = memory_Device; device < end_device; device++) {
@@ -51,40 +51,40 @@ void init_Device_Pipe_Transfer_memory(void)
 	}
 }
 
-Device_t * allocate_Device(void)
+Device_t * USBHost::allocate_Device(void)
 {
 	Device_t *device = free_Device_list;
 	if (device) free_Device_list = *(Device_t **)device;
 	return device;
 }
 
-void free_Device(Device_t *device)
+void USBHost::free_Device(Device_t *device)
 {
 	*(Device_t **)device = free_Device_list;
 	free_Device_list = device;
 }
 
-Pipe_t * allocate_Pipe(void)
+Pipe_t * USBHost::allocate_Pipe(void)
 {
 	Pipe_t *pipe = free_Pipe_list;
 	if (pipe) free_Pipe_list = *(Pipe_t **)pipe;
 	return pipe;
 }
 
-void free_Pipe(Pipe_t *pipe)
+void USBHost::free_Pipe(Pipe_t *pipe)
 {
 	*(Pipe_t **)pipe = free_Pipe_list;
 	free_Pipe_list = pipe;
 }
 
-Transfer_t * allocate_Transfer(void)
+Transfer_t * USBHost::allocate_Transfer(void)
 {
 	Transfer_t *transfer = free_Transfer_list;
 	if (transfer) free_Transfer_list = *(Transfer_t **)transfer;
 	return transfer;
 }
 
-void free_Transfer(Transfer_t *transfer)
+void USBHost::free_Transfer(Transfer_t *transfer)
 {
 	*(Transfer_t **)transfer = free_Transfer_list;
 	free_Transfer_list = transfer;
