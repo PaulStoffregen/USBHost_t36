@@ -106,6 +106,28 @@ struct Transfer_struct {
 	uint32_t unused[3];
 };
 
+void begin();
+Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint, uint32_t direction,
+        uint32_t max_packet_len);
+bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len);
+bool followup_Transfer(Transfer_t *transfer);
+void add_to_async_followup_list(Transfer_t *first, Transfer_t *last);
+void remove_from_async_followup_list(Transfer_t *transfer);
+void add_to_periodic_followup_list(Transfer_t *first, Transfer_t *last);
+void remove_from_periodic_followup_list(Transfer_t *transfer);
+
+
+Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port);
+void enumeration(const Transfer_t *transfer);
+void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
+                uint32_t wValue, uint32_t wIndex, uint32_t wLength);
+uint32_t assign_addr(void);
+void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen);
+void pipe_set_addr(Pipe_t *pipe, uint32_t addr);
+uint32_t pipe_get_addr(Pipe_t *pipe);
+
+
+
 void init_Device_Pipe_Transfer_memory(void);
 Device_t * allocate_Device(void);
 void free_Device(Device_t *q);
@@ -114,7 +136,30 @@ void free_Pipe(Pipe_t *q);
 Transfer_t * allocate_Transfer(void);
 void free_Transfer(Transfer_t *q);
 
-class USBHostDriver {
+void print(const Transfer_t *transfer);
+void print(const Transfer_t *first, const Transfer_t *last);
+void print_token(uint32_t token);
+void print(const Pipe_t *pipe);
+void print_hexbytes(const void *ptr, uint32_t len);
+void print(const char *s);
+void print(const char *s, int num);
+
+
+class USBHost {
+public:
+	static void begin();
+protected:
+	static void enumeration(const Transfer_t *transfer);
+	static void isr();
+
+
+
+
+
+};
+
+
+class USBHostDriver : public USBHost {
 public:
 	virtual bool claim_device(Device_t *device) {
 		return false;
@@ -125,6 +170,7 @@ public:
 	virtual void disconnect() {
 	}
 
+	USBHostDriver *next;
 };
 
 class USBHub : public USBHostDriver {
