@@ -60,6 +60,12 @@ struct Device_struct {
 	uint8_t  hub_address;
 	uint8_t  hub_port;
 	uint8_t  enum_state;
+	uint8_t  bDeviceClass;
+	uint8_t  bDeviceSubClass;
+	uint8_t  bDeviceProtocol;
+	uint16_t idVendor;
+	uint16_t idProduct;
+	uint16_t LanguageID;
 };
 
 struct Pipe_struct {
@@ -107,5 +113,26 @@ Pipe_t * allocate_Pipe(void);
 void free_Pipe(Pipe_t *q);
 Transfer_t * allocate_Transfer(void);
 void free_Transfer(Transfer_t *q);
+
+class USBHostDriver {
+public:
+	virtual bool claim_device(Device_t *device) {
+		return false;
+	}
+	virtual bool claim_interface(Device_t *device) {
+		return false;
+	}
+	virtual void disconnect() {
+	}
+
+};
+
+class USBHub : public USBHostDriver {
+
+
+
+};
+
+
 
 #endif
