@@ -29,8 +29,6 @@ static USBHostDriver *available_drivers = NULL;
 static uint8_t enumbuf[256] __attribute__ ((aligned(16)));
 
 
-static void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
-		uint32_t wValue, uint32_t wIndex, uint32_t wLength);
 static void claim_drivers(Device_t *dev);
 static uint32_t assign_addr(void);
 static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen);
@@ -206,6 +204,8 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			Serial.println(enumbuf[4]);
 			Serial.print("bConfigurationValue = ");
 			Serial.println(enumbuf[5]);
+			dev->bmAttributes = enumbuf[7];
+			dev->bMaxPower = enumbuf[8];
 			// TODO: actually do something with interface descriptor?
 			mk_setup(dev->setup, 0, 9, enumbuf[5], 0, 0); // 9=SET_CONFIGURATION
 			new_Transfer(dev->control_pipe, NULL, 0);
@@ -217,7 +217,15 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			// TODO: unlock exclusive access to enumeration process
 			// if any detected devices are waiting, start the first
 			return;
-		case 15: // control transfers for other stuff??
+		case 15: // control transfers for other stuff?
+			// TODO: handle other standard control: set/clear feature, etc
+			for (unsigned int i=0; i < 6; i++) {
+				if (dev->driver[i] == NULL) break; // no more drivers
+				if (dev->driver[i]->control_callback(transfer)) {
+					// this driver processed the control transfer reply
+					return;
+				}
+			}
 		default:
 			return;
 		}
@@ -237,6 +245,7 @@ static void claim_drivers(Device_t *dev)
 				available_drivers = driver->next;
 			}
 			driver->next = NULL;
+			dev->driver[0] = driver;
 			return;
 		}
 		prev = driver;
@@ -248,13 +257,6 @@ static void claim_drivers(Device_t *dev)
 static uint32_t assign_addr(void)
 {
 	return 29; // TODO: when multiple devices, assign a unique address
-}
-
-static void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
-		uint32_t wValue, uint32_t wIndex, uint32_t wLength)
-{
-	s.word1 = bmRequestType | (bRequest << 8) | (wValue << 16);
-	s.word2 = wIndex | (wLength << 16);
 }
 
 static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen)

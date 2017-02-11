@@ -63,6 +63,7 @@ struct Device_struct {
 	Pipe_t   *control_pipe;
 	Device_t *next;
 	setup_t  setup;
+	USBHostDriver *driver[6];
 	uint8_t  speed; // 0=12, 1=1.5, 2=480 Mbit/sec
 	uint8_t  address;
 	uint8_t  hub_address;
@@ -159,6 +160,12 @@ protected:
 	static void print_hexbytes(const void *ptr, uint32_t len);
 	static void print(const char *s);
 	static void print(const char *s, int num);
+	static void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
+			uint32_t wValue, uint32_t wIndex, uint32_t wLength) {
+		s.word1 = bmRequestType | (bRequest << 8) | (wValue << 16);
+		s.word2 = wIndex | (wLength << 16);
+	}
+
 };
 
 
@@ -174,6 +181,9 @@ public:
 	virtual bool claim_interface(Device_t *device, const uint8_t *descriptors) {
 		return false;
 	}
+	virtual bool control_callback(const Transfer_t *transfer) {
+		return false;
+	}
 	virtual void disconnect() {
 	}
 
@@ -182,9 +192,11 @@ public:
 
 class USBHub : public USBHostDriver {
 public:
-	USBHub(); // { driver_ready_for_device(this); }
+	USBHub();
 	virtual bool claim_device(Device_t *device, const uint8_t *descriptors);
-
+	virtual bool control_callback(const Transfer_t *transfer);
+	setup_t setup;
+	uint8_t hub_desc[12];
 };
 
 
