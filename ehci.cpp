@@ -411,56 +411,64 @@ static void init_qTD(volatile Transfer_t *t, void *buf, uint32_t len,
 }
 
 
-// Create a Transfer and queue it
+
+// Create a Control Transfer and queue it
 //
-bool USBHost::new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len)
+bool USBHost::new_Control_Transfer(Device_t *dev, setup_t *setup, void *buf, USBDriver *driver)
 {
-	Serial.println("new_Transfer");
-	Transfer_t *transfer = allocate_Transfer();
+	Transfer_t *transfer, *data, *status;
+	uint32_t status_direction;
+
+	Serial.println("new_Control_Transfer");
+	if (setup->wLength > 16384) return false; // max 16K data for control
+	transfer = allocate_Transfer();
 	if (!transfer) return false;
-	if (pipe->type == 0) {
-		// control transfer
-		Transfer_t *data, *status;
-		uint32_t status_direction;
-		if (len > 16384) {
-			// hopefully we never need more
-			// than 16K in a control transfer
-			free_Transfer(transfer);
-			return false;
-		}
-		status = allocate_Transfer();
-		if (!status) {
-			free_Transfer(transfer);
-			return false;
-		}
-		if (len > 0) {
-			data = allocate_Transfer();
-			if (!data) {
-				free_Transfer(transfer);
-				free_Transfer(status);
-				return false;
-			}
-			init_qTD(data, buffer, len, pipe->direction, 1, false);
-			transfer->qtd.next = (uint32_t)data;
-			data->qtd.next = (uint32_t)status;
-			status_direction = pipe->direction ^ 1;
-		} else {
-			transfer->qtd.next = (uint32_t)status;
-			status_direction = 1; // always IN, USB 2.0 page 226
-		}
-		Serial.print("setup address ");
-		Serial.println((uint32_t)&pipe->device->setup, HEX);
-		init_qTD(transfer, &pipe->device->setup, 8, 2, 0, false);
-		init_qTD(status, NULL, 0, status_direction, 1, true);
-		status->pipe = pipe;
-		status->buffer = buffer;
-		status->length = len;
-		status->qtd.next = 1;
-	} else {
-		// bulk, interrupt or isochronous transfer
+	status = allocate_Transfer();
+	if (!status) {
 		free_Transfer(transfer);
 		return false;
 	}
+	if (setup->wLength > 0) {
+		data = allocate_Transfer();
+		if (!data) {
+			free_Transfer(transfer);
+			free_Transfer(status);
+			return false;
+		}
+		uint32_t pid = (setup->bmRequestType & 0x80) ? 1 : 0;
+		init_qTD(data, buf, setup->wLength, pid, 1, false);
+		transfer->qtd.next = (uint32_t)data;
+		data->qtd.next = (uint32_t)status;
+		status_direction = pid ^ 1;
+	} else {
+		transfer->qtd.next = (uint32_t)status;
+		status_direction = 1; // always IN, USB 2.0 page 226
+	}
+	Serial.print("setup address ");
+	Serial.println((uint32_t)setup, HEX);
+	init_qTD(transfer, setup, 8, 2, 0, false);
+	init_qTD(status, NULL, 0, status_direction, 1, true);
+	status->pipe = dev->control_pipe;
+	status->buffer = buf;
+	status->length = setup->wLength;
+	status->qtd.next = 1;
+	return queue_Transfer(dev->control_pipe, transfer);
+}
+
+
+// Create a Bulk or Interrupt Transfer and queue it
+//
+bool USBHost::new_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBDriver *driver)
+{
+	Serial.println("new_Data_Transfer");
+	//Transfer_t *transfer = allocate_Transfer();
+	//if (!transfer) return false;
+	return false;
+	//return queue_Transfer(pipe, transfer);
+}
+
+bool USBHost::queue_Transfer(Pipe_t *pipe, Transfer_t *transfer)
+{
 	// find halt qTD
 	Transfer_t *halt = (Transfer_t *)(pipe->qh.next);
 	while (!(halt->qtd.token & 0x40)) halt = (Transfer_t *)(halt->qtd.next);

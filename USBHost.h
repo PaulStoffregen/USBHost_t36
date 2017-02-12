@@ -139,13 +139,17 @@ public:
 protected:
 	static Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 		uint32_t direction, uint32_t max_packet_len);
-	static bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len);
+	static bool new_Control_Transfer(Device_t *dev, setup_t *setup,
+		void *buf, USBDriver *driver=NULL);
+	static bool new_Data_Transfer(Pipe_t *pipe, void *buffer,
+		uint32_t len, USBDriver *driver);
 	static Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port);
 	static void enumeration(const Transfer_t *transfer);
 	static void driver_ready_for_device(USBDriver *driver);
 private:
 	static void isr();
 	static void claim_drivers(Device_t *dev);
+	static bool queue_Transfer(Pipe_t *pipe, Transfer_t *transfer);
 	static void init_Device_Pipe_Transfer_memory(void);
 	static Device_t * allocate_Device(void);
 	static void free_Device(Device_t *q);
