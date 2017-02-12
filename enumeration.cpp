@@ -37,6 +37,7 @@ static void pipe_set_addr(Pipe_t *pipe, uint32_t addr);
 
 void USBHost::driver_ready_for_device(USBDriver *driver)
 {
+	driver->device = NULL;
 	driver->next = NULL;
 	if (available_drivers == NULL) {
 		available_drivers = driver;

@@ -49,10 +49,12 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors)
 	// endpoint type must be interrupt
 	if (descriptors[12] != 3) return false;
 	// get the endpoint number, must not be zero
-	uint32_t endpoint = descriptors[11] & 0x0F;
+	endpoint = descriptors[11] & 0x0F;
 	if (endpoint == 0) return false;
 	// get the maximum packet size
 	uint32_t maxsize = descriptors[13] | (descriptors[14] << 8);
+	if (maxsize == 0) return false;
+	if (maxsize > 1) return false; // do hub chips with > 7 ports exist?
 
 	Serial.println(descriptors[9]);
 	Serial.println(descriptors[10]);
@@ -69,6 +71,10 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors)
 	Serial.print("bDeviceProtocol = ");
 	Serial.println(dev->bDeviceProtocol);
 
+	changepipe = NULL;
+	changebits = 0;
+	state = 0;
+
 	// TODO: need a way to do control transfers with our own setup data.
 	mk_setup(dev->setup, 0xA0, 6, 0x2900, 0, sizeof(hub_desc));
 	new_Transfer(dev->control_pipe, hub_desc, sizeof(hub_desc));
@@ -76,19 +82,45 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors)
 	return true;
 }
 
+void USBHub::poweron(uint32_t port)
+{
+	// TODO: need a way to do control transfers with our own setup data.
+	mk_setup(device->setup, 0x23, 3, 8, port, 0);
+	new_Transfer(device->control_pipe, NULL, 0);
+}
+
 bool USBHub::control(const Transfer_t *transfer)
 {
-	if (transfer->buffer == hub_desc) {
-		Serial.println("USBHub control callback");
-		print_hexbytes(transfer->buffer, transfer->length);
+	Serial.println("USBHub control callback");
+	print_hexbytes(transfer->buffer, transfer->length);
+
+	if (state == 0) {
+		// read hub descriptor to learn hub's capabilities
+		if (transfer->buffer != hub_desc) return false;
+		// Hub Descriptor, USB 2.0, 11.23.2.1 page 417
 		if (hub_desc[0] == 9 && hub_desc[1] == 0x29) {
-
-
-
+			numports = hub_desc[2];
+			characteristics = hub_desc[3];
+			powertime = hub_desc[5];
+			// TODO: do we need to use the DeviceRemovable
+			// bits to mke synthetic device connect events?
+			Serial.print("Hub has ");
+			Serial.print(numports);
+			Serial.println(" ports");
+			state = 1;
+			poweron(1);
 		}
+	} else if (state < numports) {
+		// turn on power to all ports
+		poweron(++state);
+	} else if (state == numports) {
+		Serial.println("power turned on to all ports");
+		// TODO: create interrupt pipe for status change notifications
+		changepipe = new_Pipe(device, 3, endpoint, 1, 1);
+		state = 255;
+	} else if (state == 255) {
+		// parse a status response
 	}
-
-
 	return true;
 }
 

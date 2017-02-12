@@ -96,7 +96,7 @@ struct Pipe_struct {
 	uint8_t  type; // 0=control, 1=isochronous, 2=bulk, 3=interrupt
 	uint8_t  direction; // 0=out, 1=in (changes for control, others fixed)
 	uint8_t  unusedbyte[2];
-	void     *callback_object; // TODO: C++ callbacks??
+	USBDriver *callback_object;
 	void     (*callback_function)(const Transfer_t *);
 };
 
@@ -202,7 +202,7 @@ protected:
 	}
 	// Drivers are managed by this single-linked list.  All inactive
 	// (not bound to any device) drivers are linked from
-	// available_drivers is enumeration.cpp.  When bound to a device,
+	// available_drivers in enumeration.cpp.  When bound to a device,
 	// drivers are linked from that Device_t drivers list.
 	USBDriver *next;
 	// When not bound to any device, this must be NULL.
@@ -226,9 +226,17 @@ public:
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors);
 	virtual bool control(const Transfer_t *transfer);
+	void poweron(uint32_t port);
 	setup_t setup; // TODO: use this for our control transfers, not device's
-	uint8_t hub_desc[12];
-	uint32_t change;
+	uint8_t hub_desc[16];
+	uint8_t endpoint;
+	uint8_t numports;
+	uint8_t characteristics;
+	uint8_t powertime;
+	uint8_t state;
+	Pipe_t *changepipe;
+	uint32_t changebits;
+	uint32_t status;
 };
 
 
