@@ -219,9 +219,8 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			return;
 		case 15: // control transfers for other stuff?
 			// TODO: handle other standard control: set/clear feature, etc
-			for (unsigned int i=0; i < 6; i++) {
-				if (dev->driver[i] == NULL) break; // no more drivers
-				if (dev->driver[i]->control_callback(transfer)) {
+			for (USBHostDriver *d = dev->drivers; d != NULL; d = d->next) {
+				if (d->control_callback(transfer)) {
 					// this driver processed the control transfer reply
 					return;
 				}
@@ -245,7 +244,7 @@ static void claim_drivers(Device_t *dev)
 				available_drivers = driver->next;
 			}
 			driver->next = NULL;
-			dev->driver[0] = driver;
+			dev->drivers = driver;
 			return;
 		}
 		prev = driver;

@@ -63,7 +63,8 @@ struct Device_struct {
 	Pipe_t   *control_pipe;
 	Device_t *next;
 	setup_t  setup;
-	USBHostDriver *driver[6];
+	//USBHostDriver *driver[6];
+	USBHostDriver *drivers;
 	uint8_t  speed; // 0=12, 1=1.5, 2=480 Mbit/sec
 	uint8_t  address;
 	uint8_t  hub_address;
