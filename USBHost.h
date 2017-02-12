@@ -31,7 +31,7 @@
 /************************************************/
 
 class USBHost;
-class USBHostDriver;
+class USBDriver;
 typedef struct Device_struct    Device_t;
 typedef struct Pipe_struct      Pipe_t;
 typedef struct Transfer_struct  Transfer_t;
@@ -63,7 +63,7 @@ struct Device_struct {
 	Pipe_t   *control_pipe;
 	Device_t *next;
 	setup_t  setup; // TODO: move this to static in enumeration.cpp
-	USBHostDriver *drivers;
+	USBDriver *drivers;
 	uint8_t  speed; // 0=12, 1=1.5, 2=480 Mbit/sec
 	uint8_t  address;
 	uint8_t  hub_address;
@@ -142,7 +142,7 @@ protected:
 	static bool new_Transfer(Pipe_t *pipe, void *buffer, uint32_t len);
 	static Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port);
 	static void enumeration(const Transfer_t *transfer);
-	static void driver_ready_for_device(USBHostDriver *driver);
+	static void driver_ready_for_device(USBDriver *driver);
 private:
 	static void isr();
 	static void claim_drivers(Device_t *dev);
@@ -166,17 +166,17 @@ protected:
 		s.word1 = bmRequestType | (bRequest << 8) | (wValue << 16);
 		s.word2 = wIndex | (wLength << 16);
 	}
-
 };
 
 
 /************************************************/
-/*  USB Device Drivers                          */
+/*  USB Device Driver Common Base Class         */
 /************************************************/
 
-class USBHostDriver : public USBHost {
+// All USB device drivers inherit from this base class.
+class USBDriver : public USBHost {
 protected:
-	USBHostDriver() : next(NULL), device(NULL) {}
+	USBDriver() : next(NULL), device(NULL) {}
 	// Check if a driver wishes to claim a device or interface or group
 	// of interfaces within a device.  When this function returns true,
 	// the driver is considered bound or loaded for that device.  When
@@ -204,7 +204,7 @@ protected:
 	// (not bound to any device) drivers are linked from
 	// available_drivers is enumeration.cpp.  When bound to a device,
 	// drivers are linked from that Device_t drivers list.
-	USBHostDriver *next;
+	USBDriver *next;
 	// When not bound to any device, this must be NULL.
 	Device_t *device;
 	friend class USBHost;
@@ -215,7 +215,12 @@ public:
 	// query string: manufacturer, product, serial number
 };
 
-class USBHub : public USBHostDriver {
+
+/************************************************/
+/*  USB Device Drivers                          */
+/************************************************/
+
+class USBHub : public USBDriver {
 public:
 	USBHub();
 protected:
