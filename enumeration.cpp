@@ -29,7 +29,6 @@ static USBHostDriver *available_drivers = NULL;
 static uint8_t enumbuf[256] __attribute__ ((aligned(16)));
 
 
-static void claim_drivers(Device_t *dev);
 static uint32_t assign_addr(void);
 static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen);
 static void pipe_set_addr(Pipe_t *pipe, uint32_t addr);
@@ -220,7 +219,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 		case 15: // control transfers for other stuff?
 			// TODO: handle other standard control: set/clear feature, etc
 			for (USBHostDriver *d = dev->drivers; d != NULL; d = d->next) {
-				if (d->control_callback(transfer)) {
+				if (d->control(transfer)) {
 					// this driver processed the control transfer reply
 					return;
 				}
@@ -231,18 +230,19 @@ void USBHost::enumeration(const Transfer_t *transfer)
 	}
 }
 
-static void claim_drivers(Device_t *dev)
+void USBHost::claim_drivers(Device_t *dev)
 {
 	USBHostDriver *driver, *prev=NULL;
 
 	// first check if any driver wishes to claim the entire device
 	for (driver=available_drivers; driver != NULL; driver = driver->next) {
-		if (driver->claim_device(dev, enumbuf + 9)) {
+		if (driver->claim(dev, 0, enumbuf + 9)) {
 			if (prev) {
 				prev->next = driver->next;
 			} else {
 				available_drivers = driver->next;
 			}
+			driver->device = dev;
 			driver->next = NULL;
 			dev->drivers = driver;
 			return;

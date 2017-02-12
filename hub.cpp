@@ -30,8 +30,11 @@ USBHub::USBHub()
 	driver_ready_for_device(this);
 }
 
-bool USBHub::claim_device(Device_t *dev, const uint8_t *descriptors)
+bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors)
 {
+	// only claim entire device, never at interface level
+	if (type != 0) return false;
+
 	Serial.print("USBHub claim_device this=");
 	Serial.println((uint32_t)this, HEX);
 
@@ -66,17 +69,25 @@ bool USBHub::claim_device(Device_t *dev, const uint8_t *descriptors)
 	Serial.print("bDeviceProtocol = ");
 	Serial.println(dev->bDeviceProtocol);
 
+	// TODO: need a way to do control transfers with our own setup data.
 	mk_setup(dev->setup, 0xA0, 6, 0x2900, 0, sizeof(hub_desc));
 	new_Transfer(dev->control_pipe, hub_desc, sizeof(hub_desc));
-	// TODO: need to arrange for callback to this driver from enumeration.cpp
 
 	return true;
 }
 
-bool USBHub::control_callback(const Transfer_t *transfer)
+bool USBHub::control(const Transfer_t *transfer)
 {
-	Serial.println("USBHub control callback");
-	print_hexbytes(transfer->buffer, transfer->length);
+	if (transfer->buffer == hub_desc) {
+		Serial.println("USBHub control callback");
+		print_hexbytes(transfer->buffer, transfer->length);
+		if (hub_desc[0] == 9 && hub_desc[1] == 0x29) {
+
+
+
+		}
+	}
+
 
 	return true;
 }

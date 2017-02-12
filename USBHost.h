@@ -62,8 +62,7 @@ typedef union {
 struct Device_struct {
 	Pipe_t   *control_pipe;
 	Device_t *next;
-	setup_t  setup;
-	//USBHostDriver *driver[6];
+	setup_t  setup; // TODO: move this to static in enumeration.cpp
 	USBHostDriver *drivers;
 	uint8_t  speed; // 0=12, 1=1.5, 2=480 Mbit/sec
 	uint8_t  address;
@@ -146,6 +145,7 @@ protected:
 	static void driver_ready_for_device(USBHostDriver *driver);
 private:
 	static void isr();
+	static void claim_drivers(Device_t *dev);
 	static void init_Device_Pipe_Transfer_memory(void);
 	static Device_t * allocate_Device(void);
 	static void free_Device(Device_t *q);
@@ -175,29 +175,55 @@ protected:
 /************************************************/
 
 class USBHostDriver : public USBHost {
-public:
-	virtual bool claim_device(Device_t *device, const uint8_t *descriptors) {
+protected:
+	USBHostDriver() : next(NULL), device(NULL) {}
+	// Check if a driver wishes to claim a device or interface or group
+	// of interfaces within a device.  When this function returns true,
+	// the driver is considered bound or loaded for that device.  When
+	// new devices are detected, enumeration.cpp calls this function on
+	// all unbound driver objects, to give them an opportunity to bind
+	// to the new device.
+	//   device has its vid&pid, class/subclass fields initialized
+	//   type is 0 for device level, 1 for interface level, 2 for IAD
+	//   descriptors points to the specific descriptor data
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors) {
 		return false;
 	}
-	virtual bool claim_interface(Device_t *device, const uint8_t *descriptors) {
+	// When an unknown (not chapter 9) control transfer completes, this
+	// function is called for all drivers bound to the device.  Return
+	// true means this driver originated this control transfer, so no
+	// more drivers need to be offered an opportunity to process it.
+	virtual bool control(const Transfer_t *transfer) {
 		return false;
 	}
-	virtual bool control_callback(const Transfer_t *transfer) {
-		return false;
-	}
+	// When a device disconnects from the USB, this function is called.
+	// The driver must free all resources it has allocated.
 	virtual void disconnect() {
 	}
-
+	// Drivers are managed by this single-linked list.  All inactive
+	// (not bound to any device) drivers are linked from
+	// available_drivers is enumeration.cpp.  When bound to a device,
+	// drivers are linked from that Device_t drivers list.
 	USBHostDriver *next;
+	// When not bound to any device, this must be NULL.
+	Device_t *device;
+	friend class USBHost;
+public:
+	// TODO: user-level functions
+	// check if device is bound/active/online
+	// query vid, pid
+	// query string: manufacturer, product, serial number
 };
 
 class USBHub : public USBHostDriver {
 public:
 	USBHub();
-	virtual bool claim_device(Device_t *device, const uint8_t *descriptors);
-	virtual bool control_callback(const Transfer_t *transfer);
-	setup_t setup;
+protected:
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors);
+	virtual bool control(const Transfer_t *transfer);
+	setup_t setup; // TODO: use this for our control transfers, not device's
 	uint8_t hub_desc[12];
+	uint32_t change;
 };
 
 
