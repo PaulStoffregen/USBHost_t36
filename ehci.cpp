@@ -451,6 +451,8 @@ bool USBHost::new_Control_Transfer(Device_t *dev, setup_t *setup, void *buf, USB
 	status->pipe = dev->control_pipe;
 	status->buffer = buf;
 	status->length = setup->wLength;
+	status->setup = setup;
+	status->driver = driver;
 	status->qtd.next = 1;
 	return queue_Transfer(dev->control_pipe, transfer);
 }
@@ -479,12 +481,16 @@ bool USBHost::queue_Transfer(Pipe_t *pipe, Transfer_t *transfer)
 	// copy transfer non-token fields to halt
 	halt->qtd.next = transfer->qtd.next;
 	halt->qtd.alt_next = transfer->qtd.alt_next;
-	halt->qtd.buffer[0] = transfer->qtd.buffer[0]; // TODO: optimize...
-	halt->qtd.buffer[1] = transfer->qtd.buffer[1];
+	halt->qtd.buffer[0] = transfer->qtd.buffer[0]; // TODO: optimize memcpy, all
+	halt->qtd.buffer[1] = transfer->qtd.buffer[1]; //       fields except token
 	halt->qtd.buffer[2] = transfer->qtd.buffer[2];
 	halt->qtd.buffer[3] = transfer->qtd.buffer[3];
 	halt->qtd.buffer[4] = transfer->qtd.buffer[4];
 	halt->pipe = pipe;
+	halt->buffer = transfer->buffer;
+	halt->length = transfer->length;
+	halt->setup = transfer->setup;
+	halt->driver = transfer->driver;
 	// find the last qTD we're adding
 	Transfer_t *last = halt;
 	while ((uint32_t)(last->qtd.next) != 1) last = (Transfer_t *)(last->qtd.next);

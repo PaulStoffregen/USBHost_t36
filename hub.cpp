@@ -76,8 +76,8 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors)
 	state = 0;
 
 	// TODO: need a way to do control transfers with our own setup data.
-	mk_setup(dev->setup, 0xA0, 6, 0x2900, 0, sizeof(hub_desc));
-	new_Control_Transfer(dev, &dev->setup, hub_desc);
+	mk_setup(setup, 0xA0, 6, 0x2900, 0, sizeof(hub_desc));
+	new_Control_Transfer(dev, &setup, hub_desc, this);
 
 	return true;
 }
@@ -85,8 +85,8 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors)
 void USBHub::poweron(uint32_t port)
 {
 	// TODO: need a way to do control transfers with our own setup data.
-	mk_setup(device->setup, 0x23, 3, 8, port, 0);
-	new_Control_Transfer(device, &device->setup, NULL);
+	mk_setup(setup, 0x23, 3, 8, port, 0);
+	new_Control_Transfer(device, &setup, NULL, this);
 }
 
 bool USBHub::control(const Transfer_t *transfer)

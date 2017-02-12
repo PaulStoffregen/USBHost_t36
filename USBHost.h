@@ -62,7 +62,6 @@ typedef union {
 struct Device_struct {
 	Pipe_t   *control_pipe;
 	Device_t *next;
-	setup_t  setup; // TODO: move this to static in enumeration.cpp
 	USBDriver *drivers;
 	uint8_t  speed; // 0=12, 1=1.5, 2=480 Mbit/sec
 	uint8_t  address;
@@ -123,10 +122,12 @@ struct Transfer_struct {
 	// of Transfer_t are created, these fields and the
 	// interrupt-on-complete bit in the qTD token are only
 	// set in the last Transfer_t of the list.
-	Pipe_t   *pipe;
-	void     *buffer;
-	uint32_t length;
-	uint32_t unused[3];
+	Pipe_t     *pipe;
+	void       *buffer;
+	uint32_t   length;
+	setup_t    *setup;
+	USBDriver  *driver;
+	uint32_t   unused;
 };
 
 /************************************************/
@@ -140,7 +141,7 @@ protected:
 	static Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 		uint32_t direction, uint32_t max_packet_len);
 	static bool new_Control_Transfer(Device_t *dev, setup_t *setup,
-		void *buf, USBDriver *driver=NULL);
+		void *buf, USBDriver *driver);
 	static bool new_Data_Transfer(Pipe_t *pipe, void *buffer,
 		uint32_t len, USBDriver *driver);
 	static Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port);
@@ -231,7 +232,7 @@ protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors);
 	virtual bool control(const Transfer_t *transfer);
 	void poweron(uint32_t port);
-	setup_t setup; // TODO: use this for our control transfers, not device's
+	setup_t setup;
 	uint8_t hub_desc[16];
 	uint8_t endpoint;
 	uint8_t numports;
