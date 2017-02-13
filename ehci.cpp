@@ -414,7 +414,7 @@ static void init_qTD(volatile Transfer_t *t, void *buf, uint32_t len,
 
 // Create a Control Transfer and queue it
 //
-bool USBHost::new_Control_Transfer(Device_t *dev, setup_t *setup, void *buf, USBDriver *driver)
+bool USBHost::queue_Control_Transfer(Device_t *dev, setup_t *setup, void *buf, USBDriver *driver)
 {
 	Transfer_t *transfer, *data, *status;
 	uint32_t status_direction;
@@ -460,7 +460,7 @@ bool USBHost::new_Control_Transfer(Device_t *dev, setup_t *setup, void *buf, USB
 
 // Create a Bulk or Interrupt Transfer and queue it
 //
-bool USBHost::new_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBDriver *driver)
+bool USBHost::queue_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBDriver *driver)
 {
 	Serial.println("new_Data_Transfer");
 	//Transfer_t *transfer = allocate_Transfer();

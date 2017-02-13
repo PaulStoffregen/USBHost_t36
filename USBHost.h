@@ -140,9 +140,9 @@ public:
 protected:
 	static Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 		uint32_t direction, uint32_t max_packet_len);
-	static bool new_Control_Transfer(Device_t *dev, setup_t *setup,
+	static bool queue_Control_Transfer(Device_t *dev, setup_t *setup,
 		void *buf, USBDriver *driver);
-	static bool new_Data_Transfer(Pipe_t *pipe, void *buffer,
+	static bool queue_Data_Transfer(Pipe_t *pipe, void *buffer,
 		uint32_t len, USBDriver *driver);
 	static Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port);
 	static void enumeration(const Transfer_t *transfer);

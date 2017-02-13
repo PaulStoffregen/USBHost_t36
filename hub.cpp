@@ -75,18 +75,16 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors)
 	changebits = 0;
 	state = 0;
 
-	// TODO: need a way to do control transfers with our own setup data.
 	mk_setup(setup, 0xA0, 6, 0x2900, 0, sizeof(hub_desc));
-	new_Control_Transfer(dev, &setup, hub_desc, this);
+	queue_Control_Transfer(dev, &setup, hub_desc, this);
 
 	return true;
 }
 
 void USBHub::poweron(uint32_t port)
 {
-	// TODO: need a way to do control transfers with our own setup data.
 	mk_setup(setup, 0x23, 3, 8, port, 0);
-	new_Control_Transfer(device, &setup, NULL, this);
+	queue_Control_Transfer(device, &setup, NULL, this);
 }
 
 bool USBHub::control(const Transfer_t *transfer)
