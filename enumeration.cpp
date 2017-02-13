@@ -97,6 +97,12 @@ void USBHost::enumeration(const Transfer_t *transfer)
 	//print(transfer);
 	Device_t *dev = transfer->pipe->device;
 
+	// If a driver created this control transfer, allow it to process the result
+	if (transfer->driver) {
+		transfer->driver->control(transfer);
+		return;
+	}
+
 	while (1) {
 		// Within this large switch/case, "break" means we've done
 		// some work, but more remains to be done in a different
@@ -220,12 +226,6 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			return;
 		case 15: // control transfers for other stuff?
 			// TODO: handle other standard control: set/clear feature, etc
-			for (USBDriver *d = dev->drivers; d != NULL; d = d->next) {
-				if (d->control(transfer)) {
-					// this driver processed the control transfer reply
-					return;
-				}
-			}
 		default:
 			return;
 		}
