@@ -90,18 +90,19 @@ Device_t * USBHost::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_p
 
 void USBHost::enumeration(const Transfer_t *transfer)
 {
+	Device_t *dev;
 	uint32_t len;
-
-	Serial.print("      CALLBACK: ");
-	print_hexbytes(transfer->buffer, transfer->length);
-	//print(transfer);
-	Device_t *dev = transfer->pipe->device;
 
 	// If a driver created this control transfer, allow it to process the result
 	if (transfer->driver) {
 		transfer->driver->control(transfer);
 		return;
 	}
+
+	Serial.println("enumeration:");
+	//print_hexbytes(transfer->buffer, transfer->length);
+	//print(transfer);
+	dev = transfer->pipe->device;
 
 	while (1) {
 		// Within this large switch/case, "break" means we've done

@@ -66,8 +66,8 @@ void USBHost::begin()
 
 	// configure the MPU to allow USBHS DMA to access memory
 	MPU_RGDAAC0 |= 0x30000000;
-	Serial.print("MPU_RGDAAC0 = ");
-	Serial.println(MPU_RGDAAC0, HEX);
+	//Serial.print("MPU_RGDAAC0 = ");
+	//Serial.println(MPU_RGDAAC0, HEX);
 
 	// turn on clocks
 	MCG_C1 |= MCG_C1_IRCLKEN;  // enable MCGIRCLK 32kHz
@@ -79,7 +79,7 @@ void USBHost::begin()
 	//SIM_USBPHYCTL = SIM_USBPHYCTL_USBDISILIM | SIM_USBPHYCTL_USB3VOUTTRG(6); // pg 237
 	SIM_SCGC3 |= SIM_SCGC3_USBHSDCD | SIM_SCGC3_USBHSPHY | SIM_SCGC3_USBHS;
 	USBHSDCD_CLOCK = 33 << 2;
-	print("init USBHS PHY & PLL");
+	//print("init USBHS PHY & PLL");
 	// init process: page 1681-1682
 	USBPHY_CTRL_CLR = (USBPHY_CTRL_SFTRST | USBPHY_CTRL_CLKGATE); // // CTRL pg 1698
 	USBPHY_CTRL_SET = USBPHY_CTRL_ENUTMILEVEL2 | USBPHY_CTRL_ENUTMILEVEL3;
@@ -92,8 +92,8 @@ void USBHost::begin()
 	while ((USBPHY_PLL_SIC & USBPHY_PLL_SIC_PLL_LOCK) == 0) {
 		count++;
 	}
-	Serial.print("PLL locked, waited ");
-	Serial.println(count);
+	//Serial.print("PLL locked, waited ");
+	//Serial.println(count);
 
 	// turn on power to PHY
 	USBPHY_PWD = 0;
@@ -111,13 +111,13 @@ void USBHost::begin()
 	//CORE_PIN9_CONFIG = PORT_PCR_MUX(5);  // CLKOUT on PTC3 Alt5 (Arduino pin 9)
 
 	// now with the PHY up and running, start up USBHS
-	print("begin ehci reset");
+	//print("begin ehci reset");
 	USBHS_USBCMD |= USBHS_USBCMD_RST;
-	count = 0;
+	//count = 0;
 	while (USBHS_USBCMD & USBHS_USBCMD_RST) {
-		count++;
+		//count++;
 	}
-	print(" reset waited ", count);
+	//print(" reset waited ", count);
 
 	init_Device_Pipe_Transfer_memory();
 	for (int i=0; i < 32; i++) {
@@ -162,12 +162,12 @@ void USBHost::begin()
 	//USBHS_PORTSC1 |= USBHS_PORTSC_PFSC; // force 12 Mbit/sec
 	//USBHS_PORTSC1 |= USBHS_PORTSC_PHCD; // phy off
 
-	Serial.print("USBHS_ASYNCLISTADDR = ");
-	Serial.println(USBHS_ASYNCLISTADDR, HEX);
-	Serial.print("USBHS_PERIODICLISTBASE = ");
-	Serial.println(USBHS_PERIODICLISTBASE, HEX);
-	Serial.print("periodictable = ");
-	Serial.println((uint32_t)periodictable, HEX);
+	//Serial.print("USBHS_ASYNCLISTADDR = ");
+	//Serial.println(USBHS_ASYNCLISTADDR, HEX);
+	//Serial.print("USBHS_PERIODICLISTBASE = ");
+	//Serial.println(USBHS_PERIODICLISTBASE, HEX);
+	//Serial.print("periodictable = ");
+	//Serial.println((uint32_t)periodictable, HEX);
 
 	// enable interrupts, after this point interruts to all the work
 	attachInterruptVector(IRQ_USBHS, isr);
@@ -208,19 +208,19 @@ void USBHost::isr()
 	Serial.print("ISR: ");
 	Serial.print(stat, HEX);
 	Serial.println();
-	if (stat & USBHS_USBSTS_UI)  Serial.println(" USB Interrupt");
+	//if (stat & USBHS_USBSTS_UI)  Serial.println(" USB Interrupt");
 	if (stat & USBHS_USBSTS_UEI) Serial.println(" USB Error");
 	if (stat & USBHS_USBSTS_PCI) Serial.println(" Port Change");
-	if (stat & USBHS_USBSTS_FRI) Serial.println(" Frame List Rollover");
+	//if (stat & USBHS_USBSTS_FRI) Serial.println(" Frame List Rollover");
 	if (stat & USBHS_USBSTS_SEI) Serial.println(" System Error");
 	if (stat & USBHS_USBSTS_AAI) Serial.println(" Async Advance (doorbell)");
 	if (stat & USBHS_USBSTS_URI) Serial.println(" Reset Recv");
-	if (stat & USBHS_USBSTS_SRI) Serial.println(" SOF");
+	//if (stat & USBHS_USBSTS_SRI) Serial.println(" SOF");
 	if (stat & USBHS_USBSTS_SLI) Serial.println(" Suspend");
 	if (stat & USBHS_USBSTS_HCH) Serial.println(" Host Halted");
-	if (stat & USBHS_USBSTS_RCL) Serial.println(" Reclamation");
-	if (stat & USBHS_USBSTS_PS)  Serial.println(" Periodic Sched En");
-	if (stat & USBHS_USBSTS_AS)  Serial.println(" Async Sched En");
+	//if (stat & USBHS_USBSTS_RCL) Serial.println(" Reclamation");
+	//if (stat & USBHS_USBSTS_PS)  Serial.println(" Periodic Sched En");
+	//if (stat & USBHS_USBSTS_AS)  Serial.println(" Async Sched En");
 	if (stat & USBHS_USBSTS_NAKI) Serial.println(" NAK");
 	if (stat & USBHS_USBSTS_UAI) Serial.println(" USB Async");
 	if (stat & USBHS_USBSTS_UPI) Serial.println(" USB Periodic");
@@ -229,7 +229,7 @@ void USBHost::isr()
 
 	if (stat & USBHS_USBSTS_UAI) { // completed qTD(s) from the async schedule
 		Serial.println("Async Followup");
-		print(async_followup_first, async_followup_last);
+		//print(async_followup_first, async_followup_last);
 		Transfer_t *p = async_followup_first;
 		while (p) {
 			if (followup_Transfer(p)) {
@@ -243,7 +243,7 @@ void USBHost::isr()
 				p = p->next_followup;
 			}
 		}
-		print(async_followup_first, async_followup_last);
+		//print(async_followup_first, async_followup_last);
 	}
 	if (stat & USBHS_USBSTS_UPI) { // completed qTD(s) from the periodic schedule
 		Serial.println("Periodic Followup");
@@ -413,12 +413,12 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 			pipe->qh.horizontal_link = (uint32_t)&(pipe->qh) | 2; // 2=QH
 			USBHS_ASYNCLISTADDR = (uint32_t)&(pipe->qh);
 			USBHS_USBCMD |= USBHS_USBCMD_ASE; // enable async schedule
-			Serial.println("  first in async list");
+			//Serial.println("  first in async list");
 		} else {
 			// EHCI 1.0: section 4.8.1, page 72
 			pipe->qh.horizontal_link = list->qh.horizontal_link;
 			list->qh.horizontal_link = (uint32_t)&(pipe->qh) | 2;
-			Serial.println("  added to async list");
+			//Serial.println("  added to async list");
 		}
 	} else if (type == 3) {
 		// interrupt: add to periodic schedule
@@ -498,8 +498,8 @@ bool USBHost::queue_Control_Transfer(Device_t *dev, setup_t *setup, void *buf, U
 		transfer->qtd.next = (uint32_t)status;
 		status_direction = 1; // always IN, USB 2.0 page 226
 	}
-	Serial.print("setup address ");
-	Serial.println((uint32_t)setup, HEX);
+	//Serial.print("setup address ");
+	//Serial.println((uint32_t)setup, HEX);
 	init_qTD(transfer, setup, 8, 2, 0, false);
 	init_qTD(status, NULL, 0, status_direction, 1, true);
 	status->pipe = dev->control_pipe;
@@ -609,7 +609,7 @@ bool USBHost::queue_Transfer(Pipe_t *pipe, Transfer_t *transfer)
 	}
 	p->prev_followup = prev;
 	p->next_followup = NULL;
-	print(halt, p);
+	//print(halt, p);
 	// add them to a followup list
 	if (pipe->type == 0 || pipe->type == 2) {
 		// control or bulk
@@ -625,8 +625,8 @@ bool USBHost::queue_Transfer(Pipe_t *pipe, Transfer_t *transfer)
 
 static bool followup_Transfer(Transfer_t *transfer)
 {
-	Serial.print("  Followup ");
-	Serial.println((uint32_t)transfer, HEX);
+	//Serial.print("  Followup ");
+	//Serial.println((uint32_t)transfer, HEX);
 
 	if (!(transfer->qtd.token & 0x80)) {
 		// TODO: check error status
@@ -638,7 +638,7 @@ static bool followup_Transfer(Transfer_t *transfer)
 			}
 		}
 		// do callback function...
-		Serial.println("    completed");
+		//Serial.println("    completed");
 		return true;
 	}
 	return false;
