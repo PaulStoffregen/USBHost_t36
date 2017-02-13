@@ -191,27 +191,31 @@ protected:
 	//   device has its vid&pid, class/subclass fields initialized
 	//   type is 0 for device level, 1 for interface level, 2 for IAD
 	//   descriptors points to the specific descriptor data
-	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors) {
-		return false;
-	}
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors);
+
 	// When an unknown (not chapter 9) control transfer completes, this
 	// function is called for all drivers bound to the device.  Return
 	// true means this driver originated this control transfer, so no
 	// more drivers need to be offered an opportunity to process it.
-	virtual bool control(const Transfer_t *transfer) {
-		return false;
-	}
+	// This function is optional, only needed if the driver uses control
+	// transfers and wishes to be notified when they complete.
+	virtual void control(const Transfer_t *transfer) { }
+
 	// When a device disconnects from the USB, this function is called.
 	// The driver must free all resources it has allocated.
-	virtual void disconnect() {
-	}
+	virtual void disconnect();
+
 	// Drivers are managed by this single-linked list.  All inactive
 	// (not bound to any device) drivers are linked from
 	// available_drivers in enumeration.cpp.  When bound to a device,
 	// drivers are linked from that Device_t drivers list.
 	USBDriver *next;
-	// When not bound to any device, this must be NULL.
+
+	// The device this object instance is bound to.  In words, this
+	// is the specific device this driver is using.  When not bound
+	// to any device, this must be NULL.
 	Device_t *device;
+
 	friend class USBHost;
 public:
 	// TODO: user-level functions
@@ -230,7 +234,8 @@ public:
 	USBHub();
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors);
-	virtual bool control(const Transfer_t *transfer);
+	virtual void control(const Transfer_t *transfer);
+	virtual void disconnect();
 	void poweron(uint32_t port);
 	void getstatus(uint32_t port);
 	void clearstatus(uint32_t port);

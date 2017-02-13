@@ -107,14 +107,13 @@ void USBHub::clearstatus(uint32_t port)
 	queue_Control_Transfer(device, &setup, NULL, this);
 }
 
-bool USBHub::control(const Transfer_t *transfer)
+void USBHub::control(const Transfer_t *transfer)
 {
 	Serial.println("USBHub control callback");
 	print_hexbytes(transfer->buffer, transfer->length);
 
 	if (state == 0) {
 		// read hub descriptor to learn hub's capabilities
-		if (transfer->buffer != hub_desc) return false;
 		// Hub Descriptor, USB 2.0, 11.23.2.1 page 417
 		if (hub_desc[0] == 9 && hub_desc[1] == 0x29) {
 			numports = hub_desc[2];
@@ -147,12 +146,12 @@ bool USBHub::control(const Transfer_t *transfer)
 		  case 0x000000A0: // get hub status
 			Serial.println("New Hub Status");
 			clearstatus(0);
-			return true;
+			return;
 		  case 0x000000A3: // get port status
 			Serial.print("New Port Status, port=");
 			Serial.println(setup.wIndex);
 			clearstatus(setup.wIndex);
-			return true;
+			return;
 		  case 0x00100120: // clear hub status
 			Serial.println("Hub Status Cleared");
 			changebits &= ~1;
@@ -165,7 +164,6 @@ bool USBHub::control(const Transfer_t *transfer)
 		}
 		update_status();
 	}
-	return true;
 }
 
 void USBHub::callback(const Transfer_t *transfer)
@@ -195,6 +193,12 @@ void USBHub::update_status()
 		}
 	}
 }
+
+void USBHub::disconnect()
+{
+	// TODO: free resources
+}
+
 
 /*
 config descriptor from a Multi-TT hub
