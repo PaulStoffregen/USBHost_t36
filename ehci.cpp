@@ -462,12 +462,56 @@ bool USBHost::queue_Control_Transfer(Device_t *dev, setup_t *setup, void *buf, U
 //
 bool USBHost::queue_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBDriver *driver)
 {
+	Transfer_t *transfer, *data, *next;
+	uint8_t *p = (uint8_t *)buffer;
+	uint32_t count;
+	bool last = false;
+
 	Serial.println("new_Data_Transfer");
-	//Transfer_t *transfer = allocate_Transfer();
-	//if (!transfer) return false;
-	return false;
-	//return queue_Transfer(pipe, transfer);
+	// allocate qTDs
+	transfer = allocate_Transfer();
+	if (!transfer) return false;
+	data = transfer;
+	for (count=(len >> 14); count; count--) {
+		next = allocate_Transfer();
+		if (!next) {
+			// free already-allocated qTDs
+			while (1) {
+				next = (Transfer_t *)transfer->qtd.next;
+				free_Transfer(transfer);
+				if (transfer == data) break;
+				transfer = next;
+			}
+			return false;
+		}
+		data->qtd.next = (uint32_t)next;
+		data = next;
+	}
+	// last qTD needs info for followup
+	data->qtd.next = 1;
+	data->pipe = pipe;
+	data->buffer = buffer;
+	data->length = len;
+	data->setup = NULL;
+	data->driver = driver;
+	// initialize all qTDs
+	data = transfer;
+	while (1) {
+		uint32_t count = len;
+		if (count > 16384) {
+			count = 16384;
+		} else {
+			last = true;
+		}
+		init_qTD(data, p, count, pipe->direction, 0, last);
+		if (last) break;
+		p += count;
+		len -= count;
+		data = (Transfer_t *)(data->qtd.next);
+	}
+	return queue_Transfer(pipe, transfer);
 }
+
 
 bool USBHost::queue_Transfer(Pipe_t *pipe, Transfer_t *transfer)
 {
