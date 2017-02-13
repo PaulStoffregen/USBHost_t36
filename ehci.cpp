@@ -24,7 +24,9 @@
 #include <Arduino.h>
 #include "USBHost.h"
 
-static uint32_t periodictable[32] __attribute__ ((aligned(4096), used));
+#define PERIODIC_LIST_SIZE  64
+
+static uint32_t periodictable[PERIODIC_LIST_SIZE] __attribute__ ((aligned(4096), used));
 static uint8_t port_state;
 #define PORT_STATE_DISCONNECTED   0
 #define PORT_STATE_DEBOUNCE       1
@@ -131,7 +133,25 @@ void USBHost::begin()
 	USBHS_ASYNCLISTADDR = 0;
 	USBHS_USBCMD = USBHS_USBCMD_ITC(8) | USBHS_USBCMD_RS |
 		USBHS_USBCMD_ASP(3) | USBHS_USBCMD_ASPE |
-		USBHS_USBCMD_FS2 | USBHS_USBCMD_FS(1);  // periodic table is 32 pointers
+		#if PERIODIC_LIST_SIZE == 8
+		USBHS_USBCMD_FS2 | USBHS_USBCMD_FS(3);
+		#elif PERIODIC_LIST_SIZE == 16
+		USBHS_USBCMD_FS2 | USBHS_USBCMD_FS(2);
+		#elif PERIODIC_LIST_SIZE == 32
+		USBHS_USBCMD_FS2 | USBHS_USBCMD_FS(1);
+		#elif PERIODIC_LIST_SIZE == 64
+		USBHS_USBCMD_FS2 | USBHS_USBCMD_FS(0);
+		#elif PERIODIC_LIST_SIZE == 128
+		USBHS_USBCMD_FS(3);
+		#elif PERIODIC_LIST_SIZE == 256
+		USBHS_USBCMD_FS(2);
+		#elif PERIODIC_LIST_SIZE == 512
+		USBHS_USBCMD_FS(1);
+		#elif PERIODIC_LIST_SIZE == 1024
+		USBHS_USBCMD_FS(0);
+		#else
+		#error "Unsupported PERIODIC_LIST_SIZE"
+		#endif
 
 	// turn on the USB port
 	//USBHS_PORTSC1 = USBHS_PORTSC_PP;
@@ -466,6 +486,8 @@ bool USBHost::queue_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBD
 	uint8_t *p = (uint8_t *)buffer;
 	uint32_t count;
 	bool last = false;
+
+	// TODO: option for zero length packet?  Maybe in Pipe_t fields?
 
 	Serial.println("new_Data_Transfer");
 	// allocate qTDs
