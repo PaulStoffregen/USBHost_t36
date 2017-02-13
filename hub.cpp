@@ -87,6 +87,26 @@ void USBHub::poweron(uint32_t port)
 	queue_Control_Transfer(device, &setup, NULL, this);
 }
 
+void USBHub::getstatus(uint32_t port)
+{
+	if (port == 0) {
+		mk_setup(setup, 0xA0, 0, 0, port, 4); // get hub status
+	} else {
+		mk_setup(setup, 0xA3, 0, 0, port, 4); // get port status
+	}
+	queue_Control_Transfer(device, &setup, &status, this);
+}
+
+void USBHub::clearstatus(uint32_t port)
+{
+	if (port == 0) {
+		mk_setup(setup, 0x20, 1, 0x10, port, 0); // clear hub status
+	} else {
+		mk_setup(setup, 0x23, 1, 0x10, port, 0); // clear port status
+	}
+	queue_Control_Transfer(device, &setup, NULL, this);
+}
+
 bool USBHub::control(const Transfer_t *transfer)
 {
 	Serial.println("USBHub control callback");
@@ -113,7 +133,6 @@ bool USBHub::control(const Transfer_t *transfer)
 		poweron(++state);
 	} else if (state == numports) {
 		Serial.println("power turned on to all ports");
-		// TODO: create interrupt pipe for status change notifications
 		Serial.print("device addr = ");
 		Serial.println(device->address);
 		changepipe = new_Pipe(device, 3, endpoint, 1, 1, 512);
@@ -123,7 +142,28 @@ bool USBHub::control(const Transfer_t *transfer)
 		queue_Data_Transfer(changepipe, &changebits, 1, this);
 		state = 255;
 	} else if (state == 255) {
-		// parse a status response
+		// up and running...
+		switch (setup.word1) {
+		  case 0x000000A0: // get hub status
+			Serial.println("New Hub Status");
+			clearstatus(0);
+			return true;
+		  case 0x000000A3: // get port status
+			Serial.print("New Port Status, port=");
+			Serial.println(setup.wIndex);
+			clearstatus(setup.wIndex);
+			return true;
+		  case 0x00100120: // clear hub status
+			Serial.println("Hub Status Cleared");
+			changebits &= ~1;
+			break;
+		  case 0x00100123: // clear port status
+			Serial.print("Port Status Cleared, port=");
+			Serial.println(setup.wIndex);
+			changebits &= ~(1 << setup.wIndex);
+			break;
+		}
+		update_status();
 	}
 	return true;
 }
@@ -140,9 +180,21 @@ void USBHub::status_change(const Transfer_t *transfer)
 	Serial.print("status = ");
 	Serial.println(changebits, HEX);
 	// TODO: do something with the status change info
+	update_status();
 	queue_Data_Transfer(changepipe, &changebits, 1, this);
 }
 
+void USBHub::update_status()
+{
+	uint32_t i, mask;
+
+	for (i=0, mask=1; i <= numports; i++, mask <<= 1) {
+		if (changebits & mask) {
+			getstatus(i);
+			return;
+		}
+	}
+}
 
 /*
 config descriptor from a Multi-TT hub

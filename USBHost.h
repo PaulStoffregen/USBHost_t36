@@ -232,8 +232,11 @@ protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors);
 	virtual bool control(const Transfer_t *transfer);
 	void poweron(uint32_t port);
+	void getstatus(uint32_t port);
+	void clearstatus(uint32_t port);
 	static void callback(const Transfer_t *transfer);
 	void status_change(const Transfer_t *transfer);
+	void update_status();
 	setup_t setup;
 	uint8_t hub_desc[16];
 	uint8_t endpoint;
