@@ -139,7 +139,7 @@ public:
 	static void begin();
 protected:
 	static Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
-		uint32_t direction, uint32_t max_packet_len);
+		uint32_t direction, uint32_t maxlen, uint32_t interval=0);
 	static bool queue_Control_Transfer(Device_t *dev, setup_t *setup,
 		void *buf, USBDriver *driver);
 	static bool queue_Data_Transfer(Pipe_t *pipe, void *buffer,
@@ -232,6 +232,8 @@ protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors);
 	virtual bool control(const Transfer_t *transfer);
 	void poweron(uint32_t port);
+	static void callback(const Transfer_t *transfer);
+	void status_change(const Transfer_t *transfer);
 	setup_t setup;
 	uint8_t hub_desc[16];
 	uint8_t endpoint;

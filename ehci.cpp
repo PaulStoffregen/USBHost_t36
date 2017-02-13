@@ -24,7 +24,7 @@
 #include <Arduino.h>
 #include "USBHost.h"
 
-#define PERIODIC_LIST_SIZE  64
+#define PERIODIC_LIST_SIZE  32
 
 static uint32_t periodictable[PERIODIC_LIST_SIZE] __attribute__ ((aligned(4096), used));
 static uint8_t port_state;
@@ -47,6 +47,9 @@ static void add_to_async_followup_list(Transfer_t *first, Transfer_t *last);
 static void remove_from_async_followup_list(Transfer_t *transfer);
 static void add_to_periodic_followup_list(Transfer_t *first, Transfer_t *last);
 static void remove_from_periodic_followup_list(Transfer_t *transfer);
+static bool allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
+	uint32_t interval, uint32_t direction, uint32_t *offset, uint32_t *smask,
+	uint32_t *cmask);
 
 void USBHost::begin()
 {
@@ -132,7 +135,7 @@ void USBHost::begin()
 	USBHS_FRINDEX = 0;
 	USBHS_ASYNCLISTADDR = 0;
 	USBHS_USBCMD = USBHS_USBCMD_ITC(8) | USBHS_USBCMD_RS |
-		USBHS_USBCMD_ASP(3) | USBHS_USBCMD_ASPE |
+		USBHS_USBCMD_ASP(3) | USBHS_USBCMD_ASPE | USBHS_USBCMD_PSE |
 		#if PERIODIC_LIST_SIZE == 8
 		USBHS_USBCMD_FS2 | USBHS_USBCMD_FS(3);
 		#elif PERIODIC_LIST_SIZE == 16
@@ -342,15 +345,23 @@ static uint32_t QH_capabilities2(uint32_t high_bw_mult, uint32_t hub_port_number
 		(split_completion_mask << 8) | (interrupt_schedule_mask << 0) );
 }
 
+
+
 // Create a new pipe.  It's QH is added to the async or periodic schedule,
 // and a halt qTD is added to the QH, so we can grow the qTD list later.
+//   dev:       device owning this pipe/endpoint
+//   type:      0=control, 2=bulk, 3=interrupt
+//   endpoint:  0 for control, 1-15 for bulk or interrupt
+//   direction: 0=OUT, 1=IN  (unused for control)
+//   maxlen:    maximum packet size
+//   interval:  polling interval for interrupt, power of 2, unused if control or bulk
 //
 Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
-	uint32_t direction, uint32_t max_packet_len)
+	uint32_t direction, uint32_t maxlen, uint32_t interval)
 {
 	Pipe_t *pipe;
 	Transfer_t *halt;
-	uint32_t c=0, dtc=0;
+	uint32_t c=0, dtc=0, smask=0, cmask=0, offset=0;
 
 	Serial.println("new_Pipe");
 	pipe = allocate_Pipe();
@@ -359,6 +370,17 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 	if (!halt) {
 		free_Pipe(pipe);
 		return NULL;
+	}
+	if (type == 3) {
+		// interrupt transfers require bandwidth & microframe scheduling
+	        if (interval > PERIODIC_LIST_SIZE*8) interval = PERIODIC_LIST_SIZE*8;
+		if (dev->speed < 2 && interval < 8) interval = 8;
+		if (!allocate_interrupt_pipe_bandwidth(dev->speed,
+		    maxlen, interval, direction, &offset, &smask, &cmask)) {
+			free_Transfer(halt);
+			free_Pipe(pipe);
+			return NULL;
+		}
 	}
 	memset(pipe, 0, sizeof(Pipe_t));
 	memset(halt, 0, sizeof(Transfer_t));
@@ -378,10 +400,10 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 	} else if (type == 3) {
 		// interrupt
 	}
-	pipe->qh.capabilities[0] = QH_capabilities1(15, c, max_packet_len, 0,
+	pipe->qh.capabilities[0] = QH_capabilities1(15, c, maxlen, 0,
 		dtc, dev->speed, endpoint, 0, dev->address);
 	pipe->qh.capabilities[1] = QH_capabilities2(1, dev->hub_port,
-		dev->hub_address, 0, 0);
+		dev->hub_address, cmask, smask);
 
 	if (type == 0 || type == 2) {
 		// control or bulk: add to async queue
@@ -401,6 +423,18 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 	} else if (type == 3) {
 		// interrupt: add to periodic schedule
 		// TODO: link it into the periodic table
+
+		// TODO: built tree...
+		//uint32_t finterval = interval >> 3;
+		//for (uint32_t i=offset; i < PERIODIC_LIST_SIZE; i += finterval) {
+		//	uint32_t list = periodictable[i];
+		//}
+
+		// quick hack for testing, just put it into the first table entry
+		pipe->qh.horizontal_link = periodictable[0];
+		periodictable[0] = (uint32_t)&(pipe->qh) | 2; // 2=QH
+		Serial.print("init periodictable with ");
+		Serial.println(periodictable[0], HEX);
 	}
 	return pipe;
 }
@@ -667,4 +701,51 @@ static void remove_from_periodic_followup_list(Transfer_t *transfer)
 		periodic_followup_last = prev;
 	}
 }
+
+
+// Allocate bandwidth for an interrupt pipe.  Given the packet size
+// and other parameters, find the best place to schedule this pipe.
+// Returns true if enough bandwidth is available, and the best
+// frame offset, smask and cmask.  Or returns false if no group
+// of microframes has enough bandwidth available.
+//
+//   speed:     [in]   0=full speed, 1=low speed, 2=high speed
+//   maxlen:    [in]   maximum packet length
+//   interval:  [in]   polling interval, in 125 us micro frames
+//   direction: [in]   0=OUT, 1=IN
+//   offset:    [out]  frame offset, 0 to PERIODIC_LIST_SIZE-1
+//   smask:     [out]  Start Mask
+//   cmask:     [out]  Complete Mask
+//
+static bool allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
+	uint32_t interval, uint32_t direction, uint32_t *offset, uint32_t *smask,
+	uint32_t *cmask)
+{
+	// TODO: actual bandwidth planning needs to go here... but for
+	// now we'll just always pile up everything at the same offset
+	// and same microframe schedule for split transactions, without
+	// even the slighest check whether it all fits.
+
+	if (speed == 2) {
+		// high speed 480 Mbit/sec
+		if (interval == 1) {
+			*smask = 0xFF;
+		} else if (interval == 2) {
+			*smask = 0x55;
+		} else if (interval <= 4) {
+			*smask = 0x11;
+		} else {
+			*smask = 0x01;
+		}
+		*cmask = 0;
+		*offset = 0;
+	} else {
+		// full speed 12 Mbit/sec or low speed 1.5 Mbit/sec
+		*smask = 0x01;
+		*cmask = 0x3C;
+		*offset = 0;
+	}
+	return true;
+}
+
 

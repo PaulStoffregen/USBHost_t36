@@ -114,12 +114,33 @@ bool USBHub::control(const Transfer_t *transfer)
 	} else if (state == numports) {
 		Serial.println("power turned on to all ports");
 		// TODO: create interrupt pipe for status change notifications
-		changepipe = new_Pipe(device, 3, endpoint, 1, 1);
+		Serial.print("device addr = ");
+		Serial.println(device->address);
+		changepipe = new_Pipe(device, 3, endpoint, 1, 1, 512);
+		Serial.print("pipe cap1 = ");
+		Serial.println(changepipe->qh.capabilities[0], HEX);
+		changepipe->callback_function = callback;
+		queue_Data_Transfer(changepipe, &changebits, 1, this);
 		state = 255;
 	} else if (state == 255) {
 		// parse a status response
 	}
 	return true;
+}
+
+void USBHub::callback(const Transfer_t *transfer)
+{
+	Serial.println("HUB Callback (static)");
+	if (transfer->driver) ((USBHub *)(transfer->driver))->status_change(transfer);
+}
+
+void USBHub::status_change(const Transfer_t *transfer)
+{
+	Serial.println("HUB Callback (member)");
+	Serial.print("status = ");
+	Serial.println(changebits, HEX);
+	// TODO: do something with the status change info
+	queue_Data_Transfer(changepipe, &changebits, 1, this);
 }
 
 
