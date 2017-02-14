@@ -27,13 +27,14 @@
 #define PERIODIC_LIST_SIZE  32
 
 static uint32_t periodictable[PERIODIC_LIST_SIZE] __attribute__ ((aligned(4096), used));
-static uint8_t port_state;
+static uint8_t  uframe_bandwidth[PERIODIC_LIST_SIZE*8];
+static uint8_t  port_state;
 #define PORT_STATE_DISCONNECTED   0
 #define PORT_STATE_DEBOUNCE       1
 #define PORT_STATE_RESET          2
 #define PORT_STATE_RECOVERY       3
 #define PORT_STATE_ACTIVE         4
-static Device_t *rootdev=NULL;
+static Device_t   *rootdev=NULL;
 static Transfer_t *async_followup_first=NULL;
 static Transfer_t *async_followup_last=NULL;
 static Transfer_t *periodic_followup_first=NULL;
@@ -123,6 +124,7 @@ void USBHost::begin()
 	for (int i=0; i < 32; i++) {
 		periodictable[i] = 1;
 	}
+	memset(uframe_bandwidth, 0, sizeof(uframe_bandwidth));
 	port_state = PORT_STATE_DISCONNECTED;
 
 	USBHS_USB_SBUSCFG = 1; //  System Bus Interface Configuration
@@ -703,6 +705,30 @@ static void remove_from_periodic_followup_list(Transfer_t *transfer)
 }
 
 
+static uint32_t max4(uint32_t n1, uint32_t n2, uint32_t n3, uint32_t n4)
+{
+	if (n1 > n2) {
+		// can't be n2
+		if (n1 > n3) {
+			// can't be n3
+			if (n1 > n4) return n1;
+		} else {
+			// can't be n1
+			if (n3 > n4) return n3;
+		}
+	} else {
+		// can't be n1
+		if (n2 > n3) {
+			// can't be n3
+			if (n2 > n4) return n2;
+		} else {
+			// can't be n2
+			if (n3 > n4) return n3;
+		}
+	}
+	return n4;
+}
+
 // Allocate bandwidth for an interrupt pipe.  Given the packet size
 // and other parameters, find the best place to schedule this pipe.
 // Returns true if enough bandwidth is available, and the best
@@ -718,32 +744,95 @@ static void remove_from_periodic_followup_list(Transfer_t *transfer)
 //   cmask:     [out]  Complete Mask
 //
 static bool allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
-	uint32_t interval, uint32_t direction, uint32_t *offset, uint32_t *smask,
-	uint32_t *cmask)
+	uint32_t interval, uint32_t direction, uint32_t *offset_out,
+	uint32_t *smask_out, uint32_t *cmask_out)
 {
-	// TODO: actual bandwidth planning needs to go here... but for
-	// now we'll just always pile up everything at the same offset
-	// and same microframe schedule for split transactions, without
-	// even the slighest check whether it all fits.
-
+	Serial.println("allocate_interrupt_pipe_bandwidth");
+	maxlen = (maxlen * 76459) >> 16; // worst case bit stuffing
 	if (speed == 2) {
 		// high speed 480 Mbit/sec
-		if (interval == 1) {
-			*smask = 0xFF;
-		} else if (interval == 2) {
-			*smask = 0x55;
-		} else if (interval <= 4) {
-			*smask = 0x11;
-		} else {
-			*smask = 0x01;
+		uint32_t stime = (55 + 32 + maxlen) >> 5;
+		uint32_t min_offset = 0xFFFFFFFF;
+		uint32_t min_bw = 0xFFFFFFFF;
+		for (uint32_t offset=0; offset < interval; offset++) {
+			uint32_t max_bw = 0;
+			for (uint32_t i=offset; i < PERIODIC_LIST_SIZE*8; i += interval) {
+				uint32_t bw = uframe_bandwidth[i] + stime;
+				if (bw > max_bw) max_bw = bw;
+			}
+			if (max_bw < min_bw) {
+				min_bw = max_bw;
+				min_offset = offset;
+			}
 		}
-		*cmask = 0;
-		*offset = 0;
+		Serial.print(" min_bw = ");
+		Serial.print(min_bw);
+		Serial.print(", at offset = ");
+		Serial.println(min_offset);
+		if (min_bw > 187) return false;
+		for (uint32_t i=min_offset; i < PERIODIC_LIST_SIZE*8; i += interval) {
+			uframe_bandwidth[i] += stime;
+		}
+		*offset_out = min_offset >> 3;
+		if (interval == 1) {
+			*smask_out = 0xFF;
+		} else if (interval == 2) {
+			*smask_out = 0x55 << (min_offset & 1);
+		} else if (interval <= 4) {
+			*smask_out = 0x11 << (min_offset & 3);
+		} else {
+			*smask_out = 0x01 << (min_offset & 7);
+		}
+		*cmask_out = 0;
 	} else {
 		// full speed 12 Mbit/sec or low speed 1.5 Mbit/sec
-		*smask = 0x01;
-		*cmask = 0x3C;
-		*offset = 0;
+		uint32_t stime, ctime;
+		if (direction == 0) {
+			stime = (100 + 32 + maxlen) >> 5;
+			ctime = (55 + 32) >> 5;
+		} else {
+			stime = (40 + 32) >> 5;
+			ctime = (70 + 32 + maxlen) >> 5;
+		}
+		interval = interval >> 3; // can't be zero, earlier check for interval >= 8
+		uint32_t min_shift = 0;
+		uint32_t min_offset = 0xFFFFFFFF;
+		uint32_t min_bw = 0xFFFFFFFF;
+		for (uint32_t offset=0; offset < interval; offset++) {
+			uint32_t max_bw = 0;
+			for (uint32_t i=offset; i < PERIODIC_LIST_SIZE; i += interval) {
+				for (uint32_t j=0; j <= 3; j++) { // max 3 without FSTN
+					uint32_t n = (i << 3) + j;
+					uint32_t bw1 = uframe_bandwidth[n+0] + stime;
+					uint32_t bw2 = uframe_bandwidth[n+2] + ctime;
+					uint32_t bw3 = uframe_bandwidth[n+3] + ctime;
+					uint32_t bw4 = uframe_bandwidth[n+4] + ctime;
+					max_bw = max4(bw1, bw2, bw3, bw4);
+					if (max_bw < min_bw) {
+						min_bw = max_bw;
+						min_offset = i;
+						min_shift = j;
+					}
+				}
+			}
+		}
+		Serial.print(" min_bw = ");
+		Serial.println(min_bw);
+		Serial.print(", at offset = ");
+		Serial.print(min_offset);
+		Serial.print(", shift= ");
+		Serial.println(min_shift);
+		if (min_bw > 187) return false;
+		for (uint32_t i=min_offset; i < PERIODIC_LIST_SIZE; i += interval) {
+			uint32_t n = (i << 3) + min_shift;
+			uframe_bandwidth[n+0] += stime;
+			uframe_bandwidth[n+2] += ctime;
+			uframe_bandwidth[n+3] += ctime;
+			uframe_bandwidth[n+4] += ctime;
+		}
+		*smask_out = 0x01 << min_shift;
+		*cmask_out = 0x1C << min_shift;
+		*offset_out = min_offset;
 	}
 	return true;
 }
