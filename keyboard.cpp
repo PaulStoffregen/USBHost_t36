@@ -21,52 +21,51 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <Arduino.h>
 #include "USBHost.h"
 
-USBHost myusb;
-USBHub hub1;
-USBHub hub2;
-USBHub hub3;
-KeyboardController keyboard;
 
-void setup()
+KeyboardController::KeyboardController()
 {
-	// Test board has a USB data mux (this won't be on final Teensy 3.6)
-	pinMode(32, OUTPUT);	// pin 32 = USB switch, high=connect device
-	digitalWrite(32, LOW);
-	pinMode(30, OUTPUT);	// pin 30 = debug info - use oscilloscope
-	digitalWrite(30, LOW);
-
-	while (!Serial) ; // wait for Arduino Serial Monitor
-	Serial.println("USB Host Testing");
-
-	myusb.begin();
-
-	delay(25);
-	Serial.println("Plug in device...");
-	digitalWrite(32, HIGH); // connect device
-
-#if 0
-	delay(5000);
-	Serial.println();
-	Serial.println("Ring Doorbell");
-	USBHS_USBCMD |= USBHS_USBCMD_IAA;
-	if (rootdev) print(rootdev->control_pipe);
-#endif
+	// TODO: free Device_t, Pipe_t & Transfer_t we will need
+	driver_ready_for_device(this);
 }
 
-
-void loop()
+bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descriptors)
 {
+	Serial.print("KeyboardController claim this=");
+	Serial.println((uint32_t)this, HEX);
+
+	// only claim at interface level
+	if (type != 1) return false;
+
+	return false;
+
+	uint32_t endpoint=1;
+	datapipe = new_Pipe(dev, 3, endpoint, 1, 8, 64);
+	queue_Data_Transfer(datapipe, report, 8, this);
+	return true;
 }
 
-
-void pulse(int usec)
+void KeyboardController::callback(const Transfer_t *transfer)
 {
-	// connect oscilloscope to see these pulses....
-	digitalWriteFast(30, HIGH);
-	delayMicroseconds(usec);
-	digitalWriteFast(30, LOW);
+	Serial.println("KeyboardController Callback (static)");
+	if (transfer->driver) {
+		((KeyboardController *)(transfer->driver))->new_data(transfer);
+	}
 }
+
+void KeyboardController::new_data(const Transfer_t *transfer)
+{
+	Serial.println("KeyboardController Callback (member)");
+	// TODO: parse the new data
+	queue_Data_Transfer(datapipe, report, 8, this);
+}
+
+void KeyboardController::disconnect()
+{
+	// TODO: free resources
+}
+
 
 

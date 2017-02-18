@@ -258,6 +258,27 @@ protected:
 	uint8_t  portstate[7];
 };
 
+class KeyboardController : public USBDriver {
+public:
+	KeyboardController();
+	int     available();
+	int     read();
+	uint8_t getKey();
+	uint8_t getModifiers();
+	uint8_t getOemKey();
+	void    attachPress(void (*keyPressed)());
+	void    attachRelease(void (*keyReleased)());
+protected:
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors);
+	virtual void disconnect();
+	static void callback(const Transfer_t *transfer);
+	void new_data(const Transfer_t *transfer);
+private:
+	void (*keyPressedFunction)();
+	void (*keyReleasedFunction)();
+	Pipe_t *datapipe;
+	uint8_t report[8];
+};
 
 
 #endif
