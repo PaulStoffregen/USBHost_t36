@@ -33,8 +33,7 @@ KeyboardController::KeyboardController()
 
 bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
 {
-	Serial.print("KeyboardController claim this=");
-	Serial.println((uint32_t)this, HEX);
+	println("KeyboardController claim this=", (uint32_t)this, HEX);
 
 	// only claim at interface level
 	if (type != 1) return false;
@@ -50,19 +49,16 @@ bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descripto
 	if (descriptors[18] != 7) return false;
 	if (descriptors[19] != 5) return false; // endpoint descriptor
 	uint32_t endpoint = descriptors[20];
-	Serial.print("ep = ");
-	Serial.println(endpoint, HEX);
+	println("ep = ", endpoint, HEX);
 	if ((endpoint & 0xF0) != 0x80) return false; // must be IN direction
 	endpoint &= 0x0F;
 	if (endpoint == 0) return false;
 	if (descriptors[21] != 3) return false; // must be interrupt type
 	uint32_t size = descriptors[22] | (descriptors[23] << 8);
-	Serial.print("packet size = ");
-	Serial.println(size);
+	println("packet size = ", size);
 	if (size != 8) return false; // must be 8 bytes for Keyboard Boot Protocol
 	uint32_t interval = descriptors[24];
-	Serial.print("polling interval = ");
-	Serial.println(interval);
+	println("polling interval = ", interval);
 	datapipe = new_Pipe(dev, 3, endpoint, 1, 8, 64);
 	datapipe->callback_function = callback;
 	queue_Data_Transfer(datapipe, report, 8, this);
@@ -71,7 +67,7 @@ bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descripto
 
 void KeyboardController::callback(const Transfer_t *transfer)
 {
-	Serial.println("KeyboardController Callback (static)");
+	println("KeyboardController Callback (static)");
 	if (transfer->driver) {
 		((KeyboardController *)(transfer->driver))->new_data(transfer);
 	}
@@ -79,8 +75,8 @@ void KeyboardController::callback(const Transfer_t *transfer)
 
 void KeyboardController::new_data(const Transfer_t *transfer)
 {
-	Serial.println("KeyboardController Callback (member)");
-	Serial.print("  KB Data: ");
+	println("KeyboardController Callback (member)");
+	print("  KB Data: ");
 	print_hexbytes(transfer->buffer, 8);
 	// TODO: parse the new data
 	queue_Data_Transfer(datapipe, report, 8, this);

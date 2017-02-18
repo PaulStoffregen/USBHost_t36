@@ -48,9 +48,6 @@ static void add_to_async_followup_list(Transfer_t *first, Transfer_t *last);
 static void remove_from_async_followup_list(Transfer_t *transfer);
 static void add_to_periodic_followup_list(Transfer_t *first, Transfer_t *last);
 static void remove_from_periodic_followup_list(Transfer_t *transfer);
-static bool allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
-	uint32_t interval, uint32_t direction, uint32_t *offset, uint32_t *smask,
-	uint32_t *cmask);
 
 void USBHost::begin()
 {
@@ -59,24 +56,20 @@ void USBHost::begin()
 	GPIOE_PDDR |= (1<<6);
 	GPIOE_PSOR = (1<<6); // turn on USB host power
 	delay(10);
-	Serial.print("sizeof Device = ");
-	Serial.println(sizeof(Device_t));
-	Serial.print("sizeof Pipe = ");
-	Serial.println(sizeof(Pipe_t));
-	Serial.print("sizeof Transfer = ");
-	Serial.println(sizeof(Transfer_t));
+	println("sizeof Device = ", sizeof(Device_t));
+	println("sizeof Pipe = ", sizeof(Pipe_t));
+	println("sizeof Transfer = ", sizeof(Transfer_t));
 
 	// configure the MPU to allow USBHS DMA to access memory
 	MPU_RGDAAC0 |= 0x30000000;
-	//Serial.print("MPU_RGDAAC0 = ");
-	//Serial.println(MPU_RGDAAC0, HEX);
+	//println("MPU_RGDAAC0 = ", MPU_RGDAAC0, HEX);
 
 	// turn on clocks
 	MCG_C1 |= MCG_C1_IRCLKEN;  // enable MCGIRCLK 32kHz
 	OSC0_CR |= OSC_ERCLKEN;
 	SIM_SOPT2 |= SIM_SOPT2_USBREGEN; // turn on USB regulator
 	SIM_SOPT2 &= ~SIM_SOPT2_USBSLSRC; // use IRC for slow clock
-	print("power up USBHS PHY");
+	println("power up USBHS PHY");
 	SIM_USBPHYCTL |= SIM_USBPHYCTL_USBDISILIM; // disable USB current limit
 	//SIM_USBPHYCTL = SIM_USBPHYCTL_USBDISILIM | SIM_USBPHYCTL_USB3VOUTTRG(6); // pg 237
 	SIM_SCGC3 |= SIM_SCGC3_USBHSDCD | SIM_SCGC3_USBHSPHY | SIM_SCGC3_USBHS;
@@ -94,8 +87,7 @@ void USBHost::begin()
 	while ((USBPHY_PLL_SIC & USBPHY_PLL_SIC_PLL_LOCK) == 0) {
 		count++;
 	}
-	//Serial.print("PLL locked, waited ");
-	//Serial.println(count);
+	//println("PLL locked, waited ", count);
 
 	// turn on power to PHY
 	USBPHY_PWD = 0;
@@ -119,7 +111,7 @@ void USBHost::begin()
 	while (USBHS_USBCMD & USBHS_USBCMD_RST) {
 		//count++;
 	}
-	//print(" reset waited ", count);
+	//println(" reset waited ", count);
 
 	init_Device_Pipe_Transfer_memory();
 	for (int i=0; i < 32; i++) {
@@ -165,12 +157,9 @@ void USBHost::begin()
 	//USBHS_PORTSC1 |= USBHS_PORTSC_PFSC; // force 12 Mbit/sec
 	//USBHS_PORTSC1 |= USBHS_PORTSC_PHCD; // phy off
 
-	//Serial.print("USBHS_ASYNCLISTADDR = ");
-	//Serial.println(USBHS_ASYNCLISTADDR, HEX);
-	//Serial.print("USBHS_PERIODICLISTBASE = ");
-	//Serial.println(USBHS_PERIODICLISTBASE, HEX);
-	//Serial.print("periodictable = ");
-	//Serial.println((uint32_t)periodictable, HEX);
+	//println("USBHS_ASYNCLISTADDR = ", USBHS_ASYNCLISTADDR, HEX);
+	//println("USBHS_PERIODICLISTBASE = ", USBHS_PERIODICLISTBASE, HEX);
+	//println("periodictable = ", (uint32_t)periodictable, HEX);
 
 	// enable interrupts, after this point interruts to all the work
 	attachInterruptVector(IRQ_USBHS, isr);
@@ -207,31 +196,29 @@ void USBHost::isr()
 	uint32_t stat = USBHS_USBSTS;
 	USBHS_USBSTS = stat; // clear pending interrupts
 	//stat &= USBHS_USBINTR; // mask away unwanted interrupts
-	Serial.println();
-	Serial.print("ISR: ");
-	Serial.print(stat, HEX);
-	Serial.println();
-	//if (stat & USBHS_USBSTS_UI)  Serial.println(" USB Interrupt");
-	if (stat & USBHS_USBSTS_UEI) Serial.println(" USB Error");
-	if (stat & USBHS_USBSTS_PCI) Serial.println(" Port Change");
-	//if (stat & USBHS_USBSTS_FRI) Serial.println(" Frame List Rollover");
-	if (stat & USBHS_USBSTS_SEI) Serial.println(" System Error");
-	if (stat & USBHS_USBSTS_AAI) Serial.println(" Async Advance (doorbell)");
-	if (stat & USBHS_USBSTS_URI) Serial.println(" Reset Recv");
-	//if (stat & USBHS_USBSTS_SRI) Serial.println(" SOF");
-	if (stat & USBHS_USBSTS_SLI) Serial.println(" Suspend");
-	if (stat & USBHS_USBSTS_HCH) Serial.println(" Host Halted");
-	//if (stat & USBHS_USBSTS_RCL) Serial.println(" Reclamation");
-	//if (stat & USBHS_USBSTS_PS)  Serial.println(" Periodic Sched En");
-	//if (stat & USBHS_USBSTS_AS)  Serial.println(" Async Sched En");
-	if (stat & USBHS_USBSTS_NAKI) Serial.println(" NAK");
-	if (stat & USBHS_USBSTS_UAI) Serial.println(" USB Async");
-	if (stat & USBHS_USBSTS_UPI) Serial.println(" USB Periodic");
-	if (stat & USBHS_USBSTS_TI0) Serial.println(" Timer0");
-	if (stat & USBHS_USBSTS_TI1) Serial.println(" Timer1");
+	println();
+	println("ISR: ", stat, HEX);
+	//if (stat & USBHS_USBSTS_UI)  println(" USB Interrupt");
+	if (stat & USBHS_USBSTS_UEI) println(" USB Error");
+	if (stat & USBHS_USBSTS_PCI) println(" Port Change");
+	//if (stat & USBHS_USBSTS_FRI) println(" Frame List Rollover");
+	if (stat & USBHS_USBSTS_SEI) println(" System Error");
+	if (stat & USBHS_USBSTS_AAI) println(" Async Advance (doorbell)");
+	if (stat & USBHS_USBSTS_URI) println(" Reset Recv");
+	//if (stat & USBHS_USBSTS_SRI) println(" SOF");
+	if (stat & USBHS_USBSTS_SLI) println(" Suspend");
+	if (stat & USBHS_USBSTS_HCH) println(" Host Halted");
+	//if (stat & USBHS_USBSTS_RCL) println(" Reclamation");
+	//if (stat & USBHS_USBSTS_PS)  println(" Periodic Sched En");
+	//if (stat & USBHS_USBSTS_AS)  println(" Async Sched En");
+	if (stat & USBHS_USBSTS_NAKI) println(" NAK");
+	if (stat & USBHS_USBSTS_UAI) println(" USB Async");
+	if (stat & USBHS_USBSTS_UPI) println(" USB Periodic");
+	if (stat & USBHS_USBSTS_TI0) println(" Timer0");
+	if (stat & USBHS_USBSTS_TI1) println(" Timer1");
 
 	if (stat & USBHS_USBSTS_UAI) { // completed qTD(s) from the async schedule
-		Serial.println("Async Followup");
+		println("Async Followup");
 		//print(async_followup_first, async_followup_last);
 		Transfer_t *p = async_followup_first;
 		while (p) {
@@ -249,7 +236,7 @@ void USBHost::isr()
 		//print(async_followup_first, async_followup_last);
 	}
 	if (stat & USBHS_USBSTS_UPI) { // completed qTD(s) from the periodic schedule
-		Serial.println("Periodic Followup");
+		println("Periodic Followup");
 		Transfer_t *p = periodic_followup_first;
 		while (p) {
 			if (followup_Transfer(p)) {
@@ -267,16 +254,14 @@ void USBHost::isr()
 
 	if (stat & USBHS_USBSTS_PCI) { // port change detected
 		const uint32_t portstat = USBHS_PORTSC1;
-		Serial.print("port change: ");
-		Serial.print(portstat, HEX);
-		Serial.println();
+		println("port change: ", portstat, HEX);
 		USBHS_PORTSC1 = portstat | (USBHS_PORTSC_OCC|USBHS_PORTSC_PEC|USBHS_PORTSC_CSC);
 		if (portstat & USBHS_PORTSC_OCC) {
-			Serial.println("  overcurrent change");
+			println("  overcurrent change");
 		}
 		if (portstat & USBHS_PORTSC_CSC) {
 			if (portstat & USBHS_PORTSC_CCS) {
-				Serial.println("    connect");
+				println("    connect");
 				if (port_state == PORT_STATE_DISCONNECTED
 				  || port_state == PORT_STATE_DEBOUNCE) {
 					// 100 ms debounce (USB 2.0: TATTDB, page 150 & 188)
@@ -287,7 +272,7 @@ void USBHost::isr()
 					stat &= ~USBHS_USBSTS_TI0;
 				}
 			} else {
-				Serial.println("    disconnect");
+				println("    disconnect");
 				port_state = PORT_STATE_DISCONNECTED;
 				USBPHY_CTRL_CLR = USBPHY_CTRL_ENHOSTDISCONDETECT;
 				// TODO: delete & clean up device state...
@@ -295,9 +280,9 @@ void USBHost::isr()
 		}
 		if (portstat & USBHS_PORTSC_PEC) {
 			// PEC bit only detects disable
-			Serial.println("  disable");
+			println("  disable");
 		} else if (port_state == PORT_STATE_RESET && portstat & USBHS_PORTSC_PE) {
-			Serial.println("  port enabled");
+			println("  port enabled");
 			port_state = PORT_STATE_RECOVERY;
 			// 10 ms reset recover (USB 2.0: TRSTRCY, page 151 & 188)
 			USBHS_GPTIMER0LD = 10000; // microseconds
@@ -308,19 +293,19 @@ void USBHost::isr()
 			}
 		}
 		if (portstat & USBHS_PORTSC_FPR) {
-			Serial.println("  force resume");
+			println("  force resume");
 
 		}
 	}
 	if (stat & USBHS_USBSTS_TI0) { // timer 0
-		Serial.println("timer");
+		println("timer");
 		if (port_state == PORT_STATE_DEBOUNCE) {
 			port_state = PORT_STATE_RESET;
 			USBHS_PORTSC1 |= USBHS_PORTSC_PR; // begin reset sequence
-			Serial.println("  begin reset");
+			println("  begin reset");
 		} else if (port_state == PORT_STATE_RECOVERY) {
 			port_state = PORT_STATE_ACTIVE;
-			Serial.println("  end recovery");
+			println("  end recovery");
 
 			//  HCSPARAMS  TTCTRL  page 1671
 			uint32_t speed = (USBHS_PORTSC1 >> 26) & 3;
@@ -366,7 +351,7 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 	Transfer_t *halt;
 	uint32_t c=0, dtc=0, smask=0, cmask=0, offset=0;
 
-	Serial.println("new_Pipe");
+	println("new_Pipe");
 	pipe = allocate_Pipe();
 	if (!pipe) return NULL;
 	halt = allocate_Transfer();
@@ -416,12 +401,12 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 			pipe->qh.horizontal_link = (uint32_t)&(pipe->qh) | 2; // 2=QH
 			USBHS_ASYNCLISTADDR = (uint32_t)&(pipe->qh);
 			USBHS_USBCMD |= USBHS_USBCMD_ASE; // enable async schedule
-			//Serial.println("  first in async list");
+			//println("  first in async list");
 		} else {
 			// EHCI 1.0: section 4.8.1, page 72
 			pipe->qh.horizontal_link = list->qh.horizontal_link;
 			list->qh.horizontal_link = (uint32_t)&(pipe->qh) | 2;
-			//Serial.println("  added to async list");
+			//println("  added to async list");
 		}
 	} else if (type == 3) {
 		// interrupt: add to periodic schedule
@@ -436,8 +421,7 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 		// quick hack for testing, just put it into the first table entry
 		pipe->qh.horizontal_link = periodictable[0];
 		periodictable[0] = (uint32_t)&(pipe->qh) | 2; // 2=QH
-		Serial.print("init periodictable with ");
-		Serial.println(periodictable[0], HEX);
+		println("init periodictable with ", periodictable[0], HEX);
 	}
 	return pipe;
 }
@@ -476,7 +460,7 @@ bool USBHost::queue_Control_Transfer(Device_t *dev, setup_t *setup, void *buf, U
 	Transfer_t *transfer, *data, *status;
 	uint32_t status_direction;
 
-	Serial.println("new_Control_Transfer");
+	println("new_Control_Transfer");
 	if (setup->wLength > 16384) return false; // max 16K data for control
 	transfer = allocate_Transfer();
 	if (!transfer) return false;
@@ -501,8 +485,7 @@ bool USBHost::queue_Control_Transfer(Device_t *dev, setup_t *setup, void *buf, U
 		transfer->qtd.next = (uint32_t)status;
 		status_direction = 1; // always IN, USB 2.0 page 226
 	}
-	//Serial.print("setup address ");
-	//Serial.println((uint32_t)setup, HEX);
+	//println("setup address ", (uint32_t)setup, HEX);
 	init_qTD(transfer, setup, 8, 2, 0, false);
 	init_qTD(status, NULL, 0, status_direction, 1, true);
 	status->pipe = dev->control_pipe;
@@ -526,7 +509,7 @@ bool USBHost::queue_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBD
 
 	// TODO: option for zero length packet?  Maybe in Pipe_t fields?
 
-	Serial.println("new_Data_Transfer");
+	println("new_Data_Transfer");
 	// allocate qTDs
 	transfer = allocate_Transfer();
 	if (!transfer) return false;
@@ -628,8 +611,7 @@ bool USBHost::queue_Transfer(Pipe_t *pipe, Transfer_t *transfer)
 
 static bool followup_Transfer(Transfer_t *transfer)
 {
-	//Serial.print("  Followup ");
-	//Serial.println((uint32_t)transfer, HEX);
+	//println("  Followup ", (uint32_t)transfer, HEX);
 
 	if (!(transfer->qtd.token & 0x80)) {
 		// TODO: check error status
@@ -641,7 +623,7 @@ static bool followup_Transfer(Transfer_t *transfer)
 			}
 		}
 		// do callback function...
-		//Serial.println("    completed");
+		//println("    completed");
 		return true;
 	}
 	return false;
@@ -744,11 +726,11 @@ static uint32_t max4(uint32_t n1, uint32_t n2, uint32_t n3, uint32_t n4)
 //   smask:     [out]  Start Mask
 //   cmask:     [out]  Complete Mask
 //
-static bool allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
+bool USBHost::allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
 	uint32_t interval, uint32_t direction, uint32_t *offset_out,
 	uint32_t *smask_out, uint32_t *cmask_out)
 {
-	Serial.println("allocate_interrupt_pipe_bandwidth");
+	println("allocate_interrupt_pipe_bandwidth");
 	maxlen = (maxlen * 76459) >> 16; // worst case bit stuffing
 	if (speed == 2) {
 		// high speed 480 Mbit/sec
@@ -766,10 +748,10 @@ static bool allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
 				min_offset = offset;
 			}
 		}
-		Serial.print(" min_bw = ");
-		Serial.print(min_bw);
-		Serial.print(", at offset = ");
-		Serial.println(min_offset);
+		print(" min_bw = ");
+		print(min_bw);
+		print(", at offset = ");
+		println(min_offset);
 		if (min_bw > 187) return false;
 		for (uint32_t i=min_offset; i < PERIODIC_LIST_SIZE*8; i += interval) {
 			uframe_bandwidth[i] += stime;
@@ -821,12 +803,12 @@ static bool allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
 				}
 			}
 		}
-		Serial.print(" min_bw = ");
-		Serial.println(min_bw);
-		Serial.print(", at offset = ");
-		Serial.print(min_offset);
-		Serial.print(", shift= ");
-		Serial.println(min_shift);
+		print(" min_bw = ");
+		println(min_bw);
+		print(", at offset = ");
+		print(min_offset);
+		print(", shift= ");
+		println(min_shift);
 		if (min_bw > 187) return false;
 		for (uint32_t i=min_offset; i < PERIODIC_LIST_SIZE; i += interval) {
 			uint32_t n = (i << 3) + min_shift;

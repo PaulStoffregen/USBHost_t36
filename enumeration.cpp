@@ -57,14 +57,14 @@ Device_t * USBHost::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_p
 {
 	Device_t *dev;
 
-	Serial.print("new_Device: ");
+	print("new_Device: ");
 	switch (speed) {
-	  case 0: Serial.print("12"); break;
-	  case 1: Serial.print("1.5"); break;
-	  case 2: Serial.print("480"); break;
-	  default: Serial.print("??");
+	  case 0: print("12"); break;
+	  case 1: print("1.5"); break;
+	  case 2: print("480"); break;
+	  default: print("??");
 	}
-	Serial.println(" Mbit/sec");
+	println(" Mbit/sec");
 	dev = allocate_Device();
 	if (!dev) return NULL;
 	memset(dev, 0, sizeof(Device_t));
@@ -100,7 +100,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 		return;
 	}
 
-	Serial.println("enumeration:");
+	println("enumeration:");
 	//print_hexbytes(transfer->buffer, transfer->length);
 	//print(transfer);
 	dev = transfer->pipe->device;
@@ -199,8 +199,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			return;
 		case 12: // read 9 bytes, request all of config desc
 			enumlen = enumbuf[2] | (enumbuf[3] << 8);
-			Serial.print("Config data length = ");
-			Serial.println(enumlen);
+			println("Config data length = ", enumlen);
 			if (enumlen > sizeof(enumbuf)) {
 				// TODO: how to handle device with too much config data
 			}
@@ -209,10 +208,8 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 13;
 			return;
 		case 13: // read all config desc, send set config
-			Serial.print("bNumInterfaces = ");
-			Serial.println(enumbuf[4]);
-			Serial.print("bConfigurationValue = ");
-			Serial.println(enumbuf[5]);
+			println("bNumInterfaces = ", enumbuf[4]);
+			println("bConfigurationValue = ", enumbuf[5]);
 			dev->bmAttributes = enumbuf[7];
 			dev->bMaxPower = enumbuf[8];
 			// TODO: actually do something with interface descriptor?
@@ -259,16 +256,16 @@ void USBHost::claim_drivers(Device_t *dev)
 	while (p < end) {
 		uint8_t desclen = *p;
 		uint8_t desctype = *(p+1);
-		Serial.print("Descriptor ");
-		Serial.print(desctype);
-		Serial.print(" = ");
-		if (desctype == 4) Serial.println("INTERFACE");
-		else if (desctype == 5) Serial.println("ENDPOINT");
-		else if (desctype == 6) Serial.println("DEV_QUALIFIER");
-		else if (desctype == 7) Serial.println("OTHER_SPEED");
-		else if (desctype == 11) Serial.println("IAD");
-		else if (desctype == 33) Serial.println("HID");
-		else Serial.println(" ???");
+		print("Descriptor ");
+		print(desctype);
+		print(" = ");
+		if (desctype == 4) println("INTERFACE");
+		else if (desctype == 5) println("ENDPOINT");
+		else if (desctype == 6) println("DEV_QUALIFIER");
+		else if (desctype == 7) println("OTHER_SPEED");
+		else if (desctype == 11) println("IAD");
+		else if (desctype == 33) println("HID");
+		else println(" ???");
 		if (desctype == 11 && desclen == 8) {
 			// TODO: parse IAD, ask drivers for claim
 			// TODO: how to skip over all interfaces IAD represented
@@ -308,15 +305,11 @@ static uint32_t assign_addr(void)
 
 static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen)
 {
-	Serial.print("pipe_set_maxlen ");
-	Serial.println(maxlen);
 	pipe->qh.capabilities[0] = (pipe->qh.capabilities[0] & 0x8000FFFF) | (maxlen << 16);
 }
 
 static void pipe_set_addr(Pipe_t *pipe, uint32_t addr)
 {
-	Serial.print("pipe_set_addr ");
-	Serial.println(addr);
 	pipe->qh.capabilities[0] = (pipe->qh.capabilities[0] & 0xFFFFFF80) | addr;
 }
 

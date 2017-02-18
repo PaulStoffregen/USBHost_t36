@@ -158,14 +158,45 @@ private:
 	static void free_Pipe(Pipe_t *q);
 	static Transfer_t * allocate_Transfer(void);
 	static void free_Transfer(Transfer_t *q);
+	static bool allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
+		uint32_t interval, uint32_t direction, uint32_t *offset_out,
+		uint32_t *smask_out, uint32_t *cmask_out);
 protected:
 	static void print(const Transfer_t *transfer);
 	static void print(const Transfer_t *first, const Transfer_t *last);
 	static void print_token(uint32_t token);
 	static void print(const Pipe_t *pipe);
 	static void print_hexbytes(const void *ptr, uint32_t len);
-	static void print(const char *s);
-	static void print(const char *s, int num);
+	static void print(const char *s)	{ Serial.print(s); }
+	static void print(int n)		{ Serial.print(n); }
+	static void print(unsigned int n)	{ Serial.print(n); }
+	static void print(long n)		{ Serial.print(n); }
+	static void print(unsigned long n)	{ Serial.print(n); }
+	static void println(const char *s)	{ Serial.println(s); }
+	static void println(int n)		{ Serial.println(n); }
+	static void println(unsigned int n)	{ Serial.println(n); }
+	static void println(long n)		{ Serial.println(n); }
+	static void println(unsigned long n)	{ Serial.println(n); }
+	static void println()			{ Serial.println(); }
+	static void print(uint32_t n, uint8_t b) { Serial.print(n, b); }
+	static void println(uint32_t n, uint8_t b) { Serial.print(n, b); }
+	static void println(const char *s, int n) {
+		Serial.print(s); Serial.println(n); }
+	static void println(const char *s, unsigned int n) {
+		Serial.print(s); Serial.println(n); }
+	static void println(const char *s, long n) {
+		Serial.print(s); Serial.println(n); }
+	static void println(const char *s, unsigned long n) {
+		Serial.print(s); Serial.println(n); }
+	static void println(const char *s, int n, uint8_t b) {
+		Serial.print(s); Serial.println(n, b); }
+	static void println(const char *s, unsigned int n, uint8_t b) {
+		Serial.print(s); Serial.println(n, b); }
+	static void println(const char *s, long n, uint8_t b) {
+		Serial.print(s); Serial.println(n, b); }
+	static void println(const char *s, unsigned long n, uint8_t b) {
+		Serial.print(s); Serial.println(n, b); }
+
 	static void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
 			uint32_t wValue, uint32_t wIndex, uint32_t wLength) {
 		s.word1 = bmRequestType | (bRequest << 8) | (wValue << 16);

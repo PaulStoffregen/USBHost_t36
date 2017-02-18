@@ -35,8 +35,7 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 	// only claim entire device, never at interface level
 	if (type != 0) return false;
 
-	Serial.print("USBHub claim_device this=");
-	Serial.println((uint32_t)this, HEX);
+	println("USBHub claim_device this=", (uint32_t)this, HEX);
 
 	// check for HUB type
 	if (dev->bDeviceClass != 9 || dev->bDeviceSubClass != 0) return false;
@@ -56,20 +55,17 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 	if (maxsize == 0) return false;
 	if (maxsize > 1) return false; // do hub chips with > 7 ports exist?
 
-	Serial.println(descriptors[9]);
-	Serial.println(descriptors[10]);
-	Serial.println(descriptors[11], HEX);
-	Serial.println(maxsize);
+	println(descriptors[9]);
+	println(descriptors[10]);
+	println(descriptors[11], HEX);
+	println(maxsize);
 	// bDeviceProtocol = 0 is full speed
 	// bDeviceProtocol = 1 is high speed single TT
 	// bDeviceProtocol = 2 is high speed multiple TT
 
-	Serial.print("bDeviceClass = ");
-	Serial.println(dev->bDeviceClass);
-	Serial.print("bDeviceSubClass = ");
-	Serial.println(dev->bDeviceSubClass);
-	Serial.print("bDeviceProtocol = ");
-	Serial.println(dev->bDeviceProtocol);
+	println("bDeviceClass = ", dev->bDeviceClass);
+	println("bDeviceSubClass = ", dev->bDeviceSubClass);
+	println("bDeviceProtocol = ", dev->bDeviceProtocol);
 
 	changepipe = NULL;
 	changebits = 0;
@@ -118,7 +114,7 @@ void USBHub::reset(uint32_t port)
 
 void USBHub::control(const Transfer_t *transfer)
 {
-	Serial.println("USBHub control callback");
+	println("USBHub control callback");
 	print_hexbytes(transfer->buffer, transfer->length);
 
 	if (state == 0) {
@@ -130,9 +126,9 @@ void USBHub::control(const Transfer_t *transfer)
 			powertime = hub_desc[5];
 			// TODO: do we need to use the DeviceRemovable
 			// bits to mke synthetic device connect events?
-			Serial.print("Hub has ");
-			Serial.print(numports);
-			Serial.println(" ports");
+			print("Hub has ");
+			print(numports);
+			println(" ports");
 			state = 1;
 			poweron(1);
 		}
@@ -140,12 +136,10 @@ void USBHub::control(const Transfer_t *transfer)
 		// turn on power to all ports
 		poweron(++state);
 	} else if (state == numports) {
-		Serial.println("power turned on to all ports");
-		Serial.print("device addr = ");
-		Serial.println(device->address);
+		println("power turned on to all ports");
+		println("device addr = ", device->address);
 		changepipe = new_Pipe(device, 3, endpoint, 1, 1, 512);
-		Serial.print("pipe cap1 = ");
-		Serial.println(changepipe->qh.capabilities[0], HEX);
+		println("pipe cap1 = ", changepipe->qh.capabilities[0], HEX);
 		changepipe->callback_function = callback;
 		queue_Data_Transfer(changepipe, &changebits, 1, this);
 		state = 255;
@@ -153,7 +147,7 @@ void USBHub::control(const Transfer_t *transfer)
 		// up and running...
 		switch (setup.word1) {
 		  case 0x000000A0: // get hub status
-			Serial.println("New Hub Status");
+			println("New Hub Status");
 			clearstatus(0);
 			return;
 		  case 0x000000A3: // get port status
@@ -161,12 +155,11 @@ void USBHub::control(const Transfer_t *transfer)
 			clearstatus(setup.wIndex);
 			return;
 		  case 0x00100120: // clear hub status
-			Serial.println("Hub Status Cleared");
+			println("Hub Status Cleared");
 			changebits &= ~1;
 			break;
 		  case 0x00100123: // clear port status
-			Serial.print("Port Status Cleared, port=");
-			Serial.println(setup.wIndex);
+			println("Port Status Cleared, port=", setup.wIndex);
 			changebits &= ~(1 << setup.wIndex);
 			break;
 		}
@@ -176,15 +169,14 @@ void USBHub::control(const Transfer_t *transfer)
 
 void USBHub::callback(const Transfer_t *transfer)
 {
-	Serial.println("HUB Callback (static)");
+	println("HUB Callback (static)");
 	if (transfer->driver) ((USBHub *)(transfer->driver))->status_change(transfer);
 }
 
 void USBHub::status_change(const Transfer_t *transfer)
 {
-	Serial.println("HUB Callback (member)");
-	Serial.print("status = ");
-	Serial.println(changebits, HEX);
+	println("HUB Callback (member)");
+	println("status = ", changebits, HEX);
 	// TODO: do something with the status change info
 	update_status();
 	queue_Data_Transfer(changepipe, &changebits, 1, this);
@@ -208,42 +200,42 @@ void USBHub::new_port_status(uint32_t port, uint32_t status)
 	uint32_t priorstatus = portstatus[port - 1];
 	portstatus[port] = status;
 
-	Serial.print("New Port Status, port=");
-	Serial.print(port);
-	Serial.print(", status=");
-	Serial.println(status, HEX);
+	print("New Port Status, port=");
+	print(port);
+	print(", status=");
+	println(status, HEX);
 
 	// status bits, USB 2.0: 11.24.2.7.1 page 427
-	if (status & 0x0001) Serial.println("  Device is present: ");
+	if (status & 0x0001) println("  Device is present: ");
 	if (status & 0x0002) {
-		Serial.println("  Enabled, speed = ");
+		println("  Enabled, speed = ");
 		if (status & 0x0200) {
-			Serial.print("1.5");
+			print("1.5");
 		} else {
 			if (status & 0x0400) {
-				Serial.print("480");
+				print("480");
 			} else {
-				Serial.print("12");
+				print("12");
 			}
 		}
-		Serial.println(" Mbit/sec");
+		println(" Mbit/sec");
 	}
-	if (status & 0x0004) Serial.println("  Suspended");
-	if (status & 0x0008) Serial.println("  Over-current");
-	if (status & 0x0010) Serial.println("  Reset");
-	if (status & 0x0100) Serial.println("  Has Power");
-	if (status & 0x0800) Serial.println("  Test Mode");
-	if (status & 0x1000) Serial.println("  Software Controls LEDs");
+	if (status & 0x0004) println("  Suspended");
+	if (status & 0x0008) println("  Over-current");
+	if (status & 0x0010) println("  Reset");
+	if (status & 0x0100) println("  Has Power");
+	if (status & 0x0800) println("  Test Mode");
+	if (status & 0x1000) println("  Software Controls LEDs");
 
 	if ((status & 0x0001) && !(priorstatus & 0x0001)) {
-		Serial.println("    connect");
+		println("    connect");
 		// 100 ms debounce (USB 2.0: TATTDB, page 150 & 188)
 		delay(100);  // TODO: horribly bad... need timing events
 		reset(port);
 		// TODO... reset timer?
 
 	} else if (!(status & 0x0001) && (priorstatus & 0x0001)) {
-		Serial.println("    disconnect");
+		println("    disconnect");
 
 
 	}
