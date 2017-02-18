@@ -58,6 +58,7 @@ void USBHost::begin()
 	PORTE_PCR6 = PORT_PCR_MUX(1);
 	GPIOE_PDDR |= (1<<6);
 	GPIOE_PSOR = (1<<6); // turn on USB host power
+	delay(10);
 	Serial.print("sizeof Device = ");
 	Serial.println(sizeof(Device_t));
 	Serial.print("sizeof Pipe = ");

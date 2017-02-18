@@ -31,18 +31,40 @@ KeyboardController::KeyboardController()
 	driver_ready_for_device(this);
 }
 
-bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descriptors)
+bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
 {
 	Serial.print("KeyboardController claim this=");
 	Serial.println((uint32_t)this, HEX);
 
 	// only claim at interface level
 	if (type != 1) return false;
+	if (len < 9+9+7) return false;
 
-	return false;
-
-	uint32_t endpoint=1;
+	uint32_t numendpoint = descriptors[4];
+	if (numendpoint < 1) return false;
+	if (descriptors[5] != 3) return false; // bInterfaceClass, 3 = HID
+	if (descriptors[6] != 1) return false; // bInterfaceSubClass, 1 = Boot Device
+	if (descriptors[7] != 1) return false; // bInterfaceProtocol, 1 = Keyboard
+	if (descriptors[9] != 9) return false;
+	if (descriptors[10] != 33) return false; // HID descriptor (ignored, Boot Protocol)
+	if (descriptors[18] != 7) return false;
+	if (descriptors[19] != 5) return false; // endpoint descriptor
+	uint32_t endpoint = descriptors[20];
+	Serial.print("ep = ");
+	Serial.println(endpoint, HEX);
+	if ((endpoint & 0xF0) != 0x80) return false; // must be IN direction
+	endpoint &= 0x0F;
+	if (endpoint == 0) return false;
+	if (descriptors[21] != 3) return false; // must be interrupt type
+	uint32_t size = descriptors[22] | (descriptors[23] << 8);
+	Serial.print("packet size = ");
+	Serial.println(size);
+	if (size != 8) return false; // must be 8 bytes for Keyboard Boot Protocol
+	uint32_t interval = descriptors[24];
+	Serial.print("polling interval = ");
+	Serial.println(interval);
 	datapipe = new_Pipe(dev, 3, endpoint, 1, 8, 64);
+	datapipe->callback_function = callback;
 	queue_Data_Transfer(datapipe, report, 8, this);
 	return true;
 }
@@ -58,6 +80,8 @@ void KeyboardController::callback(const Transfer_t *transfer)
 void KeyboardController::new_data(const Transfer_t *transfer)
 {
 	Serial.println("KeyboardController Callback (member)");
+	Serial.print("  KB Data: ");
+	print_hexbytes(transfer->buffer, 8);
 	// TODO: parse the new data
 	queue_Data_Transfer(datapipe, report, 8, this);
 }

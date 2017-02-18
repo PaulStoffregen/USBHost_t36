@@ -191,7 +191,7 @@ protected:
 	//   device has its vid&pid, class/subclass fields initialized
 	//   type is 0 for device level, 1 for interface level, 2 for IAD
 	//   descriptors points to the specific descriptor data
-	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors);
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 
 	// When an unknown (not chapter 9) control transfer completes, this
 	// function is called for all drivers bound to the device.  Return
@@ -233,7 +233,7 @@ class USBHub : public USBDriver {
 public:
 	USBHub();
 protected:
-	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors);
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
 	virtual void disconnect();
 	void poweron(uint32_t port);
@@ -269,7 +269,7 @@ public:
 	void    attachPress(void (*keyPressed)());
 	void    attachRelease(void (*keyReleased)());
 protected:
-	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors);
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void disconnect();
 	static void callback(const Transfer_t *transfer);
 	void new_data(const Transfer_t *transfer);

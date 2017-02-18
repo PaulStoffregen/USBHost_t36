@@ -30,7 +30,7 @@ USBHub::USBHub()
 	driver_ready_for_device(this);
 }
 
-bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors)
+bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
 {
 	// only claim entire device, never at interface level
 	if (type != 0) return false;

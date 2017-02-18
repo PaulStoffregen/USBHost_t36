@@ -28,6 +28,7 @@
 static USBDriver *available_drivers = NULL;
 static uint8_t enumbuf[256] __attribute__ ((aligned(16)));
 static setup_t enumsetup __attribute__ ((aligned(16)));
+static uint16_t enumlen;
 
 
 static uint32_t assign_addr(void);
@@ -197,13 +198,13 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 12;
 			return;
 		case 12: // read 9 bytes, request all of config desc
-			len = enumbuf[2] | (enumbuf[3] << 8);
+			enumlen = enumbuf[2] | (enumbuf[3] << 8);
 			Serial.print("Config data length = ");
-			Serial.println(len);
-			if (len > sizeof(enumbuf)) {
+			Serial.println(enumlen);
+			if (enumlen > sizeof(enumbuf)) {
 				// TODO: how to handle device with too much config data
 			}
-			mk_setup(enumsetup, 0x80, 6, 0x0200, 0, len); // 6=GET_DESCRIPTOR
+			mk_setup(enumsetup, 0x80, 6, 0x0200, 0, enumlen); // 6=GET_DESCRIPTOR
 			queue_Control_Transfer(dev, &enumsetup, enumbuf, NULL);
 			dev->enum_state = 13;
 			return;
@@ -239,7 +240,7 @@ void USBHost::claim_drivers(Device_t *dev)
 
 	// first check if any driver wishes to claim the entire device
 	for (driver=available_drivers; driver != NULL; driver = driver->next) {
-		if (driver->claim(dev, 0, enumbuf + 9)) {
+		if (driver->claim(dev, 0, enumbuf + 9, enumlen - 9)) {
 			if (prev) {
 				prev->next = driver->next;
 			} else {
@@ -252,8 +253,52 @@ void USBHost::claim_drivers(Device_t *dev)
 		}
 		prev = driver;
 	}
-	// TODO: parse interfaces from config descriptor
-	// try claim_interface on drivers
+	// parse interfaces from config descriptor
+	const uint8_t *p = enumbuf + 9;
+	const uint8_t *end = enumbuf + enumlen;
+	while (p < end) {
+		uint8_t desclen = *p;
+		uint8_t desctype = *(p+1);
+		Serial.print("Descriptor ");
+		Serial.print(desctype);
+		Serial.print(" = ");
+		if (desctype == 4) Serial.println("INTERFACE");
+		else if (desctype == 5) Serial.println("ENDPOINT");
+		else if (desctype == 6) Serial.println("DEV_QUALIFIER");
+		else if (desctype == 7) Serial.println("OTHER_SPEED");
+		else if (desctype == 11) Serial.println("IAD");
+		else if (desctype == 33) Serial.println("HID");
+		else Serial.println(" ???");
+		if (desctype == 11 && desclen == 8) {
+			// TODO: parse IAD, ask drivers for claim
+			// TODO: how to skip over all interfaces IAD represented
+		}
+		if (desctype == 4 && desclen == 9) {
+			// found an interface, ask available drivers if they want it
+			prev = NULL;
+			for (driver=available_drivers; driver != NULL; driver = driver->next) {
+				if (driver->claim(dev, 1, p, end - p)) {
+					// this driver claims iface
+					// remove it from available_drivers list
+					if (prev) {
+						prev->next = driver->next;
+					} else {
+						available_drivers = driver->next;
+					}
+					// add to list of drivers using this device
+					if (dev->drivers) {
+						dev->drivers->next = driver;
+					}
+					dev->drivers = driver;
+					driver->next = NULL;
+					driver->device = dev;
+					// not done, may be more interface for more drivers
+				}
+				prev = driver;
+			}
+		}
+		p += desclen;
+	}
 }
 
 static uint32_t assign_addr(void)
