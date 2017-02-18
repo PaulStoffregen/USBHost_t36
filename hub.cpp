@@ -74,6 +74,8 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors)
 	changepipe = NULL;
 	changebits = 0;
 	state = 0;
+	memset(portstatus, 0, sizeof(portstatus));
+	memset(portstate, 0, sizeof(portstate));
 
 	mk_setup(setup, 0xA0, 6, 0x2900, 0, sizeof(hub_desc));
 	queue_Control_Transfer(dev, &setup, hub_desc, this);
@@ -94,7 +96,7 @@ void USBHub::getstatus(uint32_t port)
 	} else {
 		mk_setup(setup, 0xA3, 0, 0, port, 4); // get port status
 	}
-	queue_Control_Transfer(device, &setup, &status, this);
+	queue_Control_Transfer(device, &setup, &statusbits, this);
 }
 
 void USBHub::clearstatus(uint32_t port)
@@ -106,6 +108,13 @@ void USBHub::clearstatus(uint32_t port)
 	}
 	queue_Control_Transfer(device, &setup, NULL, this);
 }
+
+void USBHub::reset(uint32_t port)
+{
+	mk_setup(setup, 0x23, 3, 4, port, 0); // set feature PORT_RESET
+	queue_Control_Transfer(device, &setup, NULL, this);
+}
+
 
 void USBHub::control(const Transfer_t *transfer)
 {
@@ -148,8 +157,7 @@ void USBHub::control(const Transfer_t *transfer)
 			clearstatus(0);
 			return;
 		  case 0x000000A3: // get port status
-			Serial.print("New Port Status, port=");
-			Serial.println(setup.wIndex);
+			new_port_status(setup.wIndex, statusbits);
 			clearstatus(setup.wIndex);
 			return;
 		  case 0x00100120: // clear hub status
@@ -193,6 +201,55 @@ void USBHub::update_status()
 		}
 	}
 }
+
+void USBHub::new_port_status(uint32_t port, uint32_t status)
+{
+	if (port < 1 || port > 7) return;
+	uint32_t priorstatus = portstatus[port - 1];
+	portstatus[port] = status;
+
+	Serial.print("New Port Status, port=");
+	Serial.print(port);
+	Serial.print(", status=");
+	Serial.println(status, HEX);
+
+	// status bits, USB 2.0: 11.24.2.7.1 page 427
+	if (status & 0x0001) Serial.println("  Device is present: ");
+	if (status & 0x0002) {
+		Serial.println("  Enabled, speed = ");
+		if (status & 0x0200) {
+			Serial.print("1.5");
+		} else {
+			if (status & 0x0400) {
+				Serial.print("480");
+			} else {
+				Serial.print("12");
+			}
+		}
+		Serial.println(" Mbit/sec");
+	}
+	if (status & 0x0004) Serial.println("  Suspended");
+	if (status & 0x0008) Serial.println("  Over-current");
+	if (status & 0x0010) Serial.println("  Reset");
+	if (status & 0x0100) Serial.println("  Has Power");
+	if (status & 0x0800) Serial.println("  Test Mode");
+	if (status & 0x1000) Serial.println("  Software Controls LEDs");
+
+	if ((status & 0x0001) && !(priorstatus & 0x0001)) {
+		Serial.println("    connect");
+		// 100 ms debounce (USB 2.0: TATTDB, page 150 & 188)
+		delay(100);  // TODO: horribly bad... need timing events
+		reset(port);
+		// TODO... reset timer?
+
+	} else if (!(status & 0x0001) && (priorstatus & 0x0001)) {
+		Serial.println("    disconnect");
+
+
+	}
+
+}
+
 
 void USBHub::disconnect()
 {

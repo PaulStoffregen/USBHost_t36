@@ -751,7 +751,7 @@ static bool allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
 	maxlen = (maxlen * 76459) >> 16; // worst case bit stuffing
 	if (speed == 2) {
 		// high speed 480 Mbit/sec
-		uint32_t stime = (55 + 32 + maxlen) >> 5;
+		uint32_t stime = (55 + 32 + maxlen) >> 5; // time units: 32 bytes or 533 ns
 		uint32_t min_offset = 0xFFFFFFFF;
 		uint32_t min_bw = 0xFFFFFFFF;
 		for (uint32_t offset=0; offset < interval; offset++) {
@@ -788,6 +788,8 @@ static bool allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
 		// full speed 12 Mbit/sec or low speed 1.5 Mbit/sec
 		uint32_t stime, ctime;
 		if (direction == 0) {
+			// TODO: how much time to SSPLIT & CSPLIT actually take?
+			// they're not documented in 5.7 or 5.11.3.
 			stime = (100 + 32 + maxlen) >> 5;
 			ctime = (55 + 32) >> 5;
 		} else {
@@ -795,6 +797,8 @@ static bool allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
 			ctime = (70 + 32 + maxlen) >> 5;
 		}
 		interval = interval >> 3; // can't be zero, earlier check for interval >= 8
+		// TODO: should we take Single-TT hubs into account, avoid
+		// scheduling overlapping SSPLIT & CSPLIT to the same hub?
 		uint32_t min_shift = 0;
 		uint32_t min_offset = 0xFFFFFFFF;
 		uint32_t min_bw = 0xFFFFFFFF;

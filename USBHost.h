@@ -239,8 +239,10 @@ protected:
 	void poweron(uint32_t port);
 	void getstatus(uint32_t port);
 	void clearstatus(uint32_t port);
+	void reset(uint32_t port);
 	static void callback(const Transfer_t *transfer);
 	void status_change(const Transfer_t *transfer);
+	void new_port_status(uint32_t port, uint32_t status);
 	void update_status();
 	setup_t setup;
 	uint8_t hub_desc[16];
@@ -251,7 +253,9 @@ protected:
 	uint8_t state;
 	Pipe_t *changepipe;
 	uint32_t changebits;
-	uint32_t status;
+	uint32_t statusbits;
+	uint16_t portstatus[7];
+	uint8_t  portstate[7];
 };
 
 
