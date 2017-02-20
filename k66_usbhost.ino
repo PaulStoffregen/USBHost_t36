@@ -28,6 +28,7 @@ USBHub hub1;
 USBHub hub2;
 USBHub hub3;
 KeyboardController keyboard;
+MIDIDevice midi1;
 
 void setup()
 {

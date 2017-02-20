@@ -274,6 +274,10 @@ void USBHost::claim_drivers(Device_t *dev)
 			// found an interface, ask available drivers if they want it
 			prev = NULL;
 			for (driver=available_drivers; driver != NULL; driver = driver->next) {
+				// TODO: should parse ahead and give claim()
+				// an accurate length.  (end - p) is the rest
+				// of ALL descriptors, likely more interfaces
+				// this driver has no business parsing
 				if (driver->claim(dev, 1, p, end - p)) {
 					// this driver claims iface
 					// remove it from available_drivers list

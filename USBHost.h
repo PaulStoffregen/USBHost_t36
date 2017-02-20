@@ -311,5 +311,25 @@ private:
 	uint8_t report[8];
 };
 
+class MIDIDevice : public USBDriver {
+public:
+	MIDIDevice();
+protected:
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
+	virtual void disconnect();
+	static void rx_callback(const Transfer_t *transfer);
+	static void tx_callback(const Transfer_t *transfer);
+	void rx_data(const Transfer_t *transfer);
+	void tx_data(const Transfer_t *transfer);
+private:
+	Pipe_t *rxpipe;
+	Pipe_t *txpipe;
+	enum { BUFFERSIZE = 64 };
+	uint8_t buffer[BUFFERSIZE * 2];
+	uint8_t rx_ep;
+	uint8_t tx_ep;
+	uint16_t rx_size;
+	uint16_t tx_size;
+};
 
 #endif
