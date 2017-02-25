@@ -372,6 +372,16 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 		}
 	}
 	memset(pipe, 0, sizeof(Pipe_t));
+	if (endpoint > 0) {
+		// if non-control pipe, update dev->data_pipes list
+		Pipe_t *p = dev->data_pipes;
+		if (p == NULL) {
+			dev->data_pipes = pipe;
+		} else {
+			while (p->next) p = p->next;
+			p->next = pipe;
+		}
+	}
 	memset(halt, 0, sizeof(Transfer_t));
 	halt->qtd.next = 1;
 	halt->qtd.token = 0x40;
@@ -825,3 +835,18 @@ bool USBHost::allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
 	return true;
 }
 
+
+void USBHost::delete_Pipe(Pipe_t *pipe)
+{
+	// TODO: a *LOT* of work here.....
+	println("delete_Pipe ", (uint32_t)pipe, HEX);
+
+	// halt pipe, find and free all Transfer_t
+
+	// remove periodic scheduled pipes
+
+	// remove async scheduled pipes
+
+	// can't free the pipe until the ECHI and all qTD referencing are done
+	// free_Pipe(pipe);
+}

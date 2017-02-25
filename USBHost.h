@@ -61,6 +61,7 @@ typedef union {
 // Device_t holds all the information about a USB device
 struct Device_struct {
 	Pipe_t   *control_pipe;
+	Pipe_t   *data_pipes;
 	Device_t *next;
 	USBDriver *drivers;
 	uint8_t  speed; // 0=12, 1=1.5, 2=480 Mbit/sec
@@ -95,7 +96,7 @@ struct Pipe_struct {
 	uint8_t  type; // 0=control, 1=isochronous, 2=bulk, 3=interrupt
 	uint8_t  direction; // 0=out, 1=in (changes for control, others fixed)
 	uint8_t  unusedbyte[2];
-	USBDriver *callback_object;
+	Pipe_t   *next;
 	void     (*callback_function)(const Transfer_t *);
 };
 
@@ -155,6 +156,7 @@ private:
 	static bool queue_Transfer(Pipe_t *pipe, Transfer_t *transfer);
 	static void init_Device_Pipe_Transfer_memory(void);
 	static Device_t * allocate_Device(void);
+	static void delete_Pipe(Pipe_t *pipe);
 	static void free_Device(Device_t *q);
 	static Pipe_t * allocate_Pipe(void);
 	static void free_Pipe(Pipe_t *q);
@@ -236,7 +238,11 @@ protected:
 	virtual void control(const Transfer_t *transfer) { }
 
 	// When a device disconnects from the USB, this function is called.
-	// The driver must free all resources it has allocated.
+	// The driver must free all resources it allocated and update any
+	// internal state necessary to deal with the possibility of user
+	// code continuing to call its API.  However, pipes and transfers
+	// are the handled by lower layers, so device drivers do not free
+	// pipes they created or cancel transfers they had in progress.
 	virtual void disconnect();
 
 	// Drivers are managed by this single-linked list.  All inactive

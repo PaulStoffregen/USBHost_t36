@@ -361,11 +361,13 @@ void USBHost::disconnect_Device(Device_t *dev)
 	}
 	print_driverlist("available_drivers", available_drivers);
 
-	// TODO: halt all pipes, free their Transfer_t
-
-	// TODO: remove periodic scheduled pipes, free their Pipe_t
-
-	// TODO: remove async scheduled pipes, free their Pipe_t
+	// delete all the pipes
+	for (Pipe_t *p = dev->data_pipes; p; ) {
+		Pipe_t *next = p->next;
+		delete_Pipe(p);
+		p = next;
+	}
+	delete_Pipe(dev->control_pipe);
 
 	// remove device from devlist and free its Device_t
 	Device_t *prev_dev = NULL;
