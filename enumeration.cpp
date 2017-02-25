@@ -32,7 +32,6 @@ static uint16_t enumlen;
 static Device_t  *devlist=NULL;
 
 
-static uint32_t assign_addr(void);
 static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen);
 static void pipe_set_addr(Pipe_t *pipe, uint32_t addr);
 
@@ -124,7 +123,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 		switch (dev->enum_state) {
 		case 0: // read 8 bytes of device desc, set max packet, and send set address
 			pipe_set_maxlen(dev->control_pipe, enumbuf[7]);
-			mk_setup(enumsetup, 0, 5, assign_addr(), 0, 0); // 5=SET_ADDRESS
+			mk_setup(enumsetup, 0, 5, assign_address(), 0, 0); // 5=SET_ADDRESS
 			queue_Control_Transfer(dev, &enumsetup, NULL, NULL);
 			dev->enum_state = 1;
 			return;
@@ -310,9 +309,25 @@ void USBHost::claim_drivers(Device_t *dev)
 	}
 }
 
-static uint32_t assign_addr(void)
+static bool address_in_use(uint32_t addr)
 {
-	return 29; // TODO: when multiple devices, assign a unique address
+	for (Device_t *p = devlist; p; p = p->next) {
+		if (p->address == addr) return true;
+	}
+	return false;
+}
+
+uint32_t USBHost::assign_address(void)
+{
+	static uint8_t last_assigned_address=0;
+	uint32_t addr = last_assigned_address;
+	while (1) {
+		if (++addr > 127) addr = 1;
+		if (!address_in_use(addr)) {
+			last_assigned_address = addr;
+			return addr;
+		}
+	}
 }
 
 static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen)

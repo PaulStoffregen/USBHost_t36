@@ -151,6 +151,7 @@ protected:
 private:
 	static void isr();
 	static void claim_drivers(Device_t *dev);
+	static uint32_t assign_address(void);
 	static bool queue_Transfer(Pipe_t *pipe, Transfer_t *transfer);
 	static void init_Device_Pipe_Transfer_memory(void);
 	static Device_t * allocate_Device(void);
