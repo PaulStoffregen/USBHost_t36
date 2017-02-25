@@ -29,6 +29,7 @@ static USBDriver *available_drivers = NULL;
 static uint8_t enumbuf[256] __attribute__ ((aligned(16)));
 static setup_t enumsetup __attribute__ ((aligned(16)));
 static uint16_t enumlen;
+static Device_t  *devlist=NULL;
 
 
 static uint32_t assign_addr(void);
@@ -84,6 +85,13 @@ Device_t * USBHost::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_p
 	// go onto a waiting list
 	mk_setup(enumsetup, 0x80, 6, 0x0100, 0, 8); // 6=GET_DESCRIPTOR
 	queue_Control_Transfer(dev, &enumsetup, enumbuf, NULL);
+	if (devlist == NULL) {
+		devlist = dev;
+	} else {
+		Device_t *p;
+		for (p = devlist; p->next; p = p->next) ; // walk devlist
+		p->next = dev;
+	}
 	return dev;
 }
 
@@ -317,9 +325,48 @@ static void pipe_set_addr(Pipe_t *pipe, uint32_t addr)
 	pipe->qh.capabilities[0] = (pipe->qh.capabilities[0] & 0xFFFFFF80) | addr;
 }
 
-//static uint32_t pipe_get_addr(Pipe_t *pipe)
-//{
-//	return pipe->qh.capabilities[0] & 0xFFFFFF80;
-//}
+
+void USBHost::disconnect_Device(Device_t *dev)
+{
+	if (!dev) return;
+	println("disconnect_Device:");
+
+	// Disconnect all drivers using this device.  If this device is
+	// a hub, the hub driver is responsible for recursively calling
+	// this function to disconnect its downstream devices.
+	print_driverlist("available_drivers", available_drivers);
+	print_driverlist("dev->drivers", dev->drivers);
+	for (USBDriver *p = dev->drivers; p; ) {
+		println("disconnect driver ", (uint32_t)p, HEX);
+		p->disconnect();
+		USBDriver *next = p->next;
+		p->next = available_drivers;
+		available_drivers = p;
+		p = next;
+	}
+	print_driverlist("available_drivers", available_drivers);
+
+	// TODO: halt all pipes, free their Transfer_t
+
+	// TODO: remove periodic scheduled pipes, free their Pipe_t
+
+	// TODO: remove async scheduled pipes, free their Pipe_t
+
+	// remove device from devlist and free its Device_t
+	Device_t *prev_dev = NULL;
+	for (Device_t *p = devlist; p; p = p->next) {
+		if (p == dev) {
+			if (prev_dev == NULL) {
+				devlist = p->next;
+			} else {
+				prev_dev->next = p->next;
+			}
+			println("removed Device_t from devlist");
+			free_Device(p);
+			break;
+		}
+		prev_dev = p;
+	}
+}
 
 

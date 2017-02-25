@@ -275,7 +275,8 @@ void USBHost::isr()
 				println("    disconnect");
 				port_state = PORT_STATE_DISCONNECTED;
 				USBPHY_CTRL_CLR = USBPHY_CTRL_ENHOSTDISCONDETECT;
-				// TODO: delete & clean up device state...
+				disconnect_Device(rootdev);
+				rootdev = NULL;
 			}
 		}
 		if (portstat & USBHS_PORTSC_PEC) {
@@ -823,5 +824,4 @@ bool USBHost::allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
 	}
 	return true;
 }
-
 

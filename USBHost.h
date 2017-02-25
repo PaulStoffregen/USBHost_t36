@@ -145,6 +145,7 @@ protected:
 	static bool queue_Data_Transfer(Pipe_t *pipe, void *buffer,
 		uint32_t len, USBDriver *driver);
 	static Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port);
+	static void disconnect_Device(Device_t *dev);
 	static void enumeration(const Transfer_t *transfer);
 	static void driver_ready_for_device(USBDriver *driver);
 private:
@@ -166,6 +167,7 @@ protected:
 	static void print(const Transfer_t *first, const Transfer_t *last);
 	static void print_token(uint32_t token);
 	static void print(const Pipe_t *pipe);
+	static void print_driverlist(const char *name, const USBDriver *driver);
 	static void print_hexbytes(const void *ptr, uint32_t len);
 	static void print(const char *s)	{ Serial.print(s); }
 	static void print(int n)		{ Serial.print(n); }

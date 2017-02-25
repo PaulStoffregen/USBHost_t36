@@ -125,6 +125,27 @@ void USBHost::print(const Pipe_t *pipe)
 	//Serial.print();
 }
 
+void USBHost::print_driverlist(const char *name, const USBDriver *driver)
+{
+	Serial.print("USBDriver (");
+	Serial.print(name);
+	Serial.print(") list: ");
+	if (driver == NULL) {
+		Serial.println("(empty");
+		return;
+	}
+	uint32_t count=0;
+	for (const USBDriver *p = driver; p; p = p->next) {
+		Serial.print((uint32_t)p, HEX);
+		if (p->next) Serial.print(" -> ");
+		if (++count > 30) {
+			Serial.println("abort:list too long");
+			return;
+		}
+	}
+	Serial.println();
+}
+
 
 void USBHost::print_hexbytes(const void *ptr, uint32_t len)
 {
