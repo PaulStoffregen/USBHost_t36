@@ -203,7 +203,7 @@ void USBHost::isr()
 	if (stat & USBHS_USBSTS_PCI) println(" Port Change");
 	//if (stat & USBHS_USBSTS_FRI) println(" Frame List Rollover");
 	if (stat & USBHS_USBSTS_SEI) println(" System Error");
-	if (stat & USBHS_USBSTS_AAI) println(" Async Advance (doorbell)");
+	//if (stat & USBHS_USBSTS_AAI) println(" Async Advance (doorbell)");
 	if (stat & USBHS_USBSTS_URI) println(" Reset Recv");
 	//if (stat & USBHS_USBSTS_SRI) println(" SOF");
 	if (stat & USBHS_USBSTS_SLI) println(" Suspend");
@@ -843,10 +843,114 @@ void USBHost::delete_Pipe(Pipe_t *pipe)
 
 	// halt pipe, find and free all Transfer_t
 
-	// remove periodic scheduled pipes
+	// EHCI 1.0, 4.8.2 page 72: "Software should first deactivate
+	// all active qTDs, wait for the queue head to go inactive"
+	//
+	// http://www.spinics.net/lists/linux-usb/msg131607.html
+	// http://www.spinics.net/lists/linux-usb/msg131936.html
+	//
+	// In practice it's not feasible to wait for an active QH to become
+	// inactive before removing it, for several reasons.  For one, the QH may
+	// _never_ become inactive (if the endpoint NAKs indefinitely).  For
+	// another, the procedure given in the spec (deactivate the qTDs on the
+	// queue) is racy, since the controller can perform a new overlay or
+	// writeback at any time.
 
-	// remove async scheduled pipes
+	bool isasync = (pipe->type == 0 || pipe->type == 2);
+	if (isasync) {
+		// find the next QH in the async schedule loop
+		Pipe_t *next = (Pipe_t *)(pipe->qh.horizontal_link & 0xFFFFFFE0);
+		if (next == pipe) {
+			// removing the only QH, so just shut down the async schedule
+			println("  shut down async schedule");
+			USBHS_USBCMD &= ~USBHS_USBCMD_ASE; // disable async schedule
+			while (USBHS_USBSTS & USBHS_USBSTS_AS) ; // busy loop wait
+			USBHS_ASYNCLISTADDR = 0;
+		} else {
+			// find the previous QH in the async schedule loop
+			println("  remove QH from async schedule");
+			Pipe_t *prev = next;
+			while (1) {
+				Pipe_t *n = (Pipe_t *)(prev->qh.horizontal_link & 0xFFFFFFE0);
+				if (n == pipe) break;
+				prev = n;
+			}
+			// if removing the one with H bit, set another
+			if (pipe->qh.capabilities[0] & 0x8000) {
+				prev->qh.capabilities[0] |= 0x8000; // set H bit
+			}
+			// link the previous QH, we're no longer in the loop
+			prev->qh.horizontal_link = pipe->qh.horizontal_link;
+			// do the Async Advance Doorbell handshake to wait to be
+			// sure the EHCI no longer references the removed QH
+			USBHS_USBCMD |= USBHS_USBCMD_IAA;
+			while (!(USBHS_USBSTS & USBHS_USBSTS_AAI)) ; // busy loop wait
+			USBHS_USBSTS = USBHS_USBSTS_AAI;
+			// TODO: does this write interfere UPI & UAI (bits 18 & 19) ??
+		}
+		// find & free all the transfers which completed
+		Transfer_t *t = async_followup_first;
+		while (t) {
+			Transfer_t *next = t->next_followup;
+			if (t->pipe == pipe) {
+				remove_from_async_followup_list(t);
+				free_Transfer(t);
+			}
+			t = next;
+		}
+		// TODO: do we need to look at pipe->qh.current ??
+		//
+		// free all the transfers still attached to the QH
+		t = (Transfer_t *)(pipe->qh.next);
+		while ((uint32_t)t & 0xFFFFFFE0) {
+			Transfer_t *next = (Transfer_t *)(t->qtd.next);
+			free_Transfer(t);
+			t = next;
+		}
+		// hopefully we found everything...
+		free_Pipe(pipe);
+	} else {
+		// TODO: how to remove from the periodic schedule
+
+		return;
+	}
+
+
 
 	// can't free the pipe until the ECHI and all qTD referencing are done
 	// free_Pipe(pipe);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
