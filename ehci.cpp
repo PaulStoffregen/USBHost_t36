@@ -907,7 +907,6 @@ void USBHost::add_qh_to_periodic_schedule(Pipe_t *pipe)
 
 void USBHost::delete_Pipe(Pipe_t *pipe)
 {
-	// TODO: a *LOT* of work here.....
 	println("delete_Pipe ", (uint32_t)pipe, HEX);
 
 	// halt pipe, find and free all Transfer_t
@@ -967,17 +966,6 @@ void USBHost::delete_Pipe(Pipe_t *pipe)
 			}
 			t = next;
 		}
-		// TODO: do we need to look at pipe->qh.current ??
-		//
-		// free all the transfers still attached to the QH
-		t = (Transfer_t *)(pipe->qh.next);
-		while ((uint32_t)t & 0xFFFFFFE0) {
-			Transfer_t *next = (Transfer_t *)(t->qtd.next);
-			free_Transfer(t);
-			t = next;
-		}
-		// hopefully we found everything...
-		free_Pipe(pipe);
 	} else {
 		// remove from the periodic schedule
 		for (uint32_t i=0; i < PERIODIC_LIST_SIZE; i++) {
@@ -1000,17 +988,31 @@ void USBHost::delete_Pipe(Pipe_t *pipe)
 				prev = node;
 			}
 		}
-		// TODO: find & free all the transfers which completed
-		// TODO: do we need to look at pipe->qh.current ??
-		// TODO: free all the transfers still attached to the QH
-		// TODO: free_Pipe(pipe);
-		return;
+		// TODO: subtract bandwidth from uframe_bandwidth array
+
+		// find & free all the transfers which completed
+		Transfer_t *t = periodic_followup_first;
+		while (t) {
+			Transfer_t *next = t->next_followup;
+			if (t->pipe == pipe) {
+				remove_from_periodic_followup_list(t);
+				free_Transfer(t);
+			}
+			t = next;
+		}
 	}
-
-
-
-	// can't free the pipe until the ECHI and all qTD referencing are done
-	// free_Pipe(pipe);
+	//
+	// TODO: do we need to look at pipe->qh.current ??
+	//
+	// free all the transfers still attached to the QH
+	Transfer_t *tr = (Transfer_t *)(pipe->qh.next);
+	while ((uint32_t)tr & 0xFFFFFFE0) {
+		Transfer_t *next = (Transfer_t *)(tr->qtd.next);
+		free_Transfer(tr);
+		tr = next;
+	}
+	// hopefully we found everything...
+	free_Pipe(pipe);
 }
 
 
