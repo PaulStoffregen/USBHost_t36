@@ -979,8 +979,31 @@ void USBHost::delete_Pipe(Pipe_t *pipe)
 		// hopefully we found everything...
 		free_Pipe(pipe);
 	} else {
-		// TODO: how to remove from the periodic schedule
-
+		// remove from the periodic schedule
+		for (uint32_t i=0; i < PERIODIC_LIST_SIZE; i++) {
+			uint32_t num = periodictable[i];
+			if (num & 1) continue;
+			Pipe_t *node = (Pipe_t *)(num & 0xFFFFFFE0);
+			if (node == pipe) {
+				periodictable[i] = pipe->qh.horizontal_link;
+				continue;
+			}
+			Pipe_t *prev = node;
+			while (1) {
+				num = node->qh.horizontal_link;
+				if (num & 1) break;
+				node = (Pipe_t *)(num & 0xFFFFFFE0);
+				if (node == pipe) {
+					prev->qh.horizontal_link = node->qh.horizontal_link;
+					break;
+				}
+				prev = node;
+			}
+		}
+		// TODO: find & free all the transfers which completed
+		// TODO: do we need to look at pipe->qh.current ??
+		// TODO: free all the transfers still attached to the QH
+		// TODO: free_Pipe(pipe);
 		return;
 	}
 
