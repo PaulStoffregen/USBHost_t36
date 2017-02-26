@@ -24,6 +24,10 @@
 #include <Arduino.h>
 #include "USBHost.h"
 
+// Size of the periodic list, in milliseconds.  This determines the
+// slowest rate we can poll interrupt endpoints.  Each entry uses
+// 12 bytes (4 for a pointer, 8 for bandwidth management).
+// may be 8, 16, 32, 64, 128, 256, 512, 1024
 #define PERIODIC_LIST_SIZE  32
 
 static uint32_t periodictable[PERIODIC_LIST_SIZE] __attribute__ ((aligned(4096), used));
@@ -422,21 +426,7 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 		}
 	} else if (type == 3) {
 		// interrupt: add to periodic schedule
-		// TODO: link it into the periodic table
-
-
-		//add_qh_to_periodic_schedule(pipe);
-
-		// TODO: built tree...
-		//uint32_t finterval = interval >> 3;
-		//for (uint32_t i=offset; i < PERIODIC_LIST_SIZE; i += finterval) {
-		//	uint32_t list = periodictable[i];
-		//}
-
-		// quick hack for testing, just put it into the first table entry
-		pipe->qh.horizontal_link = periodictable[0];
-		periodictable[0] = (uint32_t)&(pipe->qh) | 2; // 2=QH
-		println("init periodictable with ", periodictable[0], HEX);
+		add_qh_to_periodic_schedule(pipe);
 	}
 	return pipe;
 }
@@ -865,6 +855,53 @@ bool USBHost::allocate_interrupt_pipe_bandwidth(Pipe_t *pipe, uint32_t maxlen, u
 		pipe->periodic_offset = best_offset;
 	}
 	return true;
+}
+
+// put a new pipe into the periodic schedule tree
+// according to periodic_interval and periodic_offset
+//
+void USBHost::add_qh_to_periodic_schedule(Pipe_t *pipe)
+{
+	// quick hack for testing, just put it into the first table entry
+	println("add_qh_to_periodic_schedule:");
+#if 0
+	pipe->qh.horizontal_link = periodictable[0];
+	periodictable[0] = (uint32_t)&(pipe->qh) | 2; // 2=QH
+	println("init periodictable with ", periodictable[0], HEX);
+#else
+	uint32_t interval = pipe->periodic_interval;
+	uint32_t offset = pipe->periodic_offset;
+	println("  interval = ", interval);
+	println("  offset =   ", offset);
+
+	// TODO: does this really make an inverted tree like EHCI figure 4-18, page 93
+	for (uint32_t i=offset; i < PERIODIC_LIST_SIZE; i += interval) {
+		uint32_t num = periodictable[i];
+		Pipe_t *node = (Pipe_t *)(num & 0xFFFFFFE0);
+		if ((num & 1) || ((num & 6) == 2 && node->periodic_interval < interval)) {
+			println("  add to slot ", i);
+			pipe->qh.horizontal_link = num;
+			periodictable[i] = (uint32_t)&(pipe->qh) | 2; // 2=QH
+		} else {
+			println("  traverse list ", i);
+			// TODO: skip past iTD, siTD when/if we support isochronous
+			while (node->periodic_interval >= interval) {
+				if (node->qh.horizontal_link & 1) break;
+				num = node->qh.horizontal_link;
+				node = (Pipe_t *)(num & 0xFFFFFFE0);
+			}
+			pipe->qh.horizontal_link = num;
+			node->qh.horizontal_link = (uint32_t)pipe | 2; // 2=QH
+		}
+	}
+#endif
+	println("Periodic Schedule:");
+	for (uint32_t i=0; i < PERIODIC_LIST_SIZE; i++) {
+		if (i < 10) print(" ");
+		print(i);
+		print(": ");
+		print_qh_list((Pipe_t *)(periodictable[i] & 0xFFFFFFE0));
+	}
 }
 
 

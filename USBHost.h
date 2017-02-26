@@ -95,12 +95,12 @@ struct Pipe_struct {
 	Device_t *device;
 	uint8_t  type; // 0=control, 1=isochronous, 2=bulk, 3=interrupt
 	uint8_t  direction; // 0=out, 1=in (changes for control, others fixed)
-	uint8_t  start_mask;
-	uint8_t  complete_mask;
+	uint8_t  start_mask;       // TODO: is this redundant?
+	uint8_t  complete_mask;    // TODO: is this redundant?
 	Pipe_t   *next;
 	void     (*callback_function)(const Transfer_t *);
 	uint16_t periodic_interval;
-	uint16_t periodic_offset;
+	uint16_t periodic_offset;  // TODO: is this redundant?
 	uint32_t unused1;
 	uint32_t unused2;
 	uint32_t unused3;
@@ -174,12 +174,14 @@ private:
 	static void free_Transfer(Transfer_t *q);
 	static bool allocate_interrupt_pipe_bandwidth(Pipe_t *pipe,
 		uint32_t maxlen, uint32_t interval);
+	static void add_qh_to_periodic_schedule(Pipe_t *pipe);
 protected:
 	static void print(const Transfer_t *transfer);
 	static void print(const Transfer_t *first, const Transfer_t *last);
 	static void print_token(uint32_t token);
 	static void print(const Pipe_t *pipe);
 	static void print_driverlist(const char *name, const USBDriver *driver);
+	static void print_qh_list(const Pipe_t *list);
 	static void print_hexbytes(const void *ptr, uint32_t len);
 	static void print(const char *s)	{ Serial.print(s); }
 	static void print(int n)		{ Serial.print(n); }

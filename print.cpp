@@ -146,6 +146,25 @@ void USBHost::print_driverlist(const char *name, const USBDriver *driver)
 	Serial.println();
 }
 
+void USBHost::print_qh_list(const Pipe_t *list)
+{
+	if (!list) {
+		Serial.println("(empty)");
+		return;
+	}
+	const Pipe_t *node = list;
+	while (1) {
+		Serial.print((uint32_t)node, HEX);
+		node = (const Pipe_t *)(node->qh.horizontal_link & 0xFFFFFFE0);
+		if (!node) break;
+		if (node == list) {
+			Serial.print(" (loops)");
+			break;
+		}
+		Serial.print(" -> ");
+	}
+	Serial.println();
+}
 
 void USBHost::print_hexbytes(const void *ptr, uint32_t len)
 {

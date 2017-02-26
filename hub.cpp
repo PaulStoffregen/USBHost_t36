@@ -138,7 +138,8 @@ void USBHub::control(const Transfer_t *transfer)
 	} else if (state == numports) {
 		println("power turned on to all ports");
 		println("device addr = ", device->address);
-		changepipe = new_Pipe(device, 3, endpoint, 1, 1, 512);
+		// TODO: use hub's interrupt endpoint interval
+		changepipe = new_Pipe(device, 3, endpoint, 1, 1, 64);
 		println("pipe cap1 = ", changepipe->qh.capabilities[0], HEX);
 		changepipe->callback_function = callback;
 		queue_Data_Transfer(changepipe, &changebits, 1, this);
