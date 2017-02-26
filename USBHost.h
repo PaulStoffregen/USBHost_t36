@@ -95,9 +95,19 @@ struct Pipe_struct {
 	Device_t *device;
 	uint8_t  type; // 0=control, 1=isochronous, 2=bulk, 3=interrupt
 	uint8_t  direction; // 0=out, 1=in (changes for control, others fixed)
-	uint8_t  unusedbyte[2];
+	uint8_t  start_mask;
+	uint8_t  complete_mask;
 	Pipe_t   *next;
 	void     (*callback_function)(const Transfer_t *);
+	uint16_t periodic_interval;
+	uint16_t periodic_offset;
+	uint32_t unused1;
+	uint32_t unused2;
+	uint32_t unused3;
+	uint32_t unused4;
+	uint32_t unused5;
+	uint32_t unused6;
+	uint32_t unused7;
 };
 
 // Transfer_t represents a single transaction on the USB bus.
@@ -162,9 +172,8 @@ private:
 	static void free_Pipe(Pipe_t *q);
 	static Transfer_t * allocate_Transfer(void);
 	static void free_Transfer(Transfer_t *q);
-	static bool allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
-		uint32_t interval, uint32_t direction, uint32_t *offset_out,
-		uint32_t *smask_out, uint32_t *cmask_out);
+	static bool allocate_interrupt_pipe_bandwidth(Pipe_t *pipe,
+		uint32_t maxlen, uint32_t interval);
 protected:
 	static void print(const Transfer_t *transfer);
 	static void print(const Transfer_t *first, const Transfer_t *last);

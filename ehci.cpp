@@ -59,6 +59,10 @@ void USBHost::begin()
 	println("sizeof Device = ", sizeof(Device_t));
 	println("sizeof Pipe = ", sizeof(Pipe_t));
 	println("sizeof Transfer = ", sizeof(Transfer_t));
+	if ((sizeof(Pipe_t) & 0x1F) || (sizeof(Transfer_t) & 0x1F)) {
+		println("ERROR: Pipe_t & Transfer_t must be multiples of 32 bytes!");
+		while (1) ; // die here
+	}
 
 	// configure the MPU to allow USBHS DMA to access memory
 	MPU_RGDAAC0 |= 0x30000000;
@@ -350,7 +354,7 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 {
 	Pipe_t *pipe;
 	Transfer_t *halt;
-	uint32_t c=0, dtc=0, smask=0, cmask=0, offset=0;
+	uint32_t c=0, dtc=0;
 
 	println("new_Pipe");
 	pipe = allocate_Pipe();
@@ -360,18 +364,23 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 		free_Pipe(pipe);
 		return NULL;
 	}
+	memset(pipe, 0, sizeof(Pipe_t));
+	memset(halt, 0, sizeof(Transfer_t));
+	halt->qtd.next = 1;
+	halt->qtd.token = 0x40;
+	pipe->device = dev;
+	pipe->qh.next = (uint32_t)halt;
+	pipe->qh.alt_next = 1;
+	pipe->direction = direction;
+	pipe->type = type;
 	if (type == 3) {
 		// interrupt transfers require bandwidth & microframe scheduling
-	        if (interval > PERIODIC_LIST_SIZE*8) interval = PERIODIC_LIST_SIZE*8;
-		if (dev->speed < 2 && interval < 8) interval = 8;
-		if (!allocate_interrupt_pipe_bandwidth(dev->speed,
-		    maxlen, interval, direction, &offset, &smask, &cmask)) {
+		if (!allocate_interrupt_pipe_bandwidth(pipe, maxlen, interval)) {
 			free_Transfer(halt);
 			free_Pipe(pipe);
 			return NULL;
 		}
 	}
-	memset(pipe, 0, sizeof(Pipe_t));
 	if (endpoint > 0) {
 		// if non-control pipe, update dev->data_pipes list
 		Pipe_t *p = dev->data_pipes;
@@ -382,14 +391,6 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 			p->next = pipe;
 		}
 	}
-	memset(halt, 0, sizeof(Transfer_t));
-	halt->qtd.next = 1;
-	halt->qtd.token = 0x40;
-	pipe->device = dev;
-	pipe->qh.next = (uint32_t)halt;
-	pipe->qh.alt_next = 1;
-	pipe->direction = direction;
-	pipe->type = type;
 	if (type == 0) {
 		// control
 		if (dev->speed < 2) c = 1;
@@ -402,7 +403,7 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 	pipe->qh.capabilities[0] = QH_capabilities1(15, c, maxlen, 0,
 		dtc, dev->speed, endpoint, 0, dev->address);
 	pipe->qh.capabilities[1] = QH_capabilities2(1, dev->hub_port,
-		dev->hub_address, cmask, smask);
+		dev->hub_address, pipe->complete_mask, pipe->start_mask);
 
 	if (type == 0 || type == 2) {
 		// control or bulk: add to async queue
@@ -422,6 +423,9 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 	} else if (type == 3) {
 		// interrupt: add to periodic schedule
 		// TODO: link it into the periodic table
+
+
+		//add_qh_to_periodic_schedule(pipe);
 
 		// TODO: built tree...
 		//uint32_t finterval = interval >> 3;
@@ -723,114 +727,142 @@ static uint32_t max4(uint32_t n1, uint32_t n2, uint32_t n3, uint32_t n4)
 	return n4;
 }
 
+static uint32_t round_to_power_of_two(uint32_t n, uint32_t maxnum)
+{
+	for (uint32_t pow2num=1; pow2num < maxnum; pow2num <<= 1) {
+		if (n <= (pow2num | (pow2num >> 1))) return pow2num;
+	}
+	return maxnum;
+}
+
 // Allocate bandwidth for an interrupt pipe.  Given the packet size
 // and other parameters, find the best place to schedule this pipe.
 // Returns true if enough bandwidth is available, and the best
 // frame offset, smask and cmask.  Or returns false if no group
 // of microframes has enough bandwidth available.
 //
-//   speed:     [in]   0=full speed, 1=low speed, 2=high speed
-//   maxlen:    [in]   maximum packet length
-//   interval:  [in]   polling interval, in 125 us micro frames
-//   direction: [in]   0=OUT, 1=IN
-//   offset:    [out]  frame offset, 0 to PERIODIC_LIST_SIZE-1
-//   smask:     [out]  Start Mask
-//   cmask:     [out]  Complete Mask
+//   pipe:
+//     device->speed      [in]   0=full speed, 1=low speed, 2=high speed
+//     direction          [in]   0=OUT, 1=IN
+//     start_mask         [out]  uframes to start transfer
+//     complete_mask      [out]  uframes to complete transfer (FS & LS only)
+//     periodic_interval  [out]  fream repeat level: 1, 2, 4, 8... PERIODIC_LIST_SIZE
+//     periodic_offset    [out]  frame repeat offset: 0 to periodic_interval-1
+//   maxlen:              [in]   maximum packet length
+//   interval:            [in]   polling interval: LS+FS: frames, HS: 2^(n-1) uframes
 //
-bool USBHost::allocate_interrupt_pipe_bandwidth(uint32_t speed, uint32_t maxlen,
-	uint32_t interval, uint32_t direction, uint32_t *offset_out,
-	uint32_t *smask_out, uint32_t *cmask_out)
+bool USBHost::allocate_interrupt_pipe_bandwidth(Pipe_t *pipe, uint32_t maxlen, uint32_t interval)
 {
 	println("allocate_interrupt_pipe_bandwidth");
+	if (interval == 0) interval = 1;
 	maxlen = (maxlen * 76459) >> 16; // worst case bit stuffing
-	if (speed == 2) {
+	if (pipe->device->speed == 2) {
 		// high speed 480 Mbit/sec
+		if (interval > 15) interval = 15;
+		interval = 1 << (interval - 1);
+		if (interval > PERIODIC_LIST_SIZE*8) interval = PERIODIC_LIST_SIZE*8;
 		uint32_t stime = (55 + 32 + maxlen) >> 5; // time units: 32 bytes or 533 ns
-		uint32_t min_offset = 0xFFFFFFFF;
-		uint32_t min_bw = 0xFFFFFFFF;
+		uint32_t best_offset = 0xFFFFFFFF;
+		uint32_t best_bandwidth = 0xFFFFFFFF;
 		for (uint32_t offset=0; offset < interval; offset++) {
-			uint32_t max_bw = 0;
+			// for each possible uframe offset, find the worst uframe bandwidth
+			uint32_t max_bandwidth = 0;
 			for (uint32_t i=offset; i < PERIODIC_LIST_SIZE*8; i += interval) {
-				uint32_t bw = uframe_bandwidth[i] + stime;
-				if (bw > max_bw) max_bw = bw;
+				uint32_t bandwidth = uframe_bandwidth[i] + stime;
+				if (bandwidth > max_bandwidth) max_bandwidth = bandwidth;
 			}
-			if (max_bw < min_bw) {
-				min_bw = max_bw;
-				min_offset = offset;
+			// remember which uframe offset is the best
+			if (max_bandwidth < best_bandwidth) {
+				best_bandwidth = max_bandwidth;
+				best_offset = offset;
 			}
 		}
-		print(" min_bw = ");
-		print(min_bw);
+		print(" best_bandwidth = ");
+		print(best_bandwidth);
 		print(", at offset = ");
-		println(min_offset);
-		if (min_bw > 187) return false;
-		for (uint32_t i=min_offset; i < PERIODIC_LIST_SIZE*8; i += interval) {
+		println(best_offset);
+		// a 125 us micro frame can fit 7500 bytes, or 234 of our 32-byte units
+		// fail if the best found needs more than 80% (234 * 0.8) in any uframe
+		if (best_bandwidth > 187) return false;
+		for (uint32_t i=best_offset; i < PERIODIC_LIST_SIZE*8; i += interval) {
 			uframe_bandwidth[i] += stime;
 		}
-		*offset_out = min_offset >> 3;
 		if (interval == 1) {
-			*smask_out = 0xFF;
+			pipe->start_mask = 0xFF;
 		} else if (interval == 2) {
-			*smask_out = 0x55 << (min_offset & 1);
+			pipe->start_mask = 0x55 << (best_offset & 1);
 		} else if (interval <= 4) {
-			*smask_out = 0x11 << (min_offset & 3);
+			pipe->start_mask = 0x11 << (best_offset & 3);
 		} else {
-			*smask_out = 0x01 << (min_offset & 7);
+			pipe->start_mask = 0x01 << (best_offset & 7);
 		}
-		*cmask_out = 0;
+		uint32_t poffset = best_offset >> 3;
+		pipe->periodic_offset = (poffset > 0) ? poffset : 1;
+		pipe->complete_mask = 0;
 	} else {
 		// full speed 12 Mbit/sec or low speed 1.5 Mbit/sec
+		interval = round_to_power_of_two(interval, PERIODIC_LIST_SIZE);
+		pipe->periodic_interval = interval;
 		uint32_t stime, ctime;
-		if (direction == 0) {
+		if (pipe->direction == 0) {
+			// for OUT direction, SSPLIT will carry the data payload
 			// TODO: how much time to SSPLIT & CSPLIT actually take?
 			// they're not documented in 5.7 or 5.11.3.
 			stime = (100 + 32 + maxlen) >> 5;
 			ctime = (55 + 32) >> 5;
 		} else {
+			// for IN direction, data payload in CSPLIT
 			stime = (40 + 32) >> 5;
 			ctime = (70 + 32 + maxlen) >> 5;
 		}
-		interval = interval >> 3; // can't be zero, earlier check for interval >= 8
 		// TODO: should we take Single-TT hubs into account, avoid
 		// scheduling overlapping SSPLIT & CSPLIT to the same hub?
-		uint32_t min_shift = 0;
-		uint32_t min_offset = 0xFFFFFFFF;
-		uint32_t min_bw = 0xFFFFFFFF;
+		// TODO: even if Multi-TT, do we need to worry about packing
+		// too many into the same uframe?
+		uint32_t best_shift = 0;
+		uint32_t best_offset = 0xFFFFFFFF;
+		uint32_t best_bandwidth = 0xFFFFFFFF;
 		for (uint32_t offset=0; offset < interval; offset++) {
-			uint32_t max_bw = 0;
+			// for each 1ms frame offset, compute the worst uframe usage
+			uint32_t max_bandwidth = 0;
 			for (uint32_t i=offset; i < PERIODIC_LIST_SIZE; i += interval) {
 				for (uint32_t j=0; j <= 3; j++) { // max 3 without FSTN
+					// at each location, find worst uframe usage
+					// for SSPLIT+CSPLITs
 					uint32_t n = (i << 3) + j;
 					uint32_t bw1 = uframe_bandwidth[n+0] + stime;
 					uint32_t bw2 = uframe_bandwidth[n+2] + ctime;
 					uint32_t bw3 = uframe_bandwidth[n+3] + ctime;
 					uint32_t bw4 = uframe_bandwidth[n+4] + ctime;
-					max_bw = max4(bw1, bw2, bw3, bw4);
-					if (max_bw < min_bw) {
-						min_bw = max_bw;
-						min_offset = i;
-						min_shift = j;
+					max_bandwidth = max4(bw1, bw2, bw3, bw4);
+					// remember the best usage found
+					if (max_bandwidth < best_bandwidth) {
+						best_bandwidth = max_bandwidth;
+						best_offset = i;
+						best_shift = j;
 					}
 				}
 			}
 		}
-		print(" min_bw = ");
-		println(min_bw);
+		print(" best_bandwidth = ");
+		println(best_bandwidth);
 		print(", at offset = ");
-		print(min_offset);
+		print(best_offset);
 		print(", shift= ");
-		println(min_shift);
-		if (min_bw > 187) return false;
-		for (uint32_t i=min_offset; i < PERIODIC_LIST_SIZE; i += interval) {
-			uint32_t n = (i << 3) + min_shift;
+		println(best_shift);
+		// a 125 us micro frame can fit 7500 bytes, or 234 of our 32-byte units
+		// fail if the best found needs more than 80% (234 * 0.8) in any uframe
+		if (best_bandwidth > 187) return false;
+		for (uint32_t i=best_offset; i < PERIODIC_LIST_SIZE; i += interval) {
+			uint32_t n = (i << 3) + best_shift;
 			uframe_bandwidth[n+0] += stime;
 			uframe_bandwidth[n+2] += ctime;
 			uframe_bandwidth[n+3] += ctime;
 			uframe_bandwidth[n+4] += ctime;
 		}
-		*smask_out = 0x01 << min_shift;
-		*cmask_out = 0x1C << min_shift;
-		*offset_out = min_offset;
+		pipe->start_mask = 0x01 << best_shift;
+		pipe->complete_mask = 0x1C << best_shift;
+		pipe->periodic_offset = best_offset;
 	}
 	return true;
 }
