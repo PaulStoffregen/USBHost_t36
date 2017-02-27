@@ -39,8 +39,14 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 
 	// timer testing  TODO: remove this later
 	mytimer.init(this);
+	mytimer.pointer = (void *)"This is mytimer";
 	mytimer.start(99129);
+	othertimer.pointer = (void *)"Hello, I'm othertimer";
 	othertimer.start(12345);
+	for (int i=0; i < 7; i++) {
+		mytimers[i].init(this);
+		//mytimers[i].start((i + 1) * 10000);
+	}
 
 	// check for HUB type
 	if (dev->bDeviceClass != 9 || dev->bDeviceSubClass != 0) return false;
@@ -83,6 +89,19 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 
 	return true;
 }
+
+void USBHub::timer_event(USBDriverTimer *timer)
+{
+	uint32_t us = micros() - timer->started_micros;
+	print("timer event (");
+	print(us);
+	print(" us): ");
+	print((char *)timer->pointer);
+	print(", this = ");
+	print((uint32_t)this, HEX);
+	println(", timer = ", (uint32_t)timer, HEX);
+}
+
 
 void USBHub::poweron(uint32_t port)
 {

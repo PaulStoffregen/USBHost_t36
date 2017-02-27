@@ -324,21 +324,35 @@ void USBHost::isr()
 	}
 	if (stat & USBHS_USBSTS_TI1) { // timer 1 - used for USBDriverTimer
 		println("timer1");
+		USBDriverTimer *timer = active_timers;
+		if (timer) {
+			USBDriverTimer *next = timer->next;
+			active_timers = next;
+			if (next) {
+				// more timers scheduled
+				next->prev = NULL;
+				USBHS_GPTIMER1LD = next->usec - 1;
+				USBHS_GPTIMER1CTL = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
+			}
+			// TODO: call multiple timers if 0 elapsed between them?
+			timer->driver->timer_event(timer); // call driver's timer()
+		}
 	}
 }
 
 void USBDriverTimer::start(uint32_t microseconds)
 {
-	Serial.print("start_timer, usec = ");
-	Serial.print(usec);
+	Serial.print("start_timer, us = ");
+	Serial.print(microseconds);
 	Serial.print(", driver = ");
 	Serial.print((uint32_t)driver, HEX);
 	Serial.print(", this = ");
 	Serial.println((uint32_t)this, HEX);
-#if 1
 	if (!driver) return;
 	if (microseconds < 100) return; // minimum timer duration
+	started_micros = micros();
 	if (active_timers == NULL) {
+		// schedule is empty, just add this timer
 		usec = microseconds;
 		next = NULL;
 		prev = NULL;
@@ -347,10 +361,47 @@ void USBDriverTimer::start(uint32_t microseconds)
 		USBHS_GPTIMER1CTL = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
 		return;
 	}
-#endif
-	// TODO, add to active_timers list
-	//uint32_t remain = USBHS_GPTIMER1CTL & 0xFFFFFF;
-
+	uint32_t remain = USBHS_GPTIMER1CTL & 0xFFFFFF;
+	Serial.print("remain = ");
+	Serial.println(remain);
+	if (microseconds < remain) {
+		// this timer event is before any on the schedule
+		__disable_irq();
+		USBHS_GPTIMER1CTL = 0;
+		USBHS_USBSTS = USBHS_USBSTS_TI1; // TODO: UPI & UAI safety?!
+		usec = microseconds;
+		next = active_timers;
+		prev = NULL;
+		active_timers->usec = remain - microseconds;
+		active_timers->prev = this;
+		active_timers = this;
+		USBHS_GPTIMER1LD = microseconds - 1;
+		USBHS_GPTIMER1CTL = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
+		__enable_irq();
+		return;
+	}
+	// add this timer to the schedule, somewhere after the first timer
+	microseconds -= remain;
+	USBDriverTimer *list = active_timers;
+	while (list->next) {
+		list = list->next;
+		if (microseconds < list->usec) {
+			// add timer into middle of list
+			list->usec -= microseconds;
+			usec = microseconds;
+			next = list;
+			prev = list->prev;
+			list->prev = this;
+			prev->next = this;
+			return;
+		}
+		microseconds -= list->usec;
+	}
+	// add timer to the end of the schedule
+	usec = microseconds;
+	next = NULL;
+	prev = list;
+	list->next = this;
 }
 
 
@@ -925,6 +976,7 @@ void USBHost::add_qh_to_periodic_schedule(Pipe_t *pipe)
 		}
 	}
 #endif
+#if 0
 	println("Periodic Schedule:");
 	for (uint32_t i=0; i < PERIODIC_LIST_SIZE; i++) {
 		if (i < 10) print(" ");
@@ -932,6 +984,7 @@ void USBHost::add_qh_to_periodic_schedule(Pipe_t *pipe)
 		print(": ");
 		print_qh_list((Pipe_t *)(periodictable[i] & 0xFFFFFFE0));
 	}
+#endif
 }
 
 
@@ -1044,37 +1097,5 @@ void USBHost::delete_Pipe(Pipe_t *pipe)
 	// hopefully we found everything...
 	free_Pipe(pipe);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

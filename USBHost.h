@@ -258,7 +258,7 @@ protected:
 
 	// When any of the USBDriverTimer objects a driver creates generates
 	// a timer event, this function is called.
-	virtual void timer(USBDriverTimer &whichTimer) { }
+	virtual void timer_event(USBDriverTimer *whichTimer) { }
 
 	// When a device disconnects from the USB, this function is called.
 	// The driver must free all resources it allocated and update any
@@ -291,6 +291,7 @@ public:
 	void start(uint32_t microseconds);
 	void *pointer;
 	uint32_t integer;
+	uint32_t started_micros; // testing only
 private:
 	USBDriver      *driver;
 	uint32_t       usec;
@@ -309,6 +310,7 @@ public:
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
+	virtual void timer_event(USBDriverTimer *whichTimer);
 	virtual void disconnect();
 	void poweron(uint32_t port);
 	void getstatus(uint32_t port);
@@ -320,6 +322,7 @@ protected:
 	void update_status();
 	USBDriverTimer mytimer;
 	USBDriverTimer othertimer;
+	USBDriverTimer mytimers[7];
 	setup_t setup;
 	uint8_t hub_desc[16];
 	uint8_t endpoint;
