@@ -24,7 +24,7 @@
 #include <Arduino.h>
 #include "USBHost.h"
 
-USBHub::USBHub()
+USBHub::USBHub() : /* mytimer(this), */ othertimer(this)
 {
 	// TODO: free Device_t, Pipe_t & Transfer_t we will need
 	driver_ready_for_device(this);
@@ -36,6 +36,11 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 	if (type != 0) return false;
 
 	println("USBHub claim_device this=", (uint32_t)this, HEX);
+
+	// timer testing  TODO: remove this later
+	mytimer.init(this);
+	mytimer.start(99129);
+	othertimer.start(12345);
 
 	// check for HUB type
 	if (dev->bDeviceClass != 9 || dev->bDeviceSubClass != 0) return false;

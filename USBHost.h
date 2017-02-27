@@ -32,9 +32,11 @@
 
 class USBHost;
 class USBDriver;
-typedef struct Device_struct    Device_t;
-typedef struct Pipe_struct      Pipe_t;
-typedef struct Transfer_struct  Transfer_t;
+class USBDriverTimer;
+typedef struct Device_struct       Device_t;
+typedef struct Pipe_struct         Pipe_t;
+typedef struct Transfer_struct     Transfer_t;
+//typedef struct DriverTimer_struct  DriverTimer_t;
 
 // setup_t holds the 8 byte USB SETUP packet data.
 // These unions & structs allow convenient access to
@@ -141,6 +143,7 @@ struct Transfer_struct {
 	uint32_t   unused;
 };
 
+
 /************************************************/
 /*  Main USB EHCI Controller                    */
 /************************************************/
@@ -227,6 +230,11 @@ protected:
 
 // All USB device drivers inherit from this base class.
 class USBDriver : public USBHost {
+public:
+	// TODO: user-level functions
+	// check if device is bound/active/online
+	// query vid, pid
+	// query string: manufacturer, product, serial number
 protected:
 	USBDriver() : next(NULL), device(NULL) {}
 	// Check if a driver wishes to claim a device or interface or group
@@ -248,6 +256,10 @@ protected:
 	// transfers and wishes to be notified when they complete.
 	virtual void control(const Transfer_t *transfer) { }
 
+	// When any of the USBDriverTimer objects a driver creates generates
+	// a timer event, this function is called.
+	virtual void timer(USBDriverTimer &whichTimer) { }
+
 	// When a device disconnects from the USB, this function is called.
 	// The driver must free all resources it allocated and update any
 	// internal state necessary to deal with the possibility of user
@@ -268,13 +280,24 @@ protected:
 	Device_t *device;
 
 	friend class USBHost;
-public:
-	// TODO: user-level functions
-	// check if device is bound/active/online
-	// query vid, pid
-	// query string: manufacturer, product, serial number
 };
 
+// Device drivers may create these timer objects to schedule a timer call
+class USBDriverTimer {
+public:
+	USBDriverTimer() { }
+	USBDriverTimer(USBDriver *d) : driver(d) { }
+	void init(USBDriver *d) { driver = d; };
+	void start(uint32_t microseconds);
+	void *pointer;
+	uint32_t integer;
+private:
+	USBDriver      *driver;
+	uint32_t       usec;
+	USBDriverTimer *next;
+	USBDriverTimer *prev;
+	friend class USBHost;
+};
 
 /************************************************/
 /*  USB Device Drivers                          */
@@ -295,6 +318,8 @@ protected:
 	void status_change(const Transfer_t *transfer);
 	void new_port_status(uint32_t port, uint32_t status);
 	void update_status();
+	USBDriverTimer mytimer;
+	USBDriverTimer othertimer;
 	setup_t setup;
 	uint8_t hub_desc[16];
 	uint8_t endpoint;

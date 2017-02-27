@@ -43,6 +43,7 @@ static Transfer_t *async_followup_first=NULL;
 static Transfer_t *async_followup_last=NULL;
 static Transfer_t *periodic_followup_first=NULL;
 static Transfer_t *periodic_followup_last=NULL;
+static USBDriverTimer *active_timers=NULL;
 
 
 static void init_qTD(volatile Transfer_t *t, void *buf, uint32_t len,
@@ -172,7 +173,7 @@ void USBHost::begin()
 	// enable interrupts, after this point interruts to all the work
 	attachInterruptVector(IRQ_USBHS, isr);
 	NVIC_ENABLE_IRQ(IRQ_USBHS);
-	USBHS_USBINTR = USBHS_USBINTR_PCE | USBHS_USBINTR_TIE0;
+	USBHS_USBINTR = USBHS_USBINTR_PCE | USBHS_USBINTR_TIE0 | USBHS_USBINTR_TIE1;
 	USBHS_USBINTR |= USBHS_USBINTR_UEE | USBHS_USBINTR_SEE;
 	USBHS_USBINTR |= USBHS_USBINTR_AAE;
 	USBHS_USBINTR |= USBHS_USBINTR_UPIE | USBHS_USBINTR_UAIE;
@@ -306,8 +307,8 @@ void USBHost::isr()
 
 		}
 	}
-	if (stat & USBHS_USBSTS_TI0) { // timer 0
-		println("timer");
+	if (stat & USBHS_USBSTS_TI0) { // timer 0 - used for built-in port events
+		println("timer0");
 		if (port_state == PORT_STATE_DEBOUNCE) {
 			port_state = PORT_STATE_RESET;
 			USBHS_PORTSC1 |= USBHS_PORTSC_PR; // begin reset sequence
@@ -321,6 +322,34 @@ void USBHost::isr()
 			rootdev = new_Device(speed, 0, 0);
 		}
 	}
+	if (stat & USBHS_USBSTS_TI1) { // timer 1 - used for USBDriverTimer
+		println("timer1");
+	}
+}
+
+void USBDriverTimer::start(uint32_t microseconds)
+{
+	Serial.print("start_timer, usec = ");
+	Serial.print(usec);
+	Serial.print(", driver = ");
+	Serial.print((uint32_t)driver, HEX);
+	Serial.print(", this = ");
+	Serial.println((uint32_t)this, HEX);
+#if 1
+	if (!driver) return;
+	if (microseconds < 100) return; // minimum timer duration
+	if (active_timers == NULL) {
+		usec = microseconds;
+		next = NULL;
+		prev = NULL;
+		active_timers = this;
+		USBHS_GPTIMER1LD = microseconds - 1;
+		USBHS_GPTIMER1CTL = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
+		return;
+	}
+#endif
+	// TODO, add to active_timers list
+	//uint32_t remain = USBHS_GPTIMER1CTL & 0xFFFFFF;
 
 }
 
@@ -403,6 +432,7 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 		// bulk
 	} else if (type == 3) {
 		// interrupt
+		//pipe->qh.token = 0x80000000; // TODO: OUT starts with DATA0 or DATA1?
 	}
 	pipe->qh.capabilities[0] = QH_capabilities1(15, c, maxlen, 0,
 		dtc, dev->speed, endpoint, 0, dev->address);
