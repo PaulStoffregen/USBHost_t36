@@ -205,6 +205,7 @@ void USBHost::isr()
 	uint32_t stat = USBHS_USBSTS;
 	USBHS_USBSTS = stat; // clear pending interrupts
 	//stat &= USBHS_USBINTR; // mask away unwanted interrupts
+#if 1
 	println();
 	println("ISR: ", stat, HEX);
 	//if (stat & USBHS_USBSTS_UI)  println(" USB Interrupt");
@@ -225,6 +226,7 @@ void USBHost::isr()
 	if (stat & USBHS_USBSTS_UPI) println(" USB Periodic");
 	if (stat & USBHS_USBSTS_TI0) println(" Timer0");
 	if (stat & USBHS_USBSTS_TI1) println(" Timer1");
+#endif
 
 	if (stat & USBHS_USBSTS_UAI) { // completed qTD(s) from the async schedule
 		println("Async Followup");
@@ -308,7 +310,7 @@ void USBHost::isr()
 		}
 	}
 	if (stat & USBHS_USBSTS_TI0) { // timer 0 - used for built-in port events
-		println("timer0");
+		//println("timer0");
 		if (port_state == PORT_STATE_DEBOUNCE) {
 			port_state = PORT_STATE_RESET;
 			USBHS_PORTSC1 |= USBHS_PORTSC_PR; // begin reset sequence
@@ -323,7 +325,7 @@ void USBHost::isr()
 		}
 	}
 	if (stat & USBHS_USBSTS_TI1) { // timer 1 - used for USBDriverTimer
-		println("timer1");
+		//println("timer1");
 		USBDriverTimer *timer = active_timers;
 		if (timer) {
 			USBDriverTimer *next = timer->next;
@@ -362,8 +364,8 @@ void USBDriverTimer::start(uint32_t microseconds)
 		return;
 	}
 	uint32_t remain = USBHS_GPTIMER1CTL & 0xFFFFFF;
-	Serial.print("remain = ");
-	Serial.println(remain);
+	//Serial.print("remain = ");
+	//Serial.println(remain);
 	if (microseconds < remain) {
 		// this timer event is before any on the schedule
 		__disable_irq();
@@ -829,9 +831,13 @@ bool USBHost::allocate_interrupt_pipe_bandwidth(Pipe_t *pipe, uint32_t maxlen, u
 	maxlen = (maxlen * 76459) >> 16; // worst case bit stuffing
 	if (pipe->device->speed == 2) {
 		// high speed 480 Mbit/sec
+		println("  ep interval = ", interval);
 		if (interval > 15) interval = 15;
 		interval = 1 << (interval - 1);
 		if (interval > PERIODIC_LIST_SIZE*8) interval = PERIODIC_LIST_SIZE*8;
+		println("  interval = ", interval);
+		uint32_t pinterval = interval >> 3;
+		pipe->periodic_interval = (pinterval > 0) ? pinterval : 1;
 		uint32_t stime = (55 + 32 + maxlen) >> 5; // time units: 32 bytes or 533 ns
 		uint32_t best_offset = 0xFFFFFFFF;
 		uint32_t best_bandwidth = 0xFFFFFFFF;
@@ -976,7 +982,7 @@ void USBHost::add_qh_to_periodic_schedule(Pipe_t *pipe)
 		}
 	}
 #endif
-#if 0
+#if 1
 	println("Periodic Schedule:");
 	for (uint32_t i=0; i < PERIODIC_LIST_SIZE; i++) {
 		if (i < 10) print(" ");
