@@ -24,7 +24,7 @@
 #include <Arduino.h>
 #include "USBHost.h"
 
-USBHub::USBHub() : /* mytimer(this), */ othertimer(this)
+USBHub::USBHub() : debouncetimer(this), /* mytimer(this), */ othertimer(this)
 {
 	// TODO: free Device_t, Pipe_t & Transfer_t we will need
 	driver_ready_for_device(this);
@@ -44,6 +44,7 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 	//mytimer.start(99129);
 	othertimer.pointer = (void *)"Hello, I'm othertimer";
 	//othertimer.start(12345);
+	debouncetimer.pointer = (void *)"Debounce Timer";
 	for (int i=0; i < 7; i++) {
 		mytimers[i].init(this);
 		//mytimers[i].start((i + 1) * 10000);
@@ -83,25 +84,12 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 	numports = 0; // unknown until hub descriptor is read
 	changepipe = NULL;
 	changebits = 0;
-	memset(portstatus, 0, sizeof(portstatus));
 	memset(portstate, 0, sizeof(portstate));
 
 	mk_setup(setup[0], 0xA0, 6, 0x2900, 0, sizeof(hub_desc));
 	queue_Control_Transfer(dev, &setup[0], hub_desc, this);
 
 	return true;
-}
-
-void USBHub::timer_event(USBDriverTimer *timer)
-{
-	uint32_t us = micros() - timer->started_micros;
-	print("timer event (");
-	print(us);
-	print(" us): ");
-	print((char *)timer->pointer);
-	print(", this = ");
-	print((uint32_t)this, HEX);
-	println(", timer = ", (uint32_t)timer, HEX);
 }
 
 
@@ -127,9 +115,10 @@ void USBHub::send_clearstatus(uint32_t port)
 	queue_Control_Transfer(device, &setup[port], NULL, this);
 }
 
-void USBHub::send_reset(uint32_t port)
+void USBHub::send_setreset(uint32_t port)
 {
 	if (port == 0 || port > numports) return;
+	println("send_setreset");
 	mk_setup(setup[port], 0x23, 3, 4, port, 0); // set feature PORT_RESET
 	queue_Control_Transfer(device, &setup[port], NULL, this);
 }
@@ -177,7 +166,10 @@ void USBHub::control(const Transfer_t *transfer)
 			if (status != statusbits[port]) println("ERROR: status not same");
 			new_port_status(port, status);
 		}
-		send_clearstatus(port);
+		//if (changebits & (1 << port)) {
+			//changebits &= ~(1 << port);
+			send_clearstatus(port);
+		//}
 		break;
 	  case 0x00100120: // clear hub status
 		println("Hub Status Cleared");
@@ -211,14 +203,11 @@ void USBHub::status_change(const Transfer_t *transfer)
 void USBHub::new_port_status(uint32_t port, uint32_t status)
 {
 	if (port == 0 || port > numports) return;
-	uint32_t priorstatus = portstatus[port - 1];
-	portstatus[port] = status;
-
-	print("  Status: port=");
-	print(port);
-	print(", status=");
-	println(status, HEX);
-
+#if 1
+	print("  status=");
+	print(status, HEX);
+	println("  port=", port);
+	println("  state=", portstate[port-1]);
 	// status bits, USB 2.0: 11.24.2.7.1 page 427
 	if (status & 0x0001) println("  Device is present: ");
 	if (status & 0x0002) {
@@ -240,7 +229,41 @@ void USBHub::new_port_status(uint32_t port, uint32_t status)
 	if (status & 0x0100) println("  Has Power");
 	if (status & 0x0800) println("  Test Mode");
 	if (status & 0x1000) println("  Software Controls LEDs");
+#endif
+	uint8_t &state = portstate[port-1];
+	switch (state) {
+	  case PORT_OFF:
+	  case PORT_DISCONNECT:
+		if (status & 0x0001) { // connected
+			state = PORT_DEBOUNCE1;
+			start_debounce_timer(port);
+		}
+		break;
+	  case PORT_DEBOUNCE1:
+	  case PORT_DEBOUNCE2:
+	  case PORT_DEBOUNCE3:
+	  case PORT_DEBOUNCE4:
+	  case PORT_DEBOUNCE5:
+		if (status & 0x0001) {
+			if (++state > PORT_DEBOUNCE5) {
+				// TODO: check for exclusive access to
+				// enumeration process... stay in debounce
+				// and add to wait list if enumeration busy
+				stop_debounce_timer(port);
+				println("sending reset");
+				send_setreset(port);
+			}
+		} else {
+			state = PORT_DISCONNECT;
+		}
+		break;
+	  case PORT_RESET:
+	  case PORT_RECOVERY:
+	  case PORT_ACTIVE:
+		break;
+	}
 
+/*
 	if ((status & 0x0001) && !(priorstatus & 0x0001)) {
 		println("    connect");
 		// 100 ms debounce (USB 2.0: TATTDB, page 150 & 188)
@@ -253,7 +276,41 @@ void USBHub::new_port_status(uint32_t port, uint32_t status)
 
 
 	}
+*/
 
+}
+
+
+void USBHub::timer_event(USBDriverTimer *timer)
+{
+	uint32_t us = micros() - timer->started_micros;
+	print("timer event (");
+	print(us);
+	print(" us): ");
+	print((char *)timer->pointer);
+	print(", this = ");
+	print((uint32_t)this, HEX);
+	println(", timer = ", (uint32_t)timer, HEX);
+	if (timer == &debouncetimer) {
+		uint32_t in_use = debounce_in_use;
+		if (in_use != 0) {
+			for (uint32_t i=1; i < numports; i++) {
+				if (in_use & (1 << i)) send_getstatus(i);
+			}
+			debouncetimer.start(20000);
+		}
+	}
+}
+
+void USBHub::start_debounce_timer(uint32_t port)
+{
+	if (debounce_in_use == 0) debouncetimer.start(20000);
+	debounce_in_use |= (1 << port);
+}
+
+void USBHub::stop_debounce_timer(uint32_t port)
+{
+	debounce_in_use &= ~(1 << port);
 }
 
 

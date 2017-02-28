@@ -307,6 +307,18 @@ class USBHub : public USBDriver {
 public:
 	USBHub();
 	enum { MAXPORTS = 7 };
+	enum {
+		PORT_OFF =        0,
+		PORT_DISCONNECT = 1,
+		PORT_DEBOUNCE1 =  2,
+		PORT_DEBOUNCE2 =  3,
+		PORT_DEBOUNCE3 =  4,
+		PORT_DEBOUNCE4 =  5,
+		PORT_DEBOUNCE5 =  6,
+		PORT_RESET =      7,
+		PORT_RECOVERY =   8,
+		PORT_ACTIVE =     9
+	};
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
@@ -315,15 +327,19 @@ protected:
 	void send_poweron(uint32_t port);
 	void send_getstatus(uint32_t port);
 	void send_clearstatus(uint32_t port);
-	void send_reset(uint32_t port);
+	void send_setreset(uint32_t port);
 	static void callback(const Transfer_t *transfer);
 	void status_change(const Transfer_t *transfer);
 	void new_port_status(uint32_t port, uint32_t status);
-
+	void start_debounce_timer(uint32_t port);
+	void stop_debounce_timer(uint32_t port);
+	USBDriverTimer debouncetimer;
 	USBDriverTimer mytimer;
 	USBDriverTimer othertimer;
 	USBDriverTimer mytimers[MAXPORTS];
+	uint32_t debounce_in_use;
 	setup_t setup[MAXPORTS+1];
+	uint32_t statusbits[MAXPORTS+1];
 	uint8_t hub_desc[16];
 	uint8_t endpoint;
 	uint8_t interval;
@@ -332,8 +348,6 @@ protected:
 	uint8_t powertime;
 	Pipe_t *changepipe;
 	uint32_t changebits;
-	uint32_t statusbits[MAXPORTS+1];
-	uint16_t portstatus[MAXPORTS];
 	uint8_t  portstate[MAXPORTS];
 };
 
