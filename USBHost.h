@@ -131,16 +131,15 @@ struct Transfer_struct {
 	// Linked list of queued, not-yet-completed transfers
 	Transfer_t *next_followup;
 	Transfer_t *prev_followup;
+	Pipe_t     *pipe;
 	// Data to be used by callback function.  When a group
 	// of Transfer_t are created, these fields and the
 	// interrupt-on-complete bit in the qTD token are only
 	// set in the last Transfer_t of the list.
-	Pipe_t     *pipe;
 	void       *buffer;
 	uint32_t   length;
-	setup_t    *setup;
+	setup_t    setup;
 	USBDriver  *driver;
-	uint32_t   unused;
 };
 
 
@@ -198,7 +197,7 @@ protected:
 	static void println(unsigned long n)	{ Serial.println(n); }
 	static void println()			{ Serial.println(); }
 	static void print(uint32_t n, uint8_t b) { Serial.print(n, b); }
-	static void println(uint32_t n, uint8_t b) { Serial.print(n, b); }
+	static void println(uint32_t n, uint8_t b) { Serial.println(n, b); }
 	static void println(const char *s, int n) {
 		Serial.print(s); Serial.println(n); }
 	static void println(const char *s, unsigned int n) {
@@ -307,34 +306,35 @@ private:
 class USBHub : public USBDriver {
 public:
 	USBHub();
+	enum { MAXPORTS = 7 };
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
 	virtual void timer_event(USBDriverTimer *whichTimer);
 	virtual void disconnect();
-	void poweron(uint32_t port);
-	void getstatus(uint32_t port);
-	void clearstatus(uint32_t port);
-	void reset(uint32_t port);
+	void send_poweron(uint32_t port);
+	void send_getstatus(uint32_t port);
+	void send_clearstatus(uint32_t port);
+	void send_reset(uint32_t port);
 	static void callback(const Transfer_t *transfer);
 	void status_change(const Transfer_t *transfer);
 	void new_port_status(uint32_t port, uint32_t status);
-	void update_status();
+
 	USBDriverTimer mytimer;
 	USBDriverTimer othertimer;
-	USBDriverTimer mytimers[7];
-	setup_t setup;
+	USBDriverTimer mytimers[MAXPORTS];
+	setup_t setup[MAXPORTS+1];
 	uint8_t hub_desc[16];
 	uint8_t endpoint;
+	uint8_t interval;
 	uint8_t numports;
 	uint8_t characteristics;
 	uint8_t powertime;
-	uint8_t state;
 	Pipe_t *changepipe;
 	uint32_t changebits;
-	uint32_t statusbits;
-	uint16_t portstatus[7];
-	uint8_t  portstate[7];
+	uint32_t statusbits[MAXPORTS+1];
+	uint16_t portstatus[MAXPORTS];
+	uint8_t  portstate[MAXPORTS];
 };
 
 class KeyboardController : public USBDriver {

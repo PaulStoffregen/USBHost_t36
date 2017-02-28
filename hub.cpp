@@ -35,14 +35,15 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 	// only claim entire device, never at interface level
 	if (type != 0) return false;
 
+	println("USBHub memory usage = ", sizeof(USBHub));
 	println("USBHub claim_device this=", (uint32_t)this, HEX);
 
 	// timer testing  TODO: remove this later
 	mytimer.init(this);
 	mytimer.pointer = (void *)"This is mytimer";
-	mytimer.start(99129);
+	//mytimer.start(99129);
 	othertimer.pointer = (void *)"Hello, I'm othertimer";
-	othertimer.start(12345);
+	//othertimer.start(12345);
 	for (int i=0; i < 7; i++) {
 		mytimers[i].init(this);
 		//mytimers[i].start((i + 1) * 10000);
@@ -65,7 +66,8 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 	uint32_t maxsize = descriptors[13] | (descriptors[14] << 8);
 	if (maxsize == 0) return false;
 	if (maxsize > 1) return false; // do hub chips with > 7 ports exist?
-
+	interval = descriptors[15];
+	println("  polling interval = ", interval);
 	println(descriptors[9]);
 	println(descriptors[10]);
 	println(descriptors[11], HEX);
@@ -78,14 +80,14 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 	println("bDeviceSubClass = ", dev->bDeviceSubClass);
 	println("bDeviceProtocol = ", dev->bDeviceProtocol);
 
+	numports = 0; // unknown until hub descriptor is read
 	changepipe = NULL;
 	changebits = 0;
-	state = 0;
 	memset(portstatus, 0, sizeof(portstatus));
 	memset(portstate, 0, sizeof(portstate));
 
-	mk_setup(setup, 0xA0, 6, 0x2900, 0, sizeof(hub_desc));
-	queue_Control_Transfer(dev, &setup, hub_desc, this);
+	mk_setup(setup[0], 0xA0, 6, 0x2900, 0, sizeof(hub_desc));
+	queue_Control_Transfer(dev, &setup[0], hub_desc, this);
 
 	return true;
 }
@@ -103,36 +105,33 @@ void USBHub::timer_event(USBDriverTimer *timer)
 }
 
 
-void USBHub::poweron(uint32_t port)
+void USBHub::send_poweron(uint32_t port)
 {
-	mk_setup(setup, 0x23, 3, 8, port, 0);
-	queue_Control_Transfer(device, &setup, NULL, this);
+	if (port == 0 || port > numports) return;
+	mk_setup(setup[port], 0x23, 3, 8, port, 0);
+	queue_Control_Transfer(device, &setup[port], NULL, this);
 }
 
-void USBHub::getstatus(uint32_t port)
+void USBHub::send_getstatus(uint32_t port)
 {
-	if (port == 0) {
-		mk_setup(setup, 0xA0, 0, 0, port, 4); // get hub status
-	} else {
-		mk_setup(setup, 0xA3, 0, 0, port, 4); // get port status
-	}
-	queue_Control_Transfer(device, &setup, &statusbits, this);
+	if (port > numports) return;
+	println("getstatus, port = ", port);
+	mk_setup(setup[port], ((port > 0) ? 0xA3 : 0xA0), 0, 0, port, 4);
+	queue_Control_Transfer(device, &setup[port], &statusbits[port], this);
 }
 
-void USBHub::clearstatus(uint32_t port)
+void USBHub::send_clearstatus(uint32_t port)
 {
-	if (port == 0) {
-		mk_setup(setup, 0x20, 1, 0x10, port, 0); // clear hub status
-	} else {
-		mk_setup(setup, 0x23, 1, 0x10, port, 0); // clear port status
-	}
-	queue_Control_Transfer(device, &setup, NULL, this);
+	if (port > numports) return;
+	mk_setup(setup[port], ((port > 0) ? 0x23 : 0x20), 1, 0x10, port, 0);
+	queue_Control_Transfer(device, &setup[port], NULL, this);
 }
 
-void USBHub::reset(uint32_t port)
+void USBHub::send_reset(uint32_t port)
 {
-	mk_setup(setup, 0x23, 3, 4, port, 0); // set feature PORT_RESET
-	queue_Control_Transfer(device, &setup, NULL, this);
+	if (port == 0 || port > numports) return;
+	mk_setup(setup[port], 0x23, 3, 4, port, 0); // set feature PORT_RESET
+	queue_Control_Transfer(device, &setup[port], NULL, this);
 }
 
 
@@ -141,60 +140,59 @@ void USBHub::control(const Transfer_t *transfer)
 	println("USBHub control callback");
 	print_hexbytes(transfer->buffer, transfer->length);
 
-	if (state == 0) {
-		// read hub descriptor to learn hub's capabilities
-		// Hub Descriptor, USB 2.0, 11.23.2.1 page 417
-		if (hub_desc[0] == 9 && hub_desc[1] == 0x29) {
-			numports = hub_desc[2];
-			characteristics = hub_desc[3];
-			powertime = hub_desc[5];
-			// TODO: do we need to use the DeviceRemovable
-			// bits to mke synthetic device connect events?
-			print("Hub has ");
-			print(numports);
-			println(" ports");
-			state = 1;
-			poweron(1);
+	uint32_t port = transfer->setup.wIndex;
+	uint32_t mesg = transfer->setup.word1;
+
+	switch (mesg) {
+	  case 0x290006A0: // read hub descriptor
+		numports = hub_desc[2];
+		characteristics = hub_desc[3];
+		powertime = hub_desc[5];
+		// TODO: do we need to use the DeviceRemovable
+		// bits to make synthetic device connect events?
+		println("Hub ports = ", numports);
+		for (uint32_t i=1; i <= numports; i++) {
+			send_poweron(i);
 		}
-	} else if (state < numports) {
-		// turn on power to all ports
-		poweron(++state);
-	} else if (state == numports) {
-		println("power turned on to all ports");
-		println("device addr = ", device->address);
-		// TODO: use hub's interrupt endpoint interval
-		changepipe = new_Pipe(device, 3, endpoint, 1, 1, 64);
-		println("pipe cap1 = ", changepipe->qh.capabilities[0], HEX);
-		changepipe->callback_function = callback;
-		queue_Data_Transfer(changepipe, &changebits, 1, this);
-		state = 255;
-	} else if (state == 255) {
-		// up and running...
-		switch (setup.word1) {
-		  case 0x000000A0: // get hub status
-			println("New Hub Status");
-			clearstatus(0);
-			return;
-		  case 0x000000A3: // get port status
-			new_port_status(setup.wIndex, statusbits);
-			clearstatus(setup.wIndex);
-			return;
-		  case 0x00100120: // clear hub status
-			println("Hub Status Cleared");
-			changebits &= ~1;
-			break;
-		  case 0x00100123: // clear port status
-			println("Port Status Cleared, port=", setup.wIndex);
-			changebits &= ~(1 << setup.wIndex);
-			break;
+		break;
+	  case 0x00080323: // power turned on
+		if (port == numports && changepipe == NULL) {
+			println("power turned on to all ports");
+			println("device addr = ", device->address);
+			changepipe = new_Pipe(device, 3, endpoint, 1, 1, interval);
+			println("pipe cap1 = ", changepipe->qh.capabilities[0], HEX);
+			changepipe->callback_function = callback;
+			queue_Data_Transfer(changepipe, &changebits, 1, this);
 		}
-		update_status();
+		break;
+
+	  case 0x000000A0: // get hub status
+		println("New Hub Status");
+		send_clearstatus(0);
+		break;
+	  case 0x000000A3: // get port status
+		println("New Port Status");
+		if (transfer->length == 4) {
+			uint32_t status = *(uint32_t *)(transfer->buffer);
+			if (status != statusbits[port]) println("ERROR: status not same");
+			new_port_status(port, status);
+		}
+		send_clearstatus(port);
+		break;
+	  case 0x00100120: // clear hub status
+		println("Hub Status Cleared");
+		break;
+	  case 0x00100123: // clear port status
+		println("Port Status Cleared, port=", port);
+		break;
+	  default:
+		println("unhandled setup, message = ", mesg, HEX);
 	}
 }
 
 void USBHub::callback(const Transfer_t *transfer)
 {
-	println("HUB Callback (static)");
+	//println("HUB Callback (static)");
 	if (transfer->driver) ((USBHub *)(transfer->driver))->status_change(transfer);
 }
 
@@ -202,30 +200,21 @@ void USBHub::status_change(const Transfer_t *transfer)
 {
 	println("HUB Callback (member)");
 	println("status = ", changebits, HEX);
-	// TODO: do something with the status change info
-	update_status();
-	queue_Data_Transfer(changepipe, &changebits, 1, this);
-}
-
-void USBHub::update_status()
-{
-	uint32_t i, mask;
-
-	for (i=0, mask=1; i <= numports; i++, mask <<= 1) {
-		if (changebits & mask) {
-			getstatus(i);
-			return;
+	for (uint32_t i=0; i <= numports; i++) {
+		if (changebits & (1 << i)) {
+			send_getstatus(i);
 		}
 	}
+	queue_Data_Transfer(changepipe, &changebits, 1, this);
 }
 
 void USBHub::new_port_status(uint32_t port, uint32_t status)
 {
-	if (port < 1 || port > 7) return;
+	if (port == 0 || port > numports) return;
 	uint32_t priorstatus = portstatus[port - 1];
 	portstatus[port] = status;
 
-	print("New Port Status, port=");
+	print("  Status: port=");
 	print(port);
 	print(", status=");
 	println(status, HEX);
@@ -255,8 +244,8 @@ void USBHub::new_port_status(uint32_t port, uint32_t status)
 	if ((status & 0x0001) && !(priorstatus & 0x0001)) {
 		println("    connect");
 		// 100 ms debounce (USB 2.0: TATTDB, page 150 & 188)
-		delay(100);  // TODO: horribly bad... need timing events
-		reset(port);
+		//delay(100);  // TODO: horribly bad... need timing events
+		//reset(port);
 		// TODO... reset timer?
 
 	} else if (!(status & 0x0001) && (priorstatus & 0x0001)) {

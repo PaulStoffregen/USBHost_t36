@@ -551,15 +551,20 @@ bool USBHost::queue_Control_Transfer(Device_t *dev, setup_t *setup, void *buf, U
 	println("new_Control_Transfer");
 	if (setup->wLength > 16384) return false; // max 16K data for control
 	transfer = allocate_Transfer();
-	if (!transfer) return false;
+	if (!transfer) {
+		println("  error allocating setup transfer");
+		return false;
+	}
 	status = allocate_Transfer();
 	if (!status) {
+		println("  error allocating status transfer");
 		free_Transfer(transfer);
 		return false;
 	}
 	if (setup->wLength > 0) {
 		data = allocate_Transfer();
 		if (!data) {
+			println("  error allocating data transfer");
 			free_Transfer(transfer);
 			free_Transfer(status);
 			return false;
@@ -579,7 +584,8 @@ bool USBHost::queue_Control_Transfer(Device_t *dev, setup_t *setup, void *buf, U
 	status->pipe = dev->control_pipe;
 	status->buffer = buf;
 	status->length = setup->wLength;
-	status->setup = setup;
+	status->setup.word1 = setup->word1;
+	status->setup.word2 = setup->word2;
 	status->driver = driver;
 	status->qtd.next = 1;
 	return queue_Transfer(dev->control_pipe, transfer);
@@ -622,7 +628,8 @@ bool USBHost::queue_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBD
 	data->pipe = pipe;
 	data->buffer = buffer;
 	data->length = len;
-	data->setup = NULL;
+	data->setup.word1 = 0;
+	data->setup.word2 = 0;
 	data->driver = driver;
 	// initialize all qTDs
 	data = transfer;
@@ -873,8 +880,7 @@ bool USBHost::allocate_interrupt_pipe_bandwidth(Pipe_t *pipe, uint32_t maxlen, u
 		} else {
 			pipe->start_mask = 0x01 << (best_offset & 7);
 		}
-		uint32_t poffset = best_offset >> 3;
-		pipe->periodic_offset = (poffset > 0) ? poffset : 1;
+		pipe->periodic_offset = best_offset >> 3;
 		pipe->complete_mask = 0;
 	} else {
 		// full speed 12 Mbit/sec or low speed 1.5 Mbit/sec
