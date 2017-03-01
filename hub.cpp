@@ -81,7 +81,9 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 	changepipe = NULL;
 	changebits = 0;
 	sending_control_transfer = 0;
+	port_doing_reset = 0;
 	memset(portstate, 0, sizeof(portstate));
+	memset(devicelist, 0, sizeof(devicelist));
 
 	mk_setup(setup, 0xA0, 6, 0x2900, 0, sizeof(hub_desc));
 	queue_Control_Transfer(dev, &setup, hub_desc, this);
@@ -349,8 +351,10 @@ void USBHub::new_port_status(uint32_t port, uint32_t status)
 				// enumeration process... stay in debounce
 				// and add to wait list if enumeration busy
 				stop_debounce_timer(port);
+				state = PORT_RESET;
 				println("sending reset");
 				send_setreset(port);
+				port_doing_reset = port;
 			}
 		} else {
 			state = PORT_DISCONNECT;
@@ -359,31 +363,20 @@ void USBHub::new_port_status(uint32_t port, uint32_t status)
 	  case PORT_RESET:
 		if (status & 0x0002) {
 			// port is now enabled
-			//while (1) ;
-			//send_clearstatus_enable(port);
-			//send_clearstatus_connect(port);
 			send_clearstatus_reset(port);
+			state = PORT_RECOVERY;
+			uint8_t speed=0;
+			if (status & 0x0200) speed = 1;
+			else if (status & 0x0400) speed = 2;
+			port_doing_reset_speed = speed;
+			resettimer.start(25000);
 		}
+		break;
 	  case PORT_RECOVERY:
+		break;
 	  case PORT_ACTIVE:
 		break;
 	}
-
-/*
-	if ((status & 0x0001) && !(priorstatus & 0x0001)) {
-		println("    connect");
-		// 100 ms debounce (USB 2.0: TATTDB, page 150 & 188)
-		//delay(100);  // TODO: horribly bad... need timing events
-		//reset(port);
-		// TODO... reset timer?
-
-	} else if (!(status & 0x0001) && (priorstatus & 0x0001)) {
-		println("    disconnect");
-
-
-	}
-*/
-
 }
 
 
@@ -399,11 +392,25 @@ void USBHub::timer_event(USBDriverTimer *timer)
 	println(", timer = ", (uint32_t)timer, HEX);
 	if (timer == &debouncetimer) {
 		uint32_t in_use = debounce_in_use;
-		if (in_use != 0) {
+		if (in_use) {
 			for (uint32_t i=1; i < numports; i++) {
 				if (in_use & (1 << i)) send_getstatus(i);
 			}
 			debouncetimer.start(20000);
+		}
+	} else if (timer == &resettimer) {
+		uint8_t port = port_doing_reset;
+		println("port_doing_reset = ", port);
+		if (port_doing_reset) {
+			uint8_t &state = portstate[port-1];
+			if (state == PORT_RECOVERY) {
+				port_doing_reset = 0;
+				println("PORT_RECOVERY");
+				// begin enumeration process
+				uint8_t speed = port_doing_reset_speed;
+				devicelist[port-1] = new_Device(speed, device->address, port);
+				state = PORT_ACTIVE;
+			}
 		}
 	}
 }

@@ -347,15 +347,19 @@ protected:
 	USBDriverTimer resettimer;
 	setup_t setup;
 	Pipe_t *changepipe;
+	Device_t *devicelist[MAXPORTS];
 	uint32_t changebits;
 	uint32_t statusbits;
-	uint8_t hub_desc[16];
-	uint8_t endpoint;
-	uint8_t interval;
-	uint8_t numports;
-	uint8_t characteristics;
-	uint8_t powertime;
-	uint8_t sending_control_transfer;
+	uint8_t  hub_desc[16];
+	uint8_t  endpoint;
+	uint8_t  interval;
+	uint8_t  numports;
+	uint8_t  characteristics;
+	uint8_t  powertime;
+	uint8_t  sending_control_transfer;
+	uint8_t  port_doing_reset;
+	uint8_t  port_doing_reset_speed;
+	uint8_t  portstate[MAXPORTS];
 	portbitmask_t send_pending_poweron;
 	portbitmask_t send_pending_getstatus;
 	portbitmask_t send_pending_clearstatus_connect;
@@ -365,7 +369,6 @@ protected:
 	portbitmask_t send_pending_clearstatus_reset;
 	portbitmask_t send_pending_setreset;
 	portbitmask_t debounce_in_use;
-	uint8_t  portstate[MAXPORTS];
 };
 
 class KeyboardController : public USBDriver {
