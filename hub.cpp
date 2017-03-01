@@ -84,6 +84,7 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 	numports = 0; // unknown until hub descriptor is read
 	changepipe = NULL;
 	changebits = 0;
+	sending_control_transfer = 0;
 	memset(portstate, 0, sizeof(portstate));
 
 	mk_setup(setup[0], 0xA0, 6, 0x2900, 0, sizeof(hub_desc));
@@ -93,36 +94,115 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 }
 
 
+bool USBHub::can_send_control_now()
+{
+	if (sending_control_transfer) return false;
+	sending_control_transfer = 1;
+	return true;
+}
+
 void USBHub::send_poweron(uint32_t port)
 {
 	if (port == 0 || port > numports) return;
-	mk_setup(setup[port], 0x23, 3, 8, port, 0);
-	queue_Control_Transfer(device, &setup[port], NULL, this);
+	if (can_send_control_now()) {
+		mk_setup(setup[port], 0x23, 3, 8, port, 0);
+		queue_Control_Transfer(device, &setup[port], NULL, this);
+		send_pending_poweron &= ~(1 << port);
+	} else {
+		send_pending_poweron |= (1 << port);
+	}
 }
 
 void USBHub::send_getstatus(uint32_t port)
 {
 	if (port > numports) return;
+	if (can_send_control_now()) {
 	println("getstatus, port = ", port);
-	mk_setup(setup[port], ((port > 0) ? 0xA3 : 0xA0), 0, 0, port, 4);
-	queue_Control_Transfer(device, &setup[port], &statusbits[port], this);
+		mk_setup(setup[port], ((port > 0) ? 0xA3 : 0xA0), 0, 0, port, 4);
+		queue_Control_Transfer(device, &setup[port], &statusbits[port], this);
+		send_pending_getstatus &= ~(1 << port);
+	} else {
+		send_pending_getstatus |= (1 << port);
+	}
 }
 
-void USBHub::send_clearstatus(uint32_t port)
+void USBHub::send_clearstatus_connect(uint32_t port)
 {
-	if (port > numports) return;
-	mk_setup(setup[port], ((port > 0) ? 0x23 : 0x20), 1, 0x10, port, 0);
-	queue_Control_Transfer(device, &setup[port], NULL, this);
+	if (port == 0 || port > numports) return;
+	if (can_send_control_now()) {
+		mk_setup(setup[port], 0x23, 1, 16, port, 0); // 16=C_PORT_CONNECTION
+		queue_Control_Transfer(device, &setup[port], NULL, this);
+		send_pending_clearstatus_connect &= ~(1 << port);
+	} else {
+		send_pending_clearstatus_connect |= (1 << port);
+	}
+}
+
+void USBHub::send_clearstatus_enable(uint32_t port)
+{
+	if (port == 0 || port > numports) return;
+	if (can_send_control_now()) {
+		mk_setup(setup[port], 0x23, 1, 17, port, 0); // 17=C_PORT_ENABLE
+		queue_Control_Transfer(device, &setup[port], NULL, this);
+		send_pending_clearstatus_enable &= ~(1 << port);
+	} else {
+		send_pending_clearstatus_enable |= (1 << port);
+	}
+}
+
+void USBHub::send_clearstatus_suspend(uint32_t port)
+{
+	if (port == 0 || port > numports) return;
+	if (can_send_control_now()) {
+		mk_setup(setup[port], 0x23, 1, 18, port, 0); // 18=C_PORT_SUSPEND
+		queue_Control_Transfer(device, &setup[port], NULL, this);
+		send_pending_clearstatus_suspend &= ~(1 << port);
+	} else {
+		send_pending_clearstatus_suspend |= (1 << port);
+	}
+}
+
+void USBHub::send_clearstatus_overcurrent(uint32_t port)
+{
+	if (port == 0 || port > numports) return;
+	if (can_send_control_now()) {
+		mk_setup(setup[port], 0x23, 1, 19, port, 0); // 19=C_PORT_OVER_CURRENT
+		queue_Control_Transfer(device, &setup[port], NULL, this);
+		send_pending_clearstatus_overcurrent &= ~(1 << port);
+	} else {
+		send_pending_clearstatus_overcurrent |= (1 << port);
+	}
+}
+
+void USBHub::send_clearstatus_reset(uint32_t port)
+{
+	if (port == 0 || port > numports) return;
+	if (can_send_control_now()) {
+		mk_setup(setup[port], 0x23, 1, 20, port, 0); // 20=C_PORT_RESET
+		queue_Control_Transfer(device, &setup[port], NULL, this);
+		send_pending_clearstatus_reset &= ~(1 << port);
+	} else {
+		send_pending_clearstatus_reset |= (1 << port);
+	}
 }
 
 void USBHub::send_setreset(uint32_t port)
 {
 	if (port == 0 || port > numports) return;
 	println("send_setreset");
-	mk_setup(setup[port], 0x23, 3, 4, port, 0); // set feature PORT_RESET
-	queue_Control_Transfer(device, &setup[port], NULL, this);
+	if (can_send_control_now()) {
+		mk_setup(setup[port], 0x23, 3, 4, port, 0); // set feature PORT_RESET
+		queue_Control_Transfer(device, &setup[port], NULL, this);
+		send_pending_setreset &= ~(1 << port);
+	} else {
+		send_pending_setreset |= (1 << port);
+	}
 }
 
+static uint32_t lowestbit(uint32_t bitmask)
+{
+	return 31 - __builtin_clz(bitmask);
+}
 
 void USBHub::control(const Transfer_t *transfer)
 {
@@ -157,7 +237,6 @@ void USBHub::control(const Transfer_t *transfer)
 
 	  case 0x000000A0: // get hub status
 		println("New Hub Status");
-		send_clearstatus(0);
 		break;
 	  case 0x000000A3: // get port status
 		println("New Port Status");
@@ -168,7 +247,7 @@ void USBHub::control(const Transfer_t *transfer)
 		}
 		//if (changebits & (1 << port)) {
 			//changebits &= ~(1 << port);
-			send_clearstatus(port);
+			//send_clearstatus(port);
 		//}
 		break;
 	  case 0x00100120: // clear hub status
@@ -179,6 +258,29 @@ void USBHub::control(const Transfer_t *transfer)
 		break;
 	  default:
 		println("unhandled setup, message = ", mesg, HEX);
+	}
+	// After we've completed processing for this control
+	// transfer, check if any more need to be sent.  These
+	// allow only a single control transfer to occur at once
+	// which isn't fast, but requires only 3 Transfer_t and
+	// allows reusing the setup and other buffers
+	sending_control_transfer = 0;
+	if (send_pending_poweron) {
+		send_poweron(lowestbit(send_pending_poweron));
+	} else if (send_pending_clearstatus_connect) {
+		send_clearstatus_connect(lowestbit(send_pending_clearstatus_connect));
+	} else if (send_pending_clearstatus_enable) {
+		send_clearstatus_enable(lowestbit(send_pending_clearstatus_enable));
+	} else if (send_pending_clearstatus_suspend) {
+		send_clearstatus_suspend(lowestbit(send_pending_clearstatus_suspend));
+	} else if (send_pending_clearstatus_overcurrent) {
+		send_clearstatus_overcurrent(lowestbit(send_pending_clearstatus_overcurrent));
+	} else if (send_pending_clearstatus_reset) {
+		send_clearstatus_reset(lowestbit(send_pending_clearstatus_reset));
+	} else if (send_pending_getstatus) {
+		send_getstatus(lowestbit(send_pending_getstatus));
+	} else if (send_pending_setreset) {
+		send_setreset(lowestbit(send_pending_setreset));
 	}
 }
 
@@ -211,7 +313,7 @@ void USBHub::new_port_status(uint32_t port, uint32_t status)
 	// status bits, USB 2.0: 11.24.2.7.1 page 427
 	if (status & 0x0001) println("  Device is present: ");
 	if (status & 0x0002) {
-		println("  Enabled, speed = ");
+		print("  Enabled, speed = ");
 		if (status & 0x0200) {
 			print("1.5");
 		} else {
@@ -237,6 +339,7 @@ void USBHub::new_port_status(uint32_t port, uint32_t status)
 		if (status & 0x0001) { // connected
 			state = PORT_DEBOUNCE1;
 			start_debounce_timer(port);
+			send_clearstatus_connect(port);
 		}
 		break;
 	  case PORT_DEBOUNCE1:
@@ -258,6 +361,13 @@ void USBHub::new_port_status(uint32_t port, uint32_t status)
 		}
 		break;
 	  case PORT_RESET:
+		if (status & 0x0002) {
+			// port is now enabled
+			//while (1) ;
+			//send_clearstatus_enable(port);
+			//send_clearstatus_connect(port);
+			send_clearstatus_reset(port);
+		}
 	  case PORT_RECOVERY:
 	  case PORT_ACTIVE:
 		break;

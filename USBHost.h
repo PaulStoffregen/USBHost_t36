@@ -307,6 +307,7 @@ class USBHub : public USBDriver {
 public:
 	USBHub();
 	enum { MAXPORTS = 7 };
+	typedef uint8_t portbitmask_t;
 	enum {
 		PORT_OFF =        0,
 		PORT_DISCONNECT = 1,
@@ -324,10 +325,17 @@ protected:
 	virtual void control(const Transfer_t *transfer);
 	virtual void timer_event(USBDriverTimer *whichTimer);
 	virtual void disconnect();
+	bool can_send_control_now();
+
 	void send_poweron(uint32_t port);
 	void send_getstatus(uint32_t port);
-	void send_clearstatus(uint32_t port);
+	void send_clearstatus_connect(uint32_t port);
+	void send_clearstatus_enable(uint32_t port);
+	void send_clearstatus_suspend(uint32_t port);
+	void send_clearstatus_overcurrent(uint32_t port);
+	void send_clearstatus_reset(uint32_t port);
 	void send_setreset(uint32_t port);
+
 	static void callback(const Transfer_t *transfer);
 	void status_change(const Transfer_t *transfer);
 	void new_port_status(uint32_t port, uint32_t status);
@@ -346,6 +354,15 @@ protected:
 	uint8_t numports;
 	uint8_t characteristics;
 	uint8_t powertime;
+	uint8_t sending_control_transfer;
+	portbitmask_t send_pending_poweron;
+	portbitmask_t send_pending_getstatus;
+	portbitmask_t send_pending_clearstatus_connect;
+	portbitmask_t send_pending_clearstatus_enable;
+	portbitmask_t send_pending_clearstatus_suspend;
+	portbitmask_t send_pending_clearstatus_overcurrent;
+	portbitmask_t send_pending_clearstatus_reset;
+	portbitmask_t send_pending_setreset;
 	Pipe_t *changepipe;
 	uint32_t changebits;
 	uint8_t  portstate[MAXPORTS];
