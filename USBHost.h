@@ -341,13 +341,14 @@ protected:
 	void new_port_status(uint32_t port, uint32_t status);
 	void start_debounce_timer(uint32_t port);
 	void stop_debounce_timer(uint32_t port);
+
 	USBDriverTimer debouncetimer;
-	USBDriverTimer mytimer;
-	USBDriverTimer othertimer;
-	USBDriverTimer mytimers[MAXPORTS];
-	uint32_t debounce_in_use;
-	setup_t setup[MAXPORTS+1];
-	uint32_t statusbits[MAXPORTS+1];
+	//USBDriverTimer mytimer;
+	USBDriverTimer resettimer;
+	setup_t setup;
+	Pipe_t *changepipe;
+	uint32_t changebits;
+	uint32_t statusbits;
 	uint8_t hub_desc[16];
 	uint8_t endpoint;
 	uint8_t interval;
@@ -363,8 +364,7 @@ protected:
 	portbitmask_t send_pending_clearstatus_overcurrent;
 	portbitmask_t send_pending_clearstatus_reset;
 	portbitmask_t send_pending_setreset;
-	Pipe_t *changepipe;
-	uint32_t changebits;
+	portbitmask_t debounce_in_use;
 	uint8_t  portstate[MAXPORTS];
 };
 

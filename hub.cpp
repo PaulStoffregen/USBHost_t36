@@ -24,7 +24,7 @@
 #include <Arduino.h>
 #include "USBHost.h"
 
-USBHub::USBHub() : debouncetimer(this), /* mytimer(this), */ othertimer(this)
+USBHub::USBHub() : debouncetimer(this), /* mytimer(this), */ resettimer(this)
 {
 	// TODO: free Device_t, Pipe_t & Transfer_t we will need
 	driver_ready_for_device(this);
@@ -39,16 +39,12 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 	println("USBHub claim_device this=", (uint32_t)this, HEX);
 
 	// timer testing  TODO: remove this later
-	mytimer.init(this);
-	mytimer.pointer = (void *)"This is mytimer";
+	//mytimer.init(this);
+	//mytimer.pointer = (void *)"This is mytimer";
 	//mytimer.start(99129);
-	othertimer.pointer = (void *)"Hello, I'm othertimer";
-	//othertimer.start(12345);
+	resettimer.pointer = (void *)"Hello, I'm resettimer";
+	//resettimer.start(12345);
 	debouncetimer.pointer = (void *)"Debounce Timer";
-	for (int i=0; i < 7; i++) {
-		mytimers[i].init(this);
-		//mytimers[i].start((i + 1) * 10000);
-	}
 
 	// check for HUB type
 	if (dev->bDeviceClass != 9 || dev->bDeviceSubClass != 0) return false;
@@ -87,8 +83,8 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 	sending_control_transfer = 0;
 	memset(portstate, 0, sizeof(portstate));
 
-	mk_setup(setup[0], 0xA0, 6, 0x2900, 0, sizeof(hub_desc));
-	queue_Control_Transfer(dev, &setup[0], hub_desc, this);
+	mk_setup(setup, 0xA0, 6, 0x2900, 0, sizeof(hub_desc));
+	queue_Control_Transfer(dev, &setup, hub_desc, this);
 
 	return true;
 }
@@ -105,8 +101,8 @@ void USBHub::send_poweron(uint32_t port)
 {
 	if (port == 0 || port > numports) return;
 	if (can_send_control_now()) {
-		mk_setup(setup[port], 0x23, 3, 8, port, 0);
-		queue_Control_Transfer(device, &setup[port], NULL, this);
+		mk_setup(setup, 0x23, 3, 8, port, 0);
+		queue_Control_Transfer(device, &setup, NULL, this);
 		send_pending_poweron &= ~(1 << port);
 	} else {
 		send_pending_poweron |= (1 << port);
@@ -118,8 +114,8 @@ void USBHub::send_getstatus(uint32_t port)
 	if (port > numports) return;
 	if (can_send_control_now()) {
 	println("getstatus, port = ", port);
-		mk_setup(setup[port], ((port > 0) ? 0xA3 : 0xA0), 0, 0, port, 4);
-		queue_Control_Transfer(device, &setup[port], &statusbits[port], this);
+		mk_setup(setup, ((port > 0) ? 0xA3 : 0xA0), 0, 0, port, 4);
+		queue_Control_Transfer(device, &setup, &statusbits, this);
 		send_pending_getstatus &= ~(1 << port);
 	} else {
 		send_pending_getstatus |= (1 << port);
@@ -130,8 +126,8 @@ void USBHub::send_clearstatus_connect(uint32_t port)
 {
 	if (port == 0 || port > numports) return;
 	if (can_send_control_now()) {
-		mk_setup(setup[port], 0x23, 1, 16, port, 0); // 16=C_PORT_CONNECTION
-		queue_Control_Transfer(device, &setup[port], NULL, this);
+		mk_setup(setup, 0x23, 1, 16, port, 0); // 16=C_PORT_CONNECTION
+		queue_Control_Transfer(device, &setup, NULL, this);
 		send_pending_clearstatus_connect &= ~(1 << port);
 	} else {
 		send_pending_clearstatus_connect |= (1 << port);
@@ -142,8 +138,8 @@ void USBHub::send_clearstatus_enable(uint32_t port)
 {
 	if (port == 0 || port > numports) return;
 	if (can_send_control_now()) {
-		mk_setup(setup[port], 0x23, 1, 17, port, 0); // 17=C_PORT_ENABLE
-		queue_Control_Transfer(device, &setup[port], NULL, this);
+		mk_setup(setup, 0x23, 1, 17, port, 0); // 17=C_PORT_ENABLE
+		queue_Control_Transfer(device, &setup, NULL, this);
 		send_pending_clearstatus_enable &= ~(1 << port);
 	} else {
 		send_pending_clearstatus_enable |= (1 << port);
@@ -154,8 +150,8 @@ void USBHub::send_clearstatus_suspend(uint32_t port)
 {
 	if (port == 0 || port > numports) return;
 	if (can_send_control_now()) {
-		mk_setup(setup[port], 0x23, 1, 18, port, 0); // 18=C_PORT_SUSPEND
-		queue_Control_Transfer(device, &setup[port], NULL, this);
+		mk_setup(setup, 0x23, 1, 18, port, 0); // 18=C_PORT_SUSPEND
+		queue_Control_Transfer(device, &setup, NULL, this);
 		send_pending_clearstatus_suspend &= ~(1 << port);
 	} else {
 		send_pending_clearstatus_suspend |= (1 << port);
@@ -166,8 +162,8 @@ void USBHub::send_clearstatus_overcurrent(uint32_t port)
 {
 	if (port == 0 || port > numports) return;
 	if (can_send_control_now()) {
-		mk_setup(setup[port], 0x23, 1, 19, port, 0); // 19=C_PORT_OVER_CURRENT
-		queue_Control_Transfer(device, &setup[port], NULL, this);
+		mk_setup(setup, 0x23, 1, 19, port, 0); // 19=C_PORT_OVER_CURRENT
+		queue_Control_Transfer(device, &setup, NULL, this);
 		send_pending_clearstatus_overcurrent &= ~(1 << port);
 	} else {
 		send_pending_clearstatus_overcurrent |= (1 << port);
@@ -178,8 +174,8 @@ void USBHub::send_clearstatus_reset(uint32_t port)
 {
 	if (port == 0 || port > numports) return;
 	if (can_send_control_now()) {
-		mk_setup(setup[port], 0x23, 1, 20, port, 0); // 20=C_PORT_RESET
-		queue_Control_Transfer(device, &setup[port], NULL, this);
+		mk_setup(setup, 0x23, 1, 20, port, 0); // 20=C_PORT_RESET
+		queue_Control_Transfer(device, &setup, NULL, this);
 		send_pending_clearstatus_reset &= ~(1 << port);
 	} else {
 		send_pending_clearstatus_reset |= (1 << port);
@@ -191,8 +187,8 @@ void USBHub::send_setreset(uint32_t port)
 	if (port == 0 || port > numports) return;
 	println("send_setreset");
 	if (can_send_control_now()) {
-		mk_setup(setup[port], 0x23, 3, 4, port, 0); // set feature PORT_RESET
-		queue_Control_Transfer(device, &setup[port], NULL, this);
+		mk_setup(setup, 0x23, 3, 4, port, 0); // set feature PORT_RESET
+		queue_Control_Transfer(device, &setup, NULL, this);
 		send_pending_setreset &= ~(1 << port);
 	} else {
 		send_pending_setreset |= (1 << port);
@@ -242,7 +238,7 @@ void USBHub::control(const Transfer_t *transfer)
 		println("New Port Status");
 		if (transfer->length == 4) {
 			uint32_t status = *(uint32_t *)(transfer->buffer);
-			if (status != statusbits[port]) println("ERROR: status not same");
+			if (status != statusbits) println("ERROR: status not same");
 			new_port_status(port, status);
 		}
 		//if (changebits & (1 << port)) {
