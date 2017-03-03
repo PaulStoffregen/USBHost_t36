@@ -31,6 +31,10 @@ static setup_t enumsetup __attribute__ ((aligned(16)));
 static uint16_t enumlen;
 static Device_t  *devlist=NULL;
 
+// True while any device is present but not yet fully configured.
+// Only one USB device may be in this state at a time (responding
+// to address zero) and using the enumeration static buffer.
+volatile bool USBHost::enumeration_busy = false;
 
 static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen);
 static void pipe_set_addr(Pipe_t *pipe, uint32_t addr);
@@ -79,9 +83,9 @@ Device_t * USBHost::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_p
 	}
 	dev->control_pipe->callback_function = &enumeration;
 	dev->control_pipe->direction = 1; // 1=IN
-	// TODO: exclusive access to enumeration process
-	// any new devices detected while enumerating would
-	// go onto a waiting list
+	// Here is where the enumeration process officially begins.
+	// Only a single device can enumerate at a time.
+	USBHost::enumeration_busy = true;
 	mk_setup(enumsetup, 0x80, 6, 0x0100, 0, 8); // 6=GET_DESCRIPTOR
 	queue_Control_Transfer(dev, &enumsetup, enumbuf, NULL);
 	if (devlist == NULL) {
@@ -227,8 +231,11 @@ void USBHost::enumeration(const Transfer_t *transfer)
 		case 14: // device is now configured
 			claim_drivers(dev);
 			dev->enum_state = 15;
-			// TODO: unlock exclusive access to enumeration process
-			// if any detected devices are waiting, start the first
+			// unlock exclusive access to enumeration process.  If any
+			// more devices are waiting, the hub driver is responsible
+			// for resetting their ports and starting their enumeration
+			// when the port enables.
+			USBHost::enumeration_busy = false;
 			return;
 		case 15: // control transfers for other stuff?
 			// TODO: handle other standard control: set/clear feature, etc

@@ -24,7 +24,12 @@
 #include <Arduino.h>
 #include "USBHost.h"
 
-USBHub::USBHub() : debouncetimer(this), /* mytimer(this), */ resettimer(this)
+// True when any hub port is in the reset or reset recovery phase.
+// Only one USB device may be reset at a time, because it will
+// begin responding to address zero.
+volatile bool USBHub::reset_busy = false;
+
+USBHub::USBHub() : debouncetimer(this), resettimer(this)
 {
 	// TODO: free Device_t, Pipe_t & Transfer_t we will need
 	driver_ready_for_device(this);
@@ -38,12 +43,7 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 	println("USBHub memory usage = ", sizeof(USBHub));
 	println("USBHub claim_device this=", (uint32_t)this, HEX);
 
-	// timer testing  TODO: remove this later
-	//mytimer.init(this);
-	//mytimer.pointer = (void *)"This is mytimer";
-	//mytimer.start(99129);
 	resettimer.pointer = (void *)"Hello, I'm resettimer";
-	//resettimer.start(12345);
 	debouncetimer.pointer = (void *)"Debounce Timer";
 
 	// check for HUB type
@@ -347,9 +347,13 @@ void USBHub::new_port_status(uint32_t port, uint32_t status)
 	  case PORT_DEBOUNCE5:
 		if (status & 0x0001) {
 			if (++state > PORT_DEBOUNCE5) {
-				// TODO: check for exclusive access to
-				// enumeration process... stay in debounce
-				// and add to wait list if enumeration busy
+				if (USBHub::reset_busy || USBHost::enumeration_busy) {
+					// wait in debounce state if another port is
+					// resetting or a device is busy enumerating
+					state = PORT_DEBOUNCE5;
+					break;
+				}
+				USBHub::reset_busy = true;
 				stop_debounce_timer(port);
 				state = PORT_RESET;
 				println("sending reset");
@@ -409,10 +413,21 @@ void USBHub::timer_event(USBDriverTimer *timer)
 				// begin enumeration process
 				uint8_t speed = port_doing_reset_speed;
 				devicelist[port-1] = new_Device(speed, device->address, port);
+				// TODO: if return is NULL, what to do?  Panic?
+				// Can we disable the port?  Will this device
+				// play havoc if it sits unconfigured responding
+				// to address zero?  Does that even matter?  Maybe
+				// we have far worse issues when memory isn't
+				// available?!
+				USBHub::reset_busy = false;
 				state = PORT_ACTIVE;
 			}
 		}
 	}
+
+	// TODO: testing only!!!
+	static uint32_t count=0;
+	if (++count > 36) while (1) ; // stop here
 }
 
 void USBHub::start_debounce_timer(uint32_t port)

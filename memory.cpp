@@ -27,7 +27,7 @@
 
 // Memory allocation
 
-static Device_t memory_Device[3];
+static Device_t memory_Device[4];
 static Pipe_t memory_Pipe[8] __attribute__ ((aligned(32)));
 static Transfer_t memory_Transfer[34] __attribute__ ((aligned(32)));
 

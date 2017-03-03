@@ -161,6 +161,7 @@ protected:
 	static void disconnect_Device(Device_t *dev);
 	static void enumeration(const Transfer_t *transfer);
 	static void driver_ready_for_device(USBDriver *driver);
+	static volatile bool enumeration_busy;
 private:
 	static void isr();
 	static void claim_drivers(Device_t *dev);
@@ -326,7 +327,6 @@ protected:
 	virtual void timer_event(USBDriverTimer *whichTimer);
 	virtual void disconnect();
 	bool can_send_control_now();
-
 	void send_poweron(uint32_t port);
 	void send_getstatus(uint32_t port);
 	void send_clearstatus_connect(uint32_t port);
@@ -335,15 +335,14 @@ protected:
 	void send_clearstatus_overcurrent(uint32_t port);
 	void send_clearstatus_reset(uint32_t port);
 	void send_setreset(uint32_t port);
-
 	static void callback(const Transfer_t *transfer);
 	void status_change(const Transfer_t *transfer);
 	void new_port_status(uint32_t port, uint32_t status);
 	void start_debounce_timer(uint32_t port);
 	void stop_debounce_timer(uint32_t port);
+	static volatile bool reset_busy;
 
 	USBDriverTimer debouncetimer;
-	//USBDriverTimer mytimer;
 	USBDriverTimer resettimer;
 	setup_t setup;
 	Pipe_t *changepipe;

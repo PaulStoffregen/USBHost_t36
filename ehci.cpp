@@ -175,7 +175,6 @@ void USBHost::begin()
 	NVIC_ENABLE_IRQ(IRQ_USBHS);
 	USBHS_USBINTR = USBHS_USBINTR_PCE | USBHS_USBINTR_TIE0 | USBHS_USBINTR_TIE1;
 	USBHS_USBINTR |= USBHS_USBINTR_UEE | USBHS_USBINTR_SEE;
-	USBHS_USBINTR |= USBHS_USBINTR_AAE;
 	USBHS_USBINTR |= USBHS_USBINTR_UPIE | USBHS_USBINTR_UAIE;
 
 }
@@ -313,12 +312,16 @@ void USBHost::isr()
 		//println("timer0");
 		if (port_state == PORT_STATE_DEBOUNCE) {
 			port_state = PORT_STATE_RESET;
+			// Since we have only 1 port, no other device can
+			// be in reset or enumeration.  If multiple ports
+			// are ever supported, we would need to remain in
+			// debounce if any other port was resetting or
+			// enumerating a device.
 			USBHS_PORTSC1 |= USBHS_PORTSC_PR; // begin reset sequence
 			println("  begin reset");
 		} else if (port_state == PORT_STATE_RECOVERY) {
 			port_state = PORT_STATE_ACTIVE;
 			println("  end recovery");
-
 			//  HCSPARAMS  TTCTRL  page 1671
 			uint32_t speed = (USBHS_PORTSC1 >> 26) & 3;
 			rootdev = new_Device(speed, 0, 0);
