@@ -382,6 +382,7 @@ public:
 	void    attachRelease(void (*keyReleased)());
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
+	virtual void control(const Transfer_t *transfer);
 	virtual void disconnect();
 	static void callback(const Transfer_t *transfer);
 	void new_data(const Transfer_t *transfer);
@@ -389,6 +390,7 @@ private:
 	void (*keyPressedFunction)();
 	void (*keyReleasedFunction)();
 	Pipe_t *datapipe;
+	setup_t setup;
 	uint8_t report[8];
 };
 

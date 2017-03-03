@@ -62,7 +62,13 @@ bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descripto
 	datapipe = new_Pipe(dev, 3, endpoint, 1, 8, interval);
 	datapipe->callback_function = callback;
 	queue_Data_Transfer(datapipe, report, 8, this);
+	mk_setup(setup, 0x21, 10, 0, 0, 0); // 10=SET_IDLE
+	queue_Control_Transfer(dev, &setup, NULL, this);
 	return true;
+}
+
+void KeyboardController::control(const Transfer_t *transfer)
+{
 }
 
 void KeyboardController::callback(const Transfer_t *transfer)
