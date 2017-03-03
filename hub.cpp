@@ -362,6 +362,7 @@ void USBHub::new_port_status(uint32_t port, uint32_t status)
 				port_doing_reset = port;
 			}
 		} else {
+			stop_debounce_timer(port);
 			state = PORT_DISCONNECT;
 		}
 		break;
@@ -375,11 +376,26 @@ void USBHub::new_port_status(uint32_t port, uint32_t status)
 			else if (status & 0x0400) speed = 2;
 			port_doing_reset_speed = speed;
 			resettimer.start(25000);
+		} else if (!(status & 0x0001)) {
+			send_clearstatus_connect(port);
+			USBHub::reset_busy = false;
+			state = PORT_DISCONNECT;
 		}
 		break;
 	  case PORT_RECOVERY:
+		if (!(status & 0x0001)) {
+			send_clearstatus_connect(port);
+			USBHub::reset_busy = false;
+			state = PORT_DISCONNECT;
+		}
 		break;
 	  case PORT_ACTIVE:
+		if (!(status & 0x0001)) {
+			disconnect_Device(devicelist[port-1]);
+			devicelist[port-1] = NULL;
+			send_clearstatus_connect(port);
+			state = PORT_DISCONNECT;
+		}
 		break;
 	}
 }
@@ -428,8 +444,8 @@ void USBHub::timer_event(USBDriverTimer *timer)
 	}
 
 	// TODO: testing only!!!
-	static uint32_t count=0;
-	if (++count > 36) while (1) ; // stop here
+	//static uint32_t count=0;
+	//if (++count > 36) while (1) ; // stop here
 }
 
 void USBHub::start_debounce_timer(uint32_t port)
