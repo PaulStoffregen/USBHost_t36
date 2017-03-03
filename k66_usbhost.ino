@@ -27,7 +27,8 @@ USBHost myusb;
 USBHub hub1;
 USBHub hub2;
 USBHub hub3;
-KeyboardController keyboard;
+KeyboardController keyboard1;
+KeyboardController keyboard2;
 MIDIDevice midi1;
 
 void setup()

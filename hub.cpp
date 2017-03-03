@@ -115,11 +115,12 @@ void USBHub::send_getstatus(uint32_t port)
 {
 	if (port > numports) return;
 	if (can_send_control_now()) {
-	println("getstatus, port = ", port);
+		println("getstatus, port = ", port);
 		mk_setup(setup, ((port > 0) ? 0xA3 : 0xA0), 0, 0, port, 4);
 		queue_Control_Transfer(device, &setup, &statusbits, this);
 		send_pending_getstatus &= ~(1 << port);
 	} else {
+		println("deferred getstatus, port = ", port);
 		send_pending_getstatus |= (1 << port);
 	}
 }
@@ -396,8 +397,9 @@ void USBHub::timer_event(USBDriverTimer *timer)
 	println(", timer = ", (uint32_t)timer, HEX);
 	if (timer == &debouncetimer) {
 		uint32_t in_use = debounce_in_use;
+		println("ports in use bitmask = ", in_use, HEX);
 		if (in_use) {
-			for (uint32_t i=1; i < numports; i++) {
+			for (uint32_t i=1; i <= numports; i++) {
 				if (in_use & (1 << i)) send_getstatus(i);
 			}
 			debouncetimer.start(20000);
