@@ -161,6 +161,9 @@ protected:
 	static void disconnect_Device(Device_t *dev);
 	static void enumeration(const Transfer_t *transfer);
 	static void driver_ready_for_device(USBDriver *driver);
+	static void contribute_Devices(Device_t *devices, uint32_t num);
+	static void contribute_Pipes(Pipe_t *pipes, uint32_t num);
+	static void contribute_Transfers(Transfer_t *transfers, uint32_t num);
 	static volatile bool enumeration_busy;
 private:
 	static void isr();
@@ -307,6 +310,10 @@ private:
 class USBHub : public USBDriver {
 public:
 	USBHub();
+	// Hubs with more more than 7 ports are built from two tiers of hubs
+	// using 4 or 7 port hub chips.  While the USB spec seems to allow
+	// hubs to have up to 255 ports, in practice all hub chips on the
+	// market are only 2, 3, 4 or 7 ports.
 	enum { MAXPORTS = 7 };
 	typedef uint8_t portbitmask_t;
 	enum {
@@ -368,6 +375,9 @@ protected:
 	portbitmask_t send_pending_clearstatus_reset;
 	portbitmask_t send_pending_setreset;
 	portbitmask_t debounce_in_use;
+	Device_t mydevices[MAXPORTS];
+	Pipe_t mypipes[2] __attribute__ ((aligned(32)));
+	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
 };
 
 class KeyboardController : public USBDriver {
@@ -392,6 +402,8 @@ private:
 	Pipe_t *datapipe;
 	setup_t setup;
 	uint8_t report[8];
+	Pipe_t mypipes[2] __attribute__ ((aligned(32)));
+	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
 };
 
 class MIDIDevice : public USBDriver {
@@ -413,6 +425,8 @@ private:
 	uint8_t tx_ep;
 	uint16_t rx_size;
 	uint16_t tx_size;
+	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
+	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
 };
 
 #endif

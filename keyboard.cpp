@@ -27,7 +27,8 @@
 
 KeyboardController::KeyboardController()
 {
-	// TODO: free Device_t, Pipe_t & Transfer_t we will need
+	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
+	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
 	driver_ready_for_device(this);
 }
 

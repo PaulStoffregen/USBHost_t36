@@ -27,9 +27,9 @@
 
 // Memory allocation
 
-static Device_t memory_Device[4];
-static Pipe_t memory_Pipe[8] __attribute__ ((aligned(32)));
-static Transfer_t memory_Transfer[34] __attribute__ ((aligned(32)));
+static Device_t memory_Device[1];
+static Pipe_t memory_Pipe[1] __attribute__ ((aligned(32)));
+static Transfer_t memory_Transfer[4] __attribute__ ((aligned(32)));
 
 static Device_t * free_Device_list = NULL;
 static Pipe_t * free_Pipe_list = NULL;
@@ -37,18 +37,9 @@ static Transfer_t * free_Transfer_list = NULL;
 
 void USBHost::init_Device_Pipe_Transfer_memory(void)
 {
-	Device_t *end_device = memory_Device + sizeof(memory_Device)/sizeof(Device_t);
-	for (Device_t *device = memory_Device; device < end_device; device++) {
-		free_Device(device);
-	}
-	Pipe_t *end_pipe = memory_Pipe + sizeof(memory_Pipe)/sizeof(Pipe_t);
-	for (Pipe_t *pipe = memory_Pipe; pipe < end_pipe; pipe++) {
-		free_Pipe(pipe);
-	}
-	Transfer_t *end_transfer = memory_Transfer + sizeof(memory_Transfer)/sizeof(Transfer_t);
-	for (Transfer_t *transfer = memory_Transfer; transfer < end_transfer; transfer++) {
-		free_Transfer(transfer);
-	}
+	contribute_Devices(memory_Device, sizeof(memory_Device)/sizeof(Device_t));
+	contribute_Pipes(memory_Pipe, sizeof(memory_Pipe)/sizeof(Pipe_t));
+	contribute_Transfers(memory_Transfer, sizeof(memory_Transfer)/sizeof(Transfer_t));
 }
 
 Device_t * USBHost::allocate_Device(void)
@@ -88,5 +79,30 @@ void USBHost::free_Transfer(Transfer_t *transfer)
 {
 	*(Transfer_t **)transfer = free_Transfer_list;
 	free_Transfer_list = transfer;
+}
+
+void USBHost::contribute_Devices(Device_t *devices, uint32_t num)
+{
+	Device_t *end = devices + num;
+	for (Device_t *device = devices ; device < end; device++) {
+		free_Device(device);
+	}
+}
+
+void USBHost::contribute_Pipes(Pipe_t *pipes, uint32_t num)
+{
+	Pipe_t *end = pipes + num;
+	for (Pipe_t *pipe = pipes; pipe < end; pipe++) {
+		free_Pipe(pipe);
+	}
+
+}
+
+void USBHost::contribute_Transfers(Transfer_t *transfers, uint32_t num)
+{
+	Transfer_t *end = transfers + num;
+	for (Transfer_t *transfer = transfers ; transfer < end; transfer++) {
+		free_Transfer(transfer);
+	}
 }
 
