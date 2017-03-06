@@ -22,7 +22,7 @@
  */
 
 #include <Arduino.h>
-#include "USBHost.h"
+#include "USBHost_t36.h"  // Read this header first for key info
 
 // True when any hub port is in the reset or reset recovery phase.
 // Only one USB device may be reset at a time, because it will

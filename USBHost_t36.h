@@ -29,16 +29,39 @@
 #define USBHOST_PRINT_DEBUG
 
 /************************************************/
-/*  Data Structure Definitions                  */
+/*  Data Types                                  */
 /************************************************/
 
+These 6 types are the key to understanding how this USB Host
+library really works.
+
+// USBHost is a static class controlling the hardware.
+// All common USB functionality is implemented here.
 class USBHost;
-class USBDriver;
-class USBDriverTimer;
+
+// These 3 structures represent the actual USB entities
+// USBHost manipulates.  One Device_t is created for
+// each active USB device.  One Pipe_t is create for
+// each endpoint.  Transfer_t structures are created
+// when any data transfer is added to the EHCI work
+// queues, and then returned to the free pool after the
+// data transfer completes and the driver has processed
+// the results.
 typedef struct Device_struct       Device_t;
 typedef struct Pipe_struct         Pipe_t;
 typedef struct Transfer_struct     Transfer_t;
-//typedef struct DriverTimer_struct  DriverTimer_t;
+
+// All USB device drivers inherit use these classes.
+// Drivers build user-visible functionality on top
+// of these classes, which receive USB events from
+// USBHost.
+class USBDriver;
+class USBDriverTimer;
+
+
+/************************************************/
+/*  Data Structure Definitions                  */
+/************************************************/
 
 // setup_t holds the 8 byte USB SETUP packet data.
 // These unions & structs allow convenient access to
@@ -99,12 +122,12 @@ struct Pipe_struct {
 	Device_t *device;
 	uint8_t  type; // 0=control, 1=isochronous, 2=bulk, 3=interrupt
 	uint8_t  direction; // 0=out, 1=in (changes for control, others fixed)
-	uint8_t  start_mask;       // TODO: is this redundant?
-	uint8_t  complete_mask;    // TODO: is this redundant?
+	uint8_t  start_mask;
+	uint8_t  complete_mask;
 	Pipe_t   *next;
 	void     (*callback_function)(const Transfer_t *);
 	uint16_t periodic_interval;
-	uint16_t periodic_offset;  // TODO: is this redundant?
+	uint16_t periodic_offset;
 	uint32_t unused1;
 	uint32_t unused2;
 	uint32_t unused3;
@@ -251,7 +274,6 @@ protected:
 	static void println(const char *s, long n, uint8_t b) {}
 	static void println(const char *s, unsigned long n, uint8_t b) {}
 #endif
-
 	static void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
 			uint32_t wValue, uint32_t wIndex, uint32_t wLength) {
 		s.word1 = bmRequestType | (bRequest << 8) | (wValue << 16);
@@ -381,7 +403,6 @@ protected:
 	void start_debounce_timer(uint32_t port);
 	void stop_debounce_timer(uint32_t port);
 	static volatile bool reset_busy;
-
 	USBDriverTimer debouncetimer;
 	USBDriverTimer resettimer;
 	setup_t setup;

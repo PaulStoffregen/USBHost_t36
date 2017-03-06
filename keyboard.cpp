@@ -22,7 +22,7 @@
  */
 
 #include <Arduino.h>
-#include "USBHost.h"
+#include "USBHost_t36.h"  // Read this header first for key info
 
 
 KeyboardController::KeyboardController()
