@@ -25,21 +25,43 @@
 #include "USBHost_t36.h"  // Read this header first for key info
 
 
+// USB devices are managed from this file.
+
+
+// List of all connected devices, regardless of their status.  If
+// it's connected to the EHCI port or any port on any hub, it needs
+// to be linked into this list.
+static Device_t  *devlist=NULL;
+
+// List of all inactive drivers.  At the end of enumeration, when
+// drivers claim the device or its interfaces, they are removed
+// from this list and linked into the list of active drivers on
+// that device.  When devices disconnect, the drivers are returned
+// to this list, making them again available for enumeration of new
+// devices.
 static USBDriver *available_drivers = NULL;
+
+// Static buffers used during enumeration.  One a single USB device
+// may enumerate at once, because USB address zero is used, and
+// because this static buffer & state info can't be shared.
 static uint8_t enumbuf[256] __attribute__ ((aligned(16)));
 static setup_t enumsetup __attribute__ ((aligned(16)));
 static uint16_t enumlen;
-static Device_t  *devlist=NULL;
 
 // True while any device is present but not yet fully configured.
 // Only one USB device may be in this state at a time (responding
 // to address zero) and using the enumeration static buffer.
 volatile bool USBHost::enumeration_busy = false;
 
+
+
 static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen);
 static void pipe_set_addr(Pipe_t *pipe, uint32_t addr);
 
 
+// The main user function to cause internal state to update.  Since we do
+// almost everything with DMA and interrupts, the only work to do here is
+// call all the active driver Task() functions.
 void USBHost::Task()
 {
 	for (Device_t *dev = devlist; dev; dev = dev->next) {
@@ -49,6 +71,12 @@ void USBHost::Task()
 	}
 }
 
+// Drivers call this after they've completed initialization, so get themselves
+// added to the list of inactive drivers available for new devices during
+// enumeraton.  Typically this is called from constructors, so hardware access
+// or even printing debug messages should be avoided here.  Just initialize
+// lists and return.
+//
 void USBHost::driver_ready_for_device(USBDriver *driver)
 {
 	driver->device = NULL;
@@ -107,7 +135,12 @@ Device_t * USBHost::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_p
 }
 
 
-
+// Control transfer callback function.  ALL control transfers from all
+// devices call this function when they complete.  When control transfers
+// are created by drivers, the driver is called to handle the result.
+// Otherwise, the control transfer is part of the enumeration process,
+// which is implemented here.
+//
 void USBHost::enumeration(const Transfer_t *transfer)
 {
 	Device_t *dev;

@@ -26,6 +26,33 @@
 
 #include <stdint.h>
 
+
+// Dear inquisitive reader, USB is a complex protocol defined with
+// very specific terminology.  To have any chance of understand this
+// source code, you absolutely must have solid knowledge of specific
+// USB terms such as host, device, endpoint, pipe, enumeration....
+// You really must also have at least a basic knowledge of the
+// different USB transfers: control, bulk, interrupt, isochronous.
+//
+// The USB 2.0 specification explains these in chapter 4 (pages 15
+// to 24), and provides more detail in the first part of chapter 5
+// (pages 25 to 55).  The USB spec is published for free at
+// www.usb.org.  Here is a convenient link to just the main PDF:
+//
+// https://www.pjrc.com/teensy/beta/usb20.pdf
+//
+// This is a huge file, but chapter 4 is short and easy to read.
+// If you're not familiar with the USB lingo, please do yourself
+// a favor by reading at least chapter 4 to get up to speed on the
+// meaning of these important USB concepts and terminology.
+//
+// If you wish to ask questions (which belong on the forum, not
+// github issues) or discuss development of this library, you
+// ABSOLUTELY MUST know the basic USB terminology from chapter 4.
+// Please repect other people's valuable time & effort by making
+// your best effort to read chapter 4 before asking USB questions!
+
+
 #define USBHOST_PRINT_DEBUG
 
 /************************************************/

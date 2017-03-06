@@ -25,15 +25,41 @@
 #include "USBHost_t36.h"  // Read this header first for key info
 
 
-// Memory allocation
+// Memory allocation for Device_t, Pipe_t and Transfer_t structures.
+//
+// To provide an Arduino-friendly experience, the memory allocation of
+// these item is primarily done by the instances of device driver objects,
+// which are typically created as static objects near the beginning of
+// the Arduino sketch.  Static allocation allows Arduino's memory usage
+// summary to accurately show the amount of RAM this library is using.
+// Users can choose which devices they wish to support and how many of
+// each by creating more object instances.
+//
+// Device driver objects "contribute" their copies of these structures.
+// When ehci.cpp allocates Pipe_t and Transfer_t, or enumeration.cpp
+// allocates Device_t, the memory actually comes from these structures
+// physically located within the device driver instances.  The usage
+// model looks like traditional malloc/free dynamic memory on the heap,
+// but in fact it's a simple memory pool from the drivers.
+//
+// Timing is deterministic and fast, because each pool allocates only
+// a single fixed size object.  In theory, each driver should contribute
+// the number of items it will use, so we should not ever end up with
+// a situation where an item can't be allocated when it's needed.  Well,
+// unless there's a bug or oversight...
 
-static Device_t memory_Device[1];
-static Pipe_t memory_Pipe[1] __attribute__ ((aligned(32)));
-static Transfer_t memory_Transfer[4] __attribute__ ((aligned(32)));
 
+// Lists of "free" memory
 static Device_t * free_Device_list = NULL;
 static Pipe_t * free_Pipe_list = NULL;
 static Transfer_t * free_Transfer_list = NULL;
+
+// A small amount of non-driver memory, just to get things started
+// TODO: is this really necessary?  Can these be eliminated, so we
+// use only memory from the drivers?
+static Device_t memory_Device[1];
+static Pipe_t memory_Pipe[1] __attribute__ ((aligned(32)));
+static Transfer_t memory_Transfer[4] __attribute__ ((aligned(32)));
 
 void USBHost::init_Device_Pipe_Transfer_memory(void)
 {

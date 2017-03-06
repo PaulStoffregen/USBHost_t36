@@ -24,6 +24,11 @@
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
 
+// Printing of specific data structures.  When this is enabled,
+// a tremendous amount of debug printing occurs.  It's done all
+// from interrupt context, so this should never normally be
+// enabled for regular programs that print from the Arduino sketch.
+
 #ifdef USBHOST_PRINT_DEBUG
 
 void USBHost::print(const Transfer_t *transfer)

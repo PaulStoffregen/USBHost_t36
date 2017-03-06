@@ -24,25 +24,69 @@
 #include <Arduino.h>
 #include "USBHost_t36.h" // Read this header first for key info
 
+// All USB EHCI controller hardware access is done from this file's code.
+// Hardware services are made available to the rest of this library by
+// three structures:
+//
+//   Pipe_t: Every USB endpoint is accessed by a pipe.  new_Pipe()
+//     sets up the EHCI to support the pipe/endpoint, and delete_Pipe()
+//     removes this configuration.
+//
+//   Transfer_t: These are used for all communication.  Data transfers
+//     are placed into work queues, to be executed by the EHCI in
+//     the future.  Transfer_t only manages data.  The actual data
+//     is stored in a separate buffer (usually from a device driver)
+//     which is referenced from Transfer_t.  All data transfer is queued,
+//     never done with blocking functions that wait.  When transfers
+//     complete, a driver-supplied callback function is called to notify
+//     the driver.
+//
+//   USBDriverTimer: Some drivers require timers.  These allow drivers
+//     to share the hardware timer, with each USBDriverTimer object
+//     able to schedule a callback function a configurable number of
+//     microseconds in the future.
+//
+// In addition to these 3 services, the EHCI interrupt also responds
+// to changes on the main port, creating and deleting the root device.
+// See enumeration.cpp for all device-level code.
+
 // Size of the periodic list, in milliseconds.  This determines the
 // slowest rate we can poll interrupt endpoints.  Each entry uses
 // 12 bytes (4 for a pointer, 8 for bandwidth management).
-// may be 8, 16, 32, 64, 128, 256, 512, 1024
+// Supported values: 8, 16, 32, 64, 128, 256, 512, 1024
 #define PERIODIC_LIST_SIZE  32
 
+// The EHCI periodic schedule, used for interrupt pipes/endpoints
 static uint32_t periodictable[PERIODIC_LIST_SIZE] __attribute__ ((aligned(4096), used));
 static uint8_t  uframe_bandwidth[PERIODIC_LIST_SIZE*8];
+
+// State of the 1 and only physical USB host port on Teensy 3.6
 static uint8_t  port_state;
 #define PORT_STATE_DISCONNECTED   0
 #define PORT_STATE_DEBOUNCE       1
 #define PORT_STATE_RESET          2
 #define PORT_STATE_RECOVERY       3
 #define PORT_STATE_ACTIVE         4
+
+// The device currently connected, or NULL when no device
 static Device_t   *rootdev=NULL;
+
+// List of all queued transfers in the asychronous schedule (control & bulk).
+// When the EHCI completes these transfers, this list is how we locate them
+// in memory.
 static Transfer_t *async_followup_first=NULL;
 static Transfer_t *async_followup_last=NULL;
+
+// List of all queued transfers in the asychronous schedule (interrupt endpoints)
+// When the EHCI completes these transfers, this list is how we locate them
+// in memory.
 static Transfer_t *periodic_followup_first=NULL;
 static Transfer_t *periodic_followup_last=NULL;
+
+// List of all pending timers.  This double linked list is stored in
+// chronological order.  Each timer is stored with the number of
+// microseconds which need to elapsed from the prior timer on this
+// list, to allow efficient servicing from the timer interrupt.
 static USBDriverTimer *active_timers=NULL;
 
 
