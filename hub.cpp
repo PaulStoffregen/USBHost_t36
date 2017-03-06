@@ -29,7 +29,7 @@
 // begin responding to address zero.
 volatile bool USBHub::reset_busy = false;
 
-USBHub::USBHub() : debouncetimer(this), resettimer(this)
+void USBHub::init()
 {
 	contribute_Devices(mydevices, sizeof(mydevices)/sizeof(Device_t));
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));

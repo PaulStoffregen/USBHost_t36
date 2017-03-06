@@ -370,7 +370,8 @@ private:
 
 class USBHub : public USBDriver {
 public:
-	USBHub();
+	USBHub(USBHost &host) : debouncetimer(this), resettimer(this) { init(); }
+	USBHub(USBHost *host) : debouncetimer(this), resettimer(this) { init(); }
 	// Hubs with more more than 7 ports are built from two tiers of hubs
 	// using 4 or 7 port hub chips.  While the USB spec seems to allow
 	// hubs to have up to 255 ports, in practice all hub chips on the
@@ -394,6 +395,7 @@ protected:
 	virtual void control(const Transfer_t *transfer);
 	virtual void timer_event(USBDriverTimer *whichTimer);
 	virtual void disconnect();
+	void init();
 	bool can_send_control_now();
 	void send_poweron(uint32_t port);
 	void send_getstatus(uint32_t port);
@@ -408,7 +410,10 @@ protected:
 	void new_port_status(uint32_t port, uint32_t status);
 	void start_debounce_timer(uint32_t port);
 	void stop_debounce_timer(uint32_t port);
-	static volatile bool reset_busy;
+private:
+	Device_t mydevices[MAXPORTS];
+	Pipe_t mypipes[2] __attribute__ ((aligned(32)));
+	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
 	USBDriverTimer debouncetimer;
 	USBDriverTimer resettimer;
 	setup_t setup;
@@ -435,14 +440,13 @@ protected:
 	portbitmask_t send_pending_clearstatus_reset;
 	portbitmask_t send_pending_setreset;
 	portbitmask_t debounce_in_use;
-	Device_t mydevices[MAXPORTS];
-	Pipe_t mypipes[2] __attribute__ ((aligned(32)));
-	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
+	static volatile bool reset_busy;
 };
 
 class KeyboardController : public USBDriver {
 public:
-	KeyboardController();
+	KeyboardController(USBHost &host) { init(); }
+	KeyboardController(USBHost *host) { init(); }
 	int     available();
 	int     read();
 	uint8_t getKey();
@@ -456,6 +460,7 @@ protected:
 	virtual void disconnect();
 	static void callback(const Transfer_t *transfer);
 	void new_data(const Transfer_t *transfer);
+	void init();
 private:
 	void (*keyPressedFunction)();
 	void (*keyReleasedFunction)();
@@ -468,7 +473,8 @@ private:
 
 class MIDIDevice : public USBDriver {
 public:
-	MIDIDevice();
+	MIDIDevice(USBHost &host) { init(); }
+	MIDIDevice(USBHost *host) { init(); }
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void disconnect();
@@ -476,6 +482,7 @@ protected:
 	static void tx_callback(const Transfer_t *transfer);
 	void rx_data(const Transfer_t *transfer);
 	void tx_data(const Transfer_t *transfer);
+	void init();
 private:
 	Pipe_t *rxpipe;
 	Pipe_t *txpipe;

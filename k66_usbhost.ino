@@ -24,12 +24,12 @@
 #include "USBHost_t36.h"
 
 USBHost myusb;
-USBHub hub1;
-USBHub hub2;
-USBHub hub3;
-KeyboardController keyboard1;
-KeyboardController keyboard2;
-MIDIDevice midi1;
+USBHub hub1(myusb);
+USBHub hub2(myusb);
+USBHub hub3(myusb);
+KeyboardController keyboard1(myusb);
+KeyboardController keyboard2(myusb);
+MIDIDevice midi1(myusb);
 
 void setup()
 {

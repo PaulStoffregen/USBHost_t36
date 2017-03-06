@@ -25,7 +25,7 @@
 #include "USBHost_t36.h"  // Read this header first for key info
 
 
-KeyboardController::KeyboardController()
+void KeyboardController::init()
 {
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
 	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
