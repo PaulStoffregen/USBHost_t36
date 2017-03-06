@@ -464,7 +464,26 @@ void USBHub::stop_debounce_timer(uint32_t port)
 
 void USBHub::disconnect()
 {
-	// TODO: free resources
+	// disconnect all downstream devices, which may be more hubs
+	for (uint32_t i=0; i < numports; i++) {
+		if (devicelist[i]) disconnect_Device(devicelist[i]);
+	}
+	numports = 0;
+	changepipe = NULL;
+	changebits = 0;
+	sending_control_transfer = 0;
+	port_doing_reset = 0;
+	memset(portstate, 0, sizeof(portstate));
+	memset(devicelist, 0, sizeof(devicelist));
+	send_pending_poweron = 0;
+	send_pending_getstatus = 0;
+	send_pending_clearstatus_connect = 0;
+	send_pending_clearstatus_enable = 0;
+	send_pending_clearstatus_suspend = 0;
+	send_pending_clearstatus_overcurrent = 0;
+	send_pending_clearstatus_reset = 0;
+	send_pending_setreset = 0;
+	debounce_in_use = 0;
 }
 
 
