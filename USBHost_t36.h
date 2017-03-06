@@ -32,8 +32,8 @@
 /*  Data Types                                  */
 /************************************************/
 
-These 6 types are the key to understanding how this USB Host
-library really works.
+// These 6 types are the key to understanding how this USB Host
+// library really works.
 
 // USBHost is a static class controlling the hardware.
 // All common USB functionality is implemented here.
@@ -175,6 +175,7 @@ struct Transfer_struct {
 class USBHost {
 public:
 	static void begin();
+	static void Task();
 protected:
 	static Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 		uint32_t direction, uint32_t maxlen, uint32_t interval=0);
@@ -317,6 +318,11 @@ protected:
 	// When any of the USBDriverTimer objects a driver creates generates
 	// a timer event, this function is called.
 	virtual void timer_event(USBDriverTimer *whichTimer) { }
+
+	// When the user calls USBHost::Task, this Task function for all
+	// active drivers is called, so they may update state and/or call
+	// any attached user callback functions.
+	virtual void Task() { }
 
 	// When a device disconnects from the USB, this function is called.
 	// The driver must free all resources it allocated and update any

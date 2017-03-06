@@ -40,6 +40,14 @@ static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen);
 static void pipe_set_addr(Pipe_t *pipe, uint32_t addr);
 
 
+void USBHost::Task()
+{
+	for (Device_t *dev = devlist; dev; dev = dev->next) {
+		for (USBDriver *driver = dev->drivers; driver; driver = driver->next) {
+			(driver->Task)();
+		}
+	}
+}
 
 void USBHost::driver_ready_for_device(USBDriver *driver)
 {

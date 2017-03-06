@@ -21,7 +21,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "USBHost.h"
+#include "USBHost_t36.h"
 
 USBHost myusb;
 USBHub hub1;
@@ -60,6 +60,7 @@ void setup()
 
 void loop()
 {
+	myusb.Task();
 }
 
 
