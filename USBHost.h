@@ -26,6 +26,8 @@
 
 #include <stdint.h>
 
+#define USBHOST_PRINT_DEBUG
+
 /************************************************/
 /*  Data Structure Definitions                  */
 /************************************************/
@@ -182,6 +184,7 @@ private:
 		uint32_t maxlen, uint32_t interval);
 	static void add_qh_to_periodic_schedule(Pipe_t *pipe);
 protected:
+#ifdef USBHOST_PRINT_DEBUG
 	static void print(const Transfer_t *transfer);
 	static void print(const Transfer_t *first, const Transfer_t *last);
 	static void print_token(uint32_t token);
@@ -218,6 +221,36 @@ protected:
 		Serial.print(s); Serial.println(n, b); }
 	static void println(const char *s, unsigned long n, uint8_t b) {
 		Serial.print(s); Serial.println(n, b); }
+#else
+	static void print(const Transfer_t *transfer) {}
+	static void print(const Transfer_t *first, const Transfer_t *last) {}
+	static void print_token(uint32_t token) {}
+	static void print(const Pipe_t *pipe) {}
+	static void print_driverlist(const char *name, const USBDriver *driver) {}
+	static void print_qh_list(const Pipe_t *list) {}
+	static void print_hexbytes(const void *ptr, uint32_t len) {}
+	static void print(const char *s) {}
+	static void print(int n) {}
+	static void print(unsigned int n) {}
+	static void print(long n) {}
+	static void print(unsigned long n) {}
+	static void println(const char *s) {}
+	static void println(int n) {}
+	static void println(unsigned int n) {}
+	static void println(long n) {}
+	static void println(unsigned long n) {}
+	static void println() {}
+	static void print(uint32_t n, uint8_t b) {}
+	static void println(uint32_t n, uint8_t b) {}
+	static void println(const char *s, int n) {}
+	static void println(const char *s, unsigned int n) {}
+	static void println(const char *s, long n) {}
+	static void println(const char *s, unsigned long n) {}
+	static void println(const char *s, int n, uint8_t b) {}
+	static void println(const char *s, unsigned int n, uint8_t b) {}
+	static void println(const char *s, long n, uint8_t b) {}
+	static void println(const char *s, unsigned long n, uint8_t b) {}
+#endif
 
 	static void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
 			uint32_t wValue, uint32_t wIndex, uint32_t wLength) {

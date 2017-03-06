@@ -347,12 +347,14 @@ void USBHost::isr()
 
 void USBDriverTimer::start(uint32_t microseconds)
 {
+#ifdef USBHOST_PRINT_DEBUG
 	Serial.print("start_timer, us = ");
 	Serial.print(microseconds);
 	Serial.print(", driver = ");
 	Serial.print((uint32_t)driver, HEX);
 	Serial.print(", this = ");
 	Serial.println((uint32_t)this, HEX);
+#endif
 	if (!driver) return;
 	if (microseconds < 100) return; // minimum timer duration
 	started_micros = micros();

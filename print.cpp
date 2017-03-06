@@ -24,6 +24,7 @@
 #include <Arduino.h>
 #include "USBHost.h"
 
+#ifdef USBHOST_PRINT_DEBUG
 
 void USBHost::print(const Transfer_t *transfer)
 {
@@ -178,3 +179,4 @@ void USBHost::print_hexbytes(const void *ptr, uint32_t len)
 	Serial.println();
 }
 
+#endif
