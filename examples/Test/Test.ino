@@ -17,8 +17,8 @@ void setup()
 	while (!Serial) ; // wait for Arduino Serial Monitor
 	Serial.println("USB Host Testing");
 	myusb.begin();
-	keyboard1.attachPress(press);
-	keyboard2.attachPress(press);
+	keyboard1.attachPress(OnPress);
+	keyboard2.attachPress(OnPress);
 	midi1.setHandleNoteOff(OnNoteOff);
 	midi1.setHandleNoteOn(OnNoteOn);
 	midi1.setHandleControlChange(OnControlChange);
@@ -32,9 +32,11 @@ void loop()
 }
 
 
-void press(int key)
+void OnPress(int key)
 {
-	Serial.print("key ");
+	Serial.print("key '");
+	Serial.print((char)key);
+	Serial.print("'  ");
 	Serial.println(key);
 	//Serial.print("key ");
 	//Serial.print((char)keyboard1.getKey());
