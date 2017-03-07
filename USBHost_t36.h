@@ -500,8 +500,102 @@ private:
 
 class MIDIDevice : public USBDriver {
 public:
+	enum { SYSEX_MAX_LEN = 60 };
 	MIDIDevice(USBHost &host) { init(); }
 	MIDIDevice(USBHost *host) { init(); }
+	bool read(uint8_t channel=0, uint8_t cable=0);
+	uint8_t getType(void) {
+		return msg_type;
+	};
+	uint8_t getChannel(void) {
+		return msg_channel;
+	};
+	uint8_t getData1(void) {
+		return msg_data1;
+	};
+	uint8_t getData2(void) {
+		return msg_data2;
+	};
+	void setHandleNoteOff(void (*f)(uint8_t channel, uint8_t note, uint8_t velocity)) {
+		handleNoteOff = f;
+	};
+	void setHandleNoteOn(void (*f)(uint8_t channel, uint8_t note, uint8_t velocity)) {
+		handleNoteOn = f;
+	};
+	void setHandleVelocityChange(void (*f)(uint8_t channel, uint8_t note, uint8_t velocity)) {
+		handleVelocityChange = f;
+	};
+	void setHandleControlChange(void (*f)(uint8_t channel, uint8_t control, uint8_t value)) {
+		handleControlChange = f;
+	};
+	void setHandleProgramChange(void (*f)(uint8_t channel, uint8_t program)) {
+		handleProgramChange = f;
+	};
+	void setHandleAfterTouch(void (*f)(uint8_t channel, uint8_t pressure)) {
+		handleAfterTouch = f;
+	};
+	void setHandlePitchChange(void (*f)(uint8_t channel, int pitch)) {
+		handlePitchChange = f;
+	};
+	void setHandleSysEx(void (*f)(const uint8_t *data, uint16_t length, bool complete)) {
+		handleSysEx = (void (*)(const uint8_t *, uint16_t, uint8_t))f;
+	}
+	void setHandleRealTimeSystem(void (*f)(uint8_t realtimebyte)) {
+		handleRealTimeSystem = f;
+	};
+	void setHandleTimeCodeQuarterFrame(void (*f)(uint16_t data)) {
+		handleTimeCodeQuarterFrame = f;
+	};
+	void sendNoteOff(uint32_t note, uint32_t velocity, uint32_t channel) {
+		write_packed(0x8008 | (((channel - 1) & 0x0F) << 8)
+		 | ((note & 0x7F) << 16) | ((velocity & 0x7F) << 24));
+	}
+	void sendNoteOn(uint32_t note, uint32_t velocity, uint32_t channel) {
+		write_packed(0x9009 | (((channel - 1) & 0x0F) << 8)
+		 | ((note & 0x7F) << 16) | ((velocity & 0x7F) << 24));
+	}
+	void sendPolyPressure(uint32_t note, uint32_t pressure, uint32_t channel) {
+		write_packed(0xA00A | (((channel - 1) & 0x0F) << 8)
+		 | ((note & 0x7F) << 16) | ((pressure & 0x7F) << 24));
+	}
+	void sendControlChange(uint32_t control, uint32_t value, uint32_t channel) {
+		write_packed(0xB00B | (((channel - 1) & 0x0F) << 8)
+		 | ((control & 0x7F) << 16) | ((value & 0x7F) << 24));
+	}
+	void sendProgramChange(uint32_t program, uint32_t channel) {
+		write_packed(0xC00C | (((channel - 1) & 0x0F) << 8)
+		 | ((program & 0x7F) << 16));
+	}
+	void sendAfterTouch(uint32_t pressure, uint32_t channel) {
+		write_packed(0xD00D | (((channel - 1) & 0x0F) << 8)
+		 | ((pressure & 0x7F) << 16));
+	}
+	void sendPitchBend(uint32_t value, uint32_t channel) {
+		write_packed(0xE00E | (((channel - 1) & 0x0F) << 8)
+		 | ((value & 0x7F) << 16) | ((value & 0x3F80) << 17));
+	}
+	void sendSysEx(uint32_t length, const void *data);
+	void sendRealTime(uint32_t type) {
+		switch (type) {
+			case 0xF8: // Clock
+			case 0xFA: // Start
+			case 0xFC: // Stop
+			case 0xFB: // Continue
+			case 0xFE: // ActiveSensing
+			case 0xFF: // SystemReset
+				write_packed((type << 8) | 0x0F);
+			break;
+				default: // Invalid Real Time marker
+			break;
+		}
+	}
+	void sendTimeCodeQuarterFrame(uint32_t type, uint32_t value) {
+		uint32_t data = ( ((type & 0x07) << 4) | (value & 0x0F) );
+		sendTimeCodeQuarterFrame(data);
+	}
+	void sendTimeCodeQuarterFrame(uint32_t data) {
+		write_packed(0xF108 | ((data & 0x7F) << 16));
+	}
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void disconnect();
@@ -510,15 +604,39 @@ protected:
 	void rx_data(const Transfer_t *transfer);
 	void tx_data(const Transfer_t *transfer);
 	void init();
+	void write_packed(uint32_t data);
+	void sysex_byte(uint8_t b);
 private:
 	Pipe_t *rxpipe;
 	Pipe_t *txpipe;
-	enum { BUFFERSIZE = 64 };
-	uint8_t buffer[BUFFERSIZE * 2];
-	uint8_t rx_ep;
-	uint8_t tx_ep;
+	enum { MAX_PACKET_SIZE = 64 };
+	enum { RX_QUEUE_SIZE = 80 }; // must be more than MAX_PACKET_SIZE/4
+	uint32_t rx_buffer[MAX_PACKET_SIZE/4];
+	uint32_t tx_buffer[MAX_PACKET_SIZE/4];
 	uint16_t rx_size;
 	uint16_t tx_size;
+	uint32_t rx_queue[RX_QUEUE_SIZE];
+	bool rx_packet_queued;
+	uint16_t rx_head;
+	uint16_t rx_tail;
+	uint8_t rx_ep;
+	uint8_t tx_ep;
+	uint8_t msg_channel;
+	uint8_t msg_type;
+	uint8_t msg_data1;
+	uint8_t msg_data2;
+	uint8_t msg_sysex[SYSEX_MAX_LEN];
+	uint8_t msg_sysex_len;
+	void (*handleNoteOff)(uint8_t ch, uint8_t note, uint8_t vel);
+	void (*handleNoteOn)(uint8_t ch, uint8_t note, uint8_t vel);
+	void (*handleVelocityChange)(uint8_t ch, uint8_t note, uint8_t vel);
+	void (*handleControlChange)(uint8_t ch, uint8_t control, uint8_t value);
+	void (*handleProgramChange)(uint8_t ch, uint8_t program);
+	void (*handleAfterTouch)(uint8_t ch, uint8_t pressure);
+	void (*handlePitchChange)(uint8_t ch, int pitch);
+	void (*handleSysEx)(const uint8_t *data, uint16_t length, uint8_t complete);
+	void (*handleRealTimeSystem)(uint8_t rtb);
+	void (*handleTimeCodeQuarterFrame)(uint16_t data);
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
 };

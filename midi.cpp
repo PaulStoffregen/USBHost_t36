@@ -29,6 +29,18 @@ void MIDIDevice::init()
 {
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
 	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
+	handleNoteOff = NULL;
+	handleNoteOn = NULL;
+	handleVelocityChange = NULL;
+	handleControlChange = NULL;
+	handleProgramChange = NULL;
+	handleAfterTouch = NULL;
+	handlePitchChange = NULL;
+	handleSysEx = NULL;
+	handleRealTimeSystem = NULL;
+	handleTimeCodeQuarterFrame = NULL;
+	rx_head = 0;
+	rx_tail = 0;
 	driver_ready_for_device(this);
 }
 
@@ -136,24 +148,32 @@ bool MIDIDevice::claim(Device_t *dev, int type, const uint8_t *descriptors, uint
 		p += len;
 	}
 	// if an IN endpoint was found, create its pipe
-	if (rx_ep && rx_size <= BUFFERSIZE) {
+	if (rx_ep && rx_size <= MAX_PACKET_SIZE) {
 		rxpipe = new_Pipe(dev, 2, rx_ep, 1, rx_size);
 		if (rxpipe) {
 			rxpipe->callback_function = rx_callback;
-			queue_Data_Transfer(rxpipe, buffer, rx_size, this);
+			queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
+			rx_packet_queued = true;
 		}
 	} else {
 		rxpipe = NULL;
 	}
 	// if an OUT endpoint was found, create its pipe
-	if (tx_ep && tx_size <= BUFFERSIZE) {
+	if (tx_ep && tx_size <= MAX_PACKET_SIZE) {
 		txpipe = new_Pipe(dev, 2, tx_ep, 0, tx_size);
 		if (txpipe) {
 			txpipe->callback_function = tx_callback;
 		}
 	} else {
-		rxpipe = NULL;
+		txpipe = NULL;
 	}
+	rx_head = 0;
+	rx_tail = 0;
+	msg_channel = 0;
+	msg_type = 0;
+	msg_data1 = 0;
+	msg_data2 = 0;
+	msg_sysex_len = 0;
 	// claim if either pipe created
 	return (rxpipe || txpipe);
 }
@@ -177,8 +197,32 @@ void MIDIDevice::rx_data(const Transfer_t *transfer)
 	println("MIDIDevice Receive");
 	print("  MIDI Data: ");
 	print_hexbytes(transfer->buffer, rx_size);
-	// TODO: parse the new data
-	queue_Data_Transfer(rxpipe, buffer, rx_size, this);
+	uint32_t head = rx_head;
+	uint32_t tail = rx_tail;
+	uint32_t len = rx_size >> 2; // TODO: use actual received length
+	for (uint32_t i=0; i < len; i++) {
+		uint32_t msg = rx_buffer[i];
+		if (msg) {
+			if (++head >= RX_QUEUE_SIZE) head = 0;
+			rx_queue[head] = msg;
+		}
+	}
+	rx_head = head;
+	rx_tail = tail;
+	uint32_t avail = (head < tail) ? tail - head - 1 : RX_QUEUE_SIZE - 1 - head + tail;
+	println("rx_size = ", rx_size);
+	println("avail = ", avail);
+	if (avail >= (uint32_t)(rx_size>>2)) {
+		// enough space to accept another full packet
+		println("queue another receive packet");
+		queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
+		rx_packet_queued = true;
+	} else {
+		// queue can't accept another packet's data, so leave
+		// the data waiting on the device until we can accept it
+		println("wait to receive more packets");
+		rx_packet_queued = false;
+	}
 }
 
 void MIDIDevice::tx_data(const Transfer_t *transfer)
@@ -192,8 +236,127 @@ void MIDIDevice::tx_data(const Transfer_t *transfer)
 
 void MIDIDevice::disconnect()
 {
-	// TODO: free resources
+	// should rx_queue be cleared?
+	// as-is, the user can still read MIDI messages
+	// which arrived before the device disconnected.
+	rxpipe = NULL;
+	txpipe = NULL;
 }
+
+
+
+
+bool MIDIDevice::read(uint8_t channel, uint8_t cable)
+{
+	uint32_t n, head, tail, avail, ch, type1, type2;
+
+	head = rx_head;
+	tail = rx_tail;
+	if (head == tail) return false;
+	if (++tail >= RX_QUEUE_SIZE) tail = 0;
+	n = rx_queue[tail];
+	rx_tail = tail;
+	if (!rx_packet_queued && rxpipe) {
+	        avail = (head < tail) ? tail - head - 1 : RX_QUEUE_SIZE - 1 - head + tail;
+		if (avail >= (uint32_t)(rx_size>>2)) {
+			__disable_irq();
+			queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
+			__enable_irq();
+		}
+	}
+
+	println("read: ", n, HEX);
+
+	type1 = n & 15;
+	type2 = (n >> 12) & 15;
+	ch = ((n >> 8) & 15) + 1;
+	if (type1 >= 0x08 && type1 <= 0x0E) {
+		if (channel && channel != ch) {
+			// ignore other channels when user wants single channel read
+			return false;
+		}
+		if (type1 == 0x08 && type2 == 0x08) {
+			msg_type = 8;			// 8 = Note off
+			if (handleNoteOff)
+				(*handleNoteOff)(ch, (n >> 16), (n >> 24));
+		} else
+		if (type1 == 0x09 && type2 == 0x09) {
+			if ((n >> 24) > 0) {
+				msg_type = 9;		// 9 = Note on
+				if (handleNoteOn)
+					(*handleNoteOn)(ch, (n >> 16), (n >> 24));
+			} else {
+				msg_type = 8;		// 8 = Note off
+				if (handleNoteOff)
+					(*handleNoteOff)(ch, (n >> 16), (n >> 24));
+			}
+		} else
+		if (type1 == 0x0A && type2 == 0x0A) {
+			msg_type = 10;			// 10 = Poly Pressure
+			if (handleVelocityChange)
+				(*handleVelocityChange)(ch, (n >> 16), (n >> 24));
+		} else
+			if (type1 == 0x0B && type2 == 0x0B) {
+			msg_type = 11;			// 11 = Control Change
+			if (handleControlChange)
+				(*handleControlChange)(ch, (n >> 16), (n >> 24));
+		} else
+			if (type1 == 0x0C && type2 == 0x0C) {
+			msg_type = 12;			// 12 = Program Change
+				if (handleProgramChange) (*handleProgramChange)(ch, (n >> 16));
+		} else
+			if (type1 == 0x0D && type2 == 0x0D) {
+			msg_type = 13;			// 13 = After Touch
+				if (handleAfterTouch) (*handleAfterTouch)(ch, (n >> 16));
+		} else
+			if (type1 == 0x0E && type2 == 0x0E) {
+			msg_type = 14;			// 14 = Pitch Bend
+			if (handlePitchChange)
+				(*handlePitchChange)(ch, ((n >> 16) & 0x7F) | ((n >> 17) & 0x3F80));
+		} else {
+			return false;
+		}
+		msg_channel = ch;
+		msg_data1 = (n >> 16);
+		msg_data2 = (n >> 24);
+		return true;
+	}
+	if (type1 == 0x04) {
+		sysex_byte(n >> 8);
+		sysex_byte(n >> 16);
+		sysex_byte(n >> 24);
+		return false;
+	}
+	if (type1 >= 0x05 && type1 <= 0x07) {
+		sysex_byte(n >> 8);
+		if (type1 >= 0x06) sysex_byte(n >> 16);
+		if (type1 == 0x07) sysex_byte(n >> 24);
+		msg_data1 = msg_sysex_len;
+		msg_sysex_len = 0;
+		msg_type = 15;			// 15 = Sys Ex
+		if (handleSysEx)
+			(*handleSysEx)(msg_sysex, msg_data1, 1);
+		return true;
+	}
+	// TODO: single byte messages
+	// TODO: time code messages?
+	return false;
+}
+
+void MIDIDevice::sysex_byte(uint8_t b)
+{
+	// when buffer is full, send another chunk to handler.
+	if (msg_sysex_len >= SYSEX_MAX_LEN) {
+		if (handleSysEx) {
+			(*handleSysEx)(msg_sysex, msg_sysex_len, 0);
+			msg_sysex_len = 0;
+		}
+	}
+	if (msg_sysex_len < SYSEX_MAX_LEN) {
+		msg_sysex[msg_sysex_len++] = b;
+	}
+}
+
 
 
 

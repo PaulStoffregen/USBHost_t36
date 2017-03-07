@@ -55,12 +55,17 @@ void setup()
 	USBHS_USBCMD |= USBHS_USBCMD_IAA;
 	if (rootdev) print(rootdev->control_pipe);
 #endif
+
+	midi1.setHandleNoteOff(OnNoteOff);
+	midi1.setHandleNoteOn(OnNoteOn);
+	midi1.setHandleControlChange(OnControlChange);
 }
 
 
 void loop()
 {
 	myusb.Task();
+	midi1.read();
 }
 
 
@@ -72,4 +77,38 @@ void pulse(int usec)
 	digitalWriteFast(30, LOW);
 }
 
+
+
+void OnNoteOn(byte channel, byte note, byte velocity)
+{
+	Serial.print("Note On, ch=");
+	Serial.print(channel);
+	Serial.print(", note=");
+	Serial.print(note);
+	Serial.print(", velocity=");
+	Serial.print(velocity);
+	Serial.println();
+}
+
+void OnNoteOff(byte channel, byte note, byte velocity)
+{
+	Serial.print("Note Off, ch=");
+	Serial.print(channel);
+	Serial.print(", note=");
+	Serial.print(note);
+	Serial.print(", velocity=");
+	Serial.print(velocity);
+	Serial.println();
+}
+
+void OnControlChange(byte channel, byte control, byte value)
+{
+	Serial.print("Control Change, ch=");
+	Serial.print(channel);
+	Serial.print(", control=");
+	Serial.print(control);
+	Serial.print(", value=");
+	Serial.print(value);
+	Serial.println();
+}
 
