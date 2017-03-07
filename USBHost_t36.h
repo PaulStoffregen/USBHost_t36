@@ -53,7 +53,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-#define USBHOST_PRINT_DEBUG
+// #define USBHOST_PRINT_DEBUG
 
 /************************************************/
 /*  Data Types                                  */
@@ -474,13 +474,13 @@ class KeyboardController : public USBDriver {
 public:
 	KeyboardController(USBHost &host) { init(); }
 	KeyboardController(USBHost *host) { init(); }
-	int     available();
-	int     read();
-	uint8_t getKey();
-	uint8_t getModifiers();
-	uint8_t getOemKey();
-	void    attachPress(void (*keyPressed)());
-	void    attachRelease(void (*keyReleased)());
+	int      available();
+	int      read();
+	uint16_t getKey() { return keyCode; }
+	uint8_t  getModifiers() { return modifiers; }
+	uint8_t  getOemKey() { return keyOEM; }
+	void     attachPress(void (*f)(int unicode)) { keyPressedFunction = f; }
+	void     attachRelease(void (*f)(int unicode)) { keyReleasedFunction = f; }
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
@@ -489,11 +489,19 @@ protected:
 	void new_data(const Transfer_t *transfer);
 	void init();
 private:
-	void (*keyPressedFunction)();
-	void (*keyReleasedFunction)();
+	void update();
+	uint16_t convert_to_unicode(uint32_t mod, uint32_t key);
+	void key_press(uint32_t mod, uint32_t key);
+	void key_release(uint32_t mod, uint32_t key);
+	void (*keyPressedFunction)(int unicode);
+	void (*keyReleasedFunction)(int unicode);
 	Pipe_t *datapipe;
 	setup_t setup;
 	uint8_t report[8];
+	uint16_t keyCode;
+	uint8_t modifiers;
+	uint8_t keyOEM;
+	uint8_t prev_report[8];
 	Pipe_t mypipes[2] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
 };

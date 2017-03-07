@@ -23,6 +23,7 @@
 
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
+#include "keylayouts.h"   // from Teensyduino core library
 
 
 void KeyboardController::init()
@@ -74,10 +75,33 @@ void KeyboardController::control(const Transfer_t *transfer)
 
 void KeyboardController::callback(const Transfer_t *transfer)
 {
-	println("KeyboardController Callback (static)");
+	//println("KeyboardController Callback (static)");
 	if (transfer->driver) {
 		((KeyboardController *)(transfer->driver))->new_data(transfer);
 	}
+}
+
+void KeyboardController::disconnect()
+{
+	// TODO: free resources
+}
+
+
+// Arduino defined this static weak symbol callback, and their
+// examples use it as the only way to detect new key presses,
+// so unfortunate as static weak callbacks are, it probably
+// needs to be supported for compatibility
+extern "C" {
+void __keyboardControllerEmptyCallback() { }
+}
+void keyPressed()  __attribute__ ((weak, alias("__keyboardControllerEmptyCallback")));
+void keyReleased() __attribute__ ((weak, alias("__keyboardControllerEmptyCallback")));
+
+static bool contains(uint8_t b, const uint8_t *data)
+{
+	if (data[2] == b || data[3] == b || data[4] == b) return true;
+	if (data[5] == b || data[6] == b || data[7] == b) return true;
+	return false;
 }
 
 void KeyboardController::new_data(const Transfer_t *transfer)
@@ -85,14 +109,76 @@ void KeyboardController::new_data(const Transfer_t *transfer)
 	println("KeyboardController Callback (member)");
 	print("  KB Data: ");
 	print_hexbytes(transfer->buffer, 8);
-	// TODO: parse the new data
+	for (int i=2; i < 8; i++) {
+		uint32_t key = prev_report[i];
+		if (key >= 4 && !contains(key, report)) {
+			key_release(prev_report[0], key);
+		}
+	}
+	for (int i=2; i < 8; i++) {
+		uint32_t key = report[i];
+		if (key >= 4 && !contains(key, prev_report)) {
+			key_press(report[0], key);
+		}
+	}
+	memcpy(prev_report, report, 8);
 	queue_Data_Transfer(datapipe, report, 8, this);
 }
 
-void KeyboardController::disconnect()
+void KeyboardController::key_press(uint32_t mod, uint32_t key)
 {
-	// TODO: free resources
+	// TODO: queue events, perform callback from Task
+	println("  press, key=", key);
+	modifiers = mod;
+	keyOEM = key;
+	keyCode = convert_to_unicode(mod, key);
+	println("  unicode = ", keyCode);
+	if (keyPressedFunction) {
+		keyPressedFunction(keyCode);
+	} else {
+		keyPressed();
+	}
 }
+
+void KeyboardController::key_release(uint32_t mod, uint32_t key)
+{
+	// TODO: queue events, perform callback from Task
+	println("  release, key=", key);
+	modifiers = mod;
+	keyOEM = key;
+	keyCode = convert_to_unicode(mod, key);
+	if (keyReleasedFunction) {
+		keyReleasedFunction(keyCode);
+	} else {
+		keyReleased();
+	}
+}
+
+uint16_t KeyboardController::convert_to_unicode(uint32_t mod, uint32_t key)
+{
+	// TODO: special keys
+	// TODO: caps lock
+	// TODO: dead key sequences
+	if ((mod & 0x02) || (mod & 0x20)) key |= SHIFT_MASK;
+	for (int i=0; i < 96; i++) {
+		if (keycodes_ascii[i] == key) return i + 32;
+	}
+#ifdef ISO_8859_1_A0
+	for (int i=0; i < 96; i++) {
+		if (keycodes_iso_8859_1[i] == key) return i + 160;
+	}
+#endif
+	return 0;
+}
+
+
+
+
+
+
+
+
+
 
 
 

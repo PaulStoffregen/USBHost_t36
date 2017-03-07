@@ -55,7 +55,8 @@ void setup()
 	USBHS_USBCMD |= USBHS_USBCMD_IAA;
 	if (rootdev) print(rootdev->control_pipe);
 #endif
-
+	keyboard1.attachPress(press);
+	keyboard2.attachPress(press);
 	midi1.setHandleNoteOff(OnNoteOff);
 	midi1.setHandleNoteOn(OnNoteOn);
 	midi1.setHandleControlChange(OnControlChange);
@@ -77,7 +78,16 @@ void pulse(int usec)
 	digitalWriteFast(30, LOW);
 }
 
-
+void press(int key)
+{
+	Serial.print("key ");
+	Serial.println(key);
+	//Serial.print("key ");
+	//Serial.print((char)keyboard1.getKey());
+	//Serial.print("  ");
+	//Serial.print((char)keyboard2.getKey());
+	//Serial.println();
+}
 
 void OnNoteOn(byte channel, byte note, byte velocity)
 {
@@ -96,8 +106,8 @@ void OnNoteOff(byte channel, byte note, byte velocity)
 	Serial.print(channel);
 	Serial.print(", note=");
 	Serial.print(note);
-	Serial.print(", velocity=");
-	Serial.print(velocity);
+	//Serial.print(", velocity=");
+	//Serial.print(velocity);
 	Serial.println();
 }
 
