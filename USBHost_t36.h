@@ -26,6 +26,9 @@
 
 #include <stdint.h>
 
+#if !defined(__MK66FX1M0__)
+#error "USBHost_t36 only works with Teensy 3.6.  Please select it in Tools > Boards"
+#endif
 
 // Dear inquisitive reader, USB is a complex protocol defined with
 // very specific terminology.  To have any chance of understand this

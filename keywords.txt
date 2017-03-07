@@ -1,0 +1,10 @@
+USBHost	KEYWORD1
+USBHub	KEYWORD1
+KeyboardController	KEYWORD1
+MIDIDevice	KEYWORD1
+Task	KEYWORD2
+getKey	KEYWORD2
+getModifiers	KEYWORD2
+getOemKey	KEYWORD2
+attachPress	KEYWORD2
+attachRelease	KEYWORD2
