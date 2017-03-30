@@ -167,7 +167,7 @@ void USBHost::begin()
 	//println(" reset waited ", count);
 
 	init_Device_Pipe_Transfer_memory();
-	for (int i=0; i < 32; i++) {
+	for (int i=0; i < PERIODIC_LIST_SIZE; i++) {
 		periodictable[i] = 1;
 	}
 	memset(uframe_bandwidth, 0, sizeof(uframe_bandwidth));
