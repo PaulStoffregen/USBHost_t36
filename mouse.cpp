@@ -134,13 +134,13 @@ void MouseController::new_data(const Transfer_t *transfer)
 
 	if(packetSize == 20) {
 		buttons = report[1];
-		mouseX  = ((report[4] & 0x0f) << 8 | (report[3] & 0xff));
-		mouseY  = ((report[5] & 0xff) << 4 | (report[4] >> 4) & 0x0f);
+		mouseX  = ((report[4] & 0x0f) << 8) | ((report[3] & 0xff));
+		mouseY  = ((report[5] & 0xff) << 4) | ((report[4] >> 4) & 0x0f);
 		wheel   = report[6];
 	} else {
 		buttons = report[0];
-		mouseX  = ((report[2] & 0x0f) << 8 | (report[1] & 0xff));
-		mouseY  = ((report[3] & 0xff) << 4 | (report[2] >> 4) & 0x0f);
+		mouseX  = ((report[2] & 0x0f) << 8) | ((report[1] & 0xff));
+		mouseY  = ((report[3] & 0xff) << 4) | ((report[2] >> 4) & 0x0f);
 		wheel   = report[4];
 	}
 	mouseEvent = true;
