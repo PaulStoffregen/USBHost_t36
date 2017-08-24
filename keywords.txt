@@ -1,6 +1,7 @@
 USBHost	KEYWORD1
 USBHub	KEYWORD1
 KeyboardController	KEYWORD1
+MouseController	KEYWORD1
 MIDIDevice	KEYWORD1
 Task	KEYWORD2
 getKey	KEYWORD2
@@ -8,3 +9,7 @@ getModifiers	KEYWORD2
 getOemKey	KEYWORD2
 attachPress	KEYWORD2
 attachRelease	KEYWORD2
+getButtons	KEYWORD2
+getWheel	KEYWORD2
+getMouseX	KEYWORD2
+getMouseY	KEYWORD2
