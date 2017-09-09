@@ -142,10 +142,13 @@ void USBHIDParser::control(const Transfer_t *transfer)
 {
 	println("control callback (hid)");
 	print_hexbytes(transfer->buffer, transfer->length);
+	// To decode hex dump to human readable HID report summary:
+	//   http://eleccelerator.com/usbdescreqparser/
 	uint32_t mesg = transfer->setup.word1;
 	//println("  mesg = ", mesg, HEX);
 	if (mesg == 0x22000681 && transfer->length == descsize) { // HID report descriptor
 		println("  got report descriptor");
+		parse();
 		queue_Data_Transfer(in_pipe, report, in_size, this);
 	}
 }
@@ -179,7 +182,15 @@ void USBHIDParser::in_data(const Transfer_t *transfer)
 {
 	print("HID: ");
 	print_hexbytes(transfer->buffer, transfer->length);
-	parse(0x0100, (const uint8_t *)transfer->buffer, transfer->length);
+	const uint8_t *buf = (const uint8_t *)transfer->buffer;
+	uint32_t len = transfer->length;
+	if (use_report_id == false) {
+		parse(0x0100, buf, len);
+	} else {
+		if (len > 1) {
+			parse(0x0100 | buf[0], buf + 1, len - 1);
+		}
+	}
 	queue_Data_Transfer(in_pipe, report, in_size, this);
 }
 
@@ -234,6 +245,7 @@ void USBHIDParser::parse()
 		  case 0xA0: // Collection
 			if (collection_level == 0 && topusage_count < TOPUSAGE_LIST_LEN) {
 				uint32_t topusage = ((uint32_t)usage_page << 16) | usage;
+				println("Found top level collection ", topusage, HEX);
 				//topusage_list[topusage_count] = topusage;
 				topusage_drivers[topusage_count] = find_driver(topusage);
 				topusage_count++;
@@ -332,6 +344,7 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 	uint8_t collection_level = 0;
 	uint8_t usage[USAGE_LIST_LEN] = {0, 0};
 	uint8_t usage_count = 0;
+	uint8_t report_id = 0;
 	uint16_t report_size = 0;
 	uint16_t report_count = 0;
 	uint16_t usage_page = 0;
@@ -379,7 +392,7 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 			report_count = val;
 			break;
 		  case 0x84: // Report ID (global)
-			// TODO
+			report_id = val;
 			break;
 		  case 0x08: // Usage (local)
 			if (usage_count < USAGE_LIST_LEN) {
@@ -402,6 +415,7 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 					driver = topusage_drivers[topusage_index++];
 				}
 			}
+			// discard collection info if not top level, hopefully that's ok?
 			collection_level++;
 			reset_local = true;
 			break;
@@ -416,15 +430,21 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 			reset_local = true;
 			break;
 		  case 0x80: // Input
-			if ((val & 1) == 0) {
+			if (use_report_id && (report_id != (type_and_report_id & 0xFF))) {
+				// completely ignore and do not advance bitindex
+				// for descriptors of other report IDs
+				reset_local = true;
+				break;
+			}
+			if ((val & 1) || (driver == NULL)) {
+				// skip past constant fields or when no driver is listening
+				bitindex += report_count * report_size;
+			} else {
 				println("begin, usage=", topusage, HEX);
 				println("       type= ", val, HEX);
 				println("       min=  ", logical_min);
 				println("       max=  ", logical_max);
-				if (driver) {
-					driver->hid_input_begin(topusage, val,
-						logical_min, logical_max);
-				}
+				driver->hid_input_begin(topusage, val, logical_min, logical_max);
 				println("Input, total bits=", report_count * report_size);
 				if ((val & 2)) {
 					// ordinary variable format
@@ -452,11 +472,11 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 						uint32_t n = bitfield(data, bitindex, report_size);
 						if (logical_min >= 0) {
 							println("  data = ", n);
-							if (driver) driver->hid_input_data(u, n);
+							driver->hid_input_data(u, n);
 						} else {
 							int32_t sn = signext(n, report_size);
 							println("  sdata = ", sn);
-							if (driver) driver->hid_input_data(u, sn);
+							driver->hid_input_data(u, sn);
 						}
 						bitindex += report_size;
 					}
@@ -469,14 +489,11 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 							u |= (uint32_t)usage_page << 16;
 							print("  usage = ", u, HEX);
 							println("  data = 1");
-							if (driver) driver->hid_input_data(u, 1);
+							driver->hid_input_data(u, 1);
 						}
 						bitindex += report_size;
 					}
 				}
-			} else {
-				// skip past constant fields
-				bitindex += report_count * report_size;
 			}
 			reset_local = true;
 			break;
