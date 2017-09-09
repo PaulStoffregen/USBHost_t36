@@ -396,6 +396,22 @@ private:
 	friend class USBHost;
 };
 
+// Device drivers may inherit from this base class, if they wish to receive
+// HID input data fully decoded by the USBHIDParser driver
+class USBHIDInput {
+public:
+	USBHIDInput();
+private:
+	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int min, int max);
+	virtual void hid_input_data(uint32_t usage, int32_t value);
+	virtual void hid_input_end();
+	virtual void disconnect_collection(Device_t *dev);
+	USBHIDInput *next;
+	static USBHIDInput *list;
+	friend class USBHIDParser;
+};
+
 /************************************************/
 /*  USB Device Drivers                          */
 /************************************************/
@@ -423,7 +439,7 @@ public:
 		PORT_ACTIVE =     9
 	};
 protected:
-	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
+	virtual bool claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
 	virtual void timer_event(USBDriverTimer *whichTimer);
 	virtual void disconnect();
@@ -475,7 +491,45 @@ private:
 	static volatile bool reset_busy;
 };
 
-class KeyboardController : public USBDriver {
+
+class USBHIDParser : public USBDriver {
+public:
+	USBHIDParser(USBHost &host) { init(); }
+	void driver_ready_for_hid_collection(USBHIDInput *driver);
+protected:
+	enum { TOPUSAGE_LIST_LEN = 4 };
+	enum { USAGE_LIST_LEN = 12 };
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
+	virtual void control(const Transfer_t *transfer);
+	virtual void disconnect();
+	static void in_callback(const Transfer_t *transfer);
+	static void out_callback(const Transfer_t *transfer);
+	void in_data(const Transfer_t *transfer);
+	void out_data(const Transfer_t *transfer);
+	bool check_if_using_report_id();
+	void parse();
+	USBHIDInput * find_driver(uint32_t topusage);
+	void parse(uint16_t type_and_report_id, const uint8_t *data, uint32_t len);
+	void init();
+private:
+	Pipe_t *in_pipe;
+	Pipe_t *out_pipe;
+	//uint32_t topusage_list[TOPUSAGE_LIST_LEN];
+	USBHIDInput *topusage_drivers[TOPUSAGE_LIST_LEN];
+	uint16_t in_size;
+	uint16_t out_size;
+	setup_t setup;
+	uint8_t descriptor[256];
+	uint8_t report[64];
+	uint16_t descsize;
+	bool use_report_id;
+	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
+	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
+};
+
+
+
+class KeyboardController : public USBDriver /* , public USBHIDInput */ {
 public:
 	KeyboardController(USBHost &host) { init(); }
 	KeyboardController(USBHost *host) { init(); }
