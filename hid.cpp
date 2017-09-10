@@ -25,6 +25,13 @@
 #include "USBHost_t36.h"  // Read this header first for key info
 
 
+// This HID driver claims a USB interface and parses its incoming
+// data (reports).  It doesn't actually use the data, but it allows
+// drivers which inherit the USBHIDInput base class to claim the
+// top level collections within the reports.  Those drivers get
+// callbacks with the arriving data full decoded to data/usage
+// pairs.
+
 void USBHIDParser::init()
 {
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
@@ -167,6 +174,8 @@ void USBHIDParser::out_callback(const Transfer_t *transfer)
 	}
 }
 
+// When the device goes away, we need to call disconnect_collection()
+// for all drivers which claimed a top level collection
 void USBHIDParser::disconnect()
 {
 	for (uint32_t i=0; i < TOPUSAGE_LIST_LEN; i++) {
@@ -178,6 +187,7 @@ void USBHIDParser::disconnect()
 	}
 }
 
+// Called when the HID device sends a report
 void USBHIDParser::in_data(const Transfer_t *transfer)
 {
 	print("HID: ");
@@ -199,6 +209,10 @@ void USBHIDParser::out_data(const Transfer_t *transfer)
 {
 }
 
+// This no-inputs parse is meant to be used when we first get the
+// HID report descriptor.  It finds all the top level collections
+// and allows drivers to claim them.  This is always where we
+// learn whether the reports will or will not use a Report ID byte.
 void USBHIDParser::parse()
 {
 	const uint8_t *p = descriptor;
@@ -271,6 +285,9 @@ void USBHIDParser::parse()
 	}
 }
 
+// This is a list of all the drivers inherited from the USBHIDInput class.
+// Unlike the list of USBDriver (managed in enumeration.cpp), drivers stay
+// on this list even when they have claimed a top level collection.
 USBHIDInput * USBHIDInput::list = NULL;
 
 USBHIDInput::USBHIDInput()
@@ -285,6 +302,9 @@ USBHIDInput::USBHIDInput()
 	}
 }
 
+// When a new top level collection is found, this function asks drivers
+// if they wish to claim it.  The driver taking ownership of the
+// collection is returned, or NULL if no driver wants it.
 USBHIDInput * USBHIDParser::find_driver(uint32_t topusage)
 {
 	USBHIDInput *driver = USBHIDInput::list;
@@ -297,6 +317,7 @@ USBHIDInput * USBHIDParser::find_driver(uint32_t topusage)
 	return NULL;
 }
 
+// Extract 1 to 32 bits from the data array, starting at bitindex.
 static uint32_t bitfield(const uint8_t *data, uint32_t bitindex, uint32_t numbits)
 {
 	uint32_t output = 0;
@@ -317,6 +338,8 @@ static uint32_t bitfield(const uint8_t *data, uint32_t bitindex, uint32_t numbit
 	return output;
 }
 
+// convert a number with the specified number of bits from unsigned to signed,
+// so the result is a proper 32 bit signed integer.
 static int32_t signext(uint32_t num, uint32_t bitcount)
 {
 	if (bitcount < 32 && bitcount > 0 && (num & (1 << (bitcount-1)))) {
@@ -325,6 +348,7 @@ static int32_t signext(uint32_t num, uint32_t bitcount)
 	return (int32_t)num;
 }
 
+// convert a tag's value to a signed integer.
 static int32_t signedval(uint32_t num, uint8_t tag)
 {
 	tag &= 3;
@@ -333,7 +357,8 @@ static int32_t signedval(uint32_t num, uint8_t tag)
 	return (int32_t)num;
 }
 
-
+// parse the report descriptor and use it to feed the fields of the report
+// to the drivers which have claimed its top level collections
 void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint32_t len)
 {
 	const uint8_t *p = descriptor;
@@ -521,6 +546,7 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 		  case 0xA8: // Delimiter (local)
 		  default:
 			println("Ruh Roh, unsupported tag, not a good thing Scoob ", tag, HEX);
+			break;
 		}
 		if (reset_local) {
 			usage_count = 0;
