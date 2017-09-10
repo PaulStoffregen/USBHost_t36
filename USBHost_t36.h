@@ -402,16 +402,14 @@ private:
 // Device drivers may inherit from this base class, if they wish to receive
 // HID input data fully decoded by the USBHIDParser driver
 class USBHIDInput {
-public:
-	USBHIDInput();
 private:
 	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
-	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int min, int max);
+	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
+	void add_to_list();
 	USBHIDInput *next;
-	static USBHIDInput *list;
 	friend class USBHIDParser;
 };
 
@@ -498,7 +496,7 @@ private:
 class USBHIDParser : public USBDriver {
 public:
 	USBHIDParser(USBHost &host) { init(); }
-	void driver_ready_for_hid_collection(USBHIDInput *driver);
+	static void driver_ready_for_hid_collection(USBHIDInput *driver);
 protected:
 	enum { TOPUSAGE_LIST_LEN = 4 };
 	enum { USAGE_LIST_LEN = 12 };
@@ -517,6 +515,7 @@ protected:
 private:
 	Pipe_t *in_pipe;
 	Pipe_t *out_pipe;
+	static USBHIDInput *available_hid_drivers_list;
 	//uint32_t topusage_list[TOPUSAGE_LIST_LEN];
 	USBHIDInput *topusage_drivers[TOPUSAGE_LIST_LEN];
 	uint16_t in_size;
@@ -711,6 +710,35 @@ private:
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
 };
 
+#if 1
+class MouseController : public USBHIDInput {
+public:
+	MouseController(USBHost &host) { USBHIDParser::driver_ready_for_hid_collection(this); }
+	bool	available() { return mouseEvent; }
+	void	mouseDataClear();
+	uint8_t getButtons() { return buttons; }
+	int     getMouseX() { return mouseX; }
+	int     getMouseY() { return mouseY; }
+	int     getWheel() { return wheel; }
+	int     getWheelH() { return wheelH; }
+protected:
+	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
+	virtual void hid_input_data(uint32_t usage, int32_t value);
+	virtual void hid_input_end();
+	virtual void disconnect_collection(Device_t *dev);
+private:
+	Device_t *mydevice = NULL;
+	uint8_t collections_claimed = 0;
+	volatile bool mouseEvent = false;
+	uint8_t buttons = 0;
+	int     mouseX = 0;
+	int     mouseY = 0;
+	int     wheel = 0;
+	int     wheelH = 0;
+};
+
+#else
 class MouseController : public USBDriver {
 public:
 	MouseController(USBHost &host) { init(); }
@@ -743,5 +771,7 @@ private:
 	Pipe_t mypipes[2] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
 };
+#endif
+
 
 #endif

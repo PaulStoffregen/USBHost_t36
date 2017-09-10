@@ -10,33 +10,40 @@ USBHub hub2(myusb);
 USBHub hub3(myusb);
 KeyboardController keyboard1(myusb);
 KeyboardController keyboard2(myusb);
+USBHIDParser hid1(myusb);
+USBHIDParser hid2(myusb);
+USBHIDParser hid3(myusb);
+USBHIDParser hid4(myusb);
+USBHIDParser hid5(myusb);
 MouseController mouse1(myusb);
 
 void setup()
 {
-	while (!Serial) ; // wait for Arduino Serial Monitor
-	Serial.println("USB Host Testing");
-	myusb.begin();
-	keyboard1.attachPress(OnPress);
-	keyboard2.attachPress(OnPress);
+  while (!Serial) ; // wait for Arduino Serial Monitor
+  Serial.println("USB Host Testing");
+  myusb.begin();
+  keyboard1.attachPress(OnPress);
+  keyboard2.attachPress(OnPress);
 }
 
 
 void loop()
 {
-	myusb.Task();
+  myusb.Task();
   if(mouse1.available()) {
     Serial.print("buttons = ");
-    Serial.print(mouse1.getButtons(),DEC);
-    Serial.print(",  wheel = ");
-    Serial.print(mouse1.getWheel(),DEC);
+    Serial.print(mouse1.getButtons());
     Serial.print(",  mouseX = ");
-    Serial.print(mouse1.getMouseX(),DEC);
+    Serial.print(mouse1.getMouseX());
     Serial.print(",  mouseY = ");
-    Serial.println(mouse1.getMouseY(),DEC);
+    Serial.print(mouse1.getMouseY());
+    Serial.print(",  wheel = ");
+    Serial.print(mouse1.getWheel());
+    Serial.print(",  wheelH = ");
+    Serial.print(mouse1.getWheelH());
+    Serial.println();
     mouse1.mouseDataClear();
   }
-  delay(50);
 }
 
 

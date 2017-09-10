@@ -24,6 +24,81 @@
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
 
+#if 1
+
+
+bool MouseController::claim_collection(Device_t *dev, uint32_t topusage)
+{
+	// only claim Desktop/Mouse
+	if (topusage != 0x10002) return false;
+	// only claim from one physical device
+	if (mydevice != NULL && dev != mydevice) return false;
+	mydevice = dev;
+	collections_claimed++;
+	return true;
+}
+
+void MouseController::disconnect_collection(Device_t *dev)
+{
+	if (--collections_claimed == 0) {
+		mydevice = NULL;
+	}
+}
+
+void MouseController::hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax)
+{
+	// TODO: check if absolute coordinates
+}
+
+void MouseController::hid_input_data(uint32_t usage, int32_t value)
+{
+	//Serial.printf("Mouse: usage=%X, value=%d\n", usage, value);
+	uint32_t usage_page = usage >> 16;
+	usage &= 0xFFFF;
+	if (usage_page == 9 && usage >= 1 && usage <= 8) {
+		if (value == 0) {
+			buttons &= ~(1 << (usage -1));
+		} else {
+			buttons |= (1 << (usage -1));
+		}
+	} else if (usage_page == 1) {
+		switch (usage) {
+		  case 0x30:
+			mouseX = value;
+			break;
+		  case 0x31:
+			mouseY = value;
+			break;
+		  case 0x32: // Apple uses this for horizontal scroll
+			wheelH = value;
+			break;
+		  case 0x38:
+			wheel = value;
+			break;
+		}
+	} else if (usage_page == 12) {
+		if (usage == 0x238) { // Microsoft uses this for horizontal scroll
+			wheelH = value;
+		}
+	}
+}
+
+void MouseController::hid_input_end()
+{
+	mouseEvent = true;
+}
+
+void MouseController::mouseDataClear() {
+	mouseEvent = false;
+	buttons = 0;
+	mouseX  = 0;
+	mouseY  = 0;
+	wheel   = 0;
+	wheelH  = 0;
+}
+
+
+#else
 void MouseController::init()
 {
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
@@ -59,8 +134,8 @@ bool MouseController::claim(Device_t *dev, int type, const uint8_t *descriptors,
 	println("descriptors[23] = ",descriptors[23]);
 	println("packet size(mouse) = ", size);
 	// packey size seems to be 20 for (wireless type 2) or 6 bytes for wired
-	packetSize = size;	
-	if ((size != 20) && (size != 6)) return false; 
+	packetSize = size;
+	if ((size != 20) && (size != 6)) return false;
 	if(packetSize == 6) packetSize = 8; // Minimum packet size needed is 8
 	uint32_t interval = descriptors[24];
 	println("polling interval = ", interval);
@@ -129,7 +204,7 @@ void MouseController::new_data(const Transfer_t *transfer)
 	//
 	// Wireless Logitech mouse reports have byte 0 set to 0x02 indicating a type 2 report.
 	// Not sure what this really means yet but all bytes of the report packet are shifted
-	// ahead by one byte and there is a single byte that is always zero after the button 
+	// ahead by one byte and there is a single byte that is always zero after the button
 	// report byte.
 
 	if(packetSize == 20) {
@@ -155,4 +230,5 @@ void MouseController::mouseDataClear() {
 	mouseY  = 0;
 	wheel   = 0;
 }
-	
+#endif
+

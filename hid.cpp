@@ -288,17 +288,17 @@ void USBHIDParser::parse()
 // This is a list of all the drivers inherited from the USBHIDInput class.
 // Unlike the list of USBDriver (managed in enumeration.cpp), drivers stay
 // on this list even when they have claimed a top level collection.
-USBHIDInput * USBHIDInput::list = NULL;
+USBHIDInput * USBHIDParser::available_hid_drivers_list = NULL;
 
-USBHIDInput::USBHIDInput()
+void USBHIDParser::driver_ready_for_hid_collection(USBHIDInput *driver)
 {
-	next = NULL;
-	if (list == NULL) {
-		list = this;
+	driver->next = NULL;
+	if (available_hid_drivers_list == NULL) {
+		available_hid_drivers_list = driver;
 	} else {
-		USBHIDInput *last = list;
+		USBHIDInput *last = available_hid_drivers_list;
 		while (last->next) last = last->next;
-		last->next = this;
+		last->next = driver;
 	}
 }
 
@@ -307,8 +307,10 @@ USBHIDInput::USBHIDInput()
 // collection is returned, or NULL if no driver wants it.
 USBHIDInput * USBHIDParser::find_driver(uint32_t topusage)
 {
-	USBHIDInput *driver = USBHIDInput::list;
+	println("find_driver");
+	USBHIDInput *driver = available_hid_drivers_list;
 	while (driver) {
+		println("  driver ", (uint32_t)driver, HEX);
 		if (driver->claim_collection(device, topusage)) {
 			return driver;
 		}
@@ -367,7 +369,7 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 	uint32_t topusage = 0;
 	uint8_t topusage_index = 0;
 	uint8_t collection_level = 0;
-	uint8_t usage[USAGE_LIST_LEN] = {0, 0};
+	uint16_t usage[USAGE_LIST_LEN] = {0, 0};
 	uint8_t usage_count = 0;
 	uint8_t report_id = 0;
 	uint16_t report_size = 0;
@@ -392,6 +394,7 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 			p += 2;
 			break;
 		  case 2: val = p[1] | (p[2] << 8);
+			println("val16 = ", val, HEX);
 			p += 3;
 			break;
 		  case 3: val = p[1] | (p[2] << 8) | (p[3] << 16) | (p[4] << 24);
