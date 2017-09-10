@@ -292,6 +292,7 @@ void USBHost::claim_drivers(Device_t *dev)
 
 	// first check if any driver wishes to claim the entire device
 	for (driver=available_drivers; driver != NULL; driver = driver->next) {
+		if (driver->device != NULL) continue;
 		if (driver->claim(dev, 0, enumbuf + 9, enumlen - 9)) {
 			if (prev) {
 				prev->next = driver->next;
@@ -329,6 +330,7 @@ void USBHost::claim_drivers(Device_t *dev)
 			// found an interface, ask available drivers if they want it
 			prev = NULL;
 			for (driver=available_drivers; driver != NULL; driver = driver->next) {
+				if (driver->device != NULL) continue;
 				// TODO: should parse ahead and give claim()
 				// an accurate length.  (end - p) is the rest
 				// of ALL descriptors, likely more interfaces
@@ -402,6 +404,7 @@ void USBHost::disconnect_Device(Device_t *dev)
 	for (USBDriver *p = dev->drivers; p; ) {
 		println("disconnect driver ", (uint32_t)p, HEX);
 		p->disconnect();
+		p->device = NULL;
 		USBDriver *next = p->next;
 		p->next = available_drivers;
 		available_drivers = p;

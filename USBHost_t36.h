@@ -372,7 +372,10 @@ protected:
 
 	// The device this object instance is bound to.  In words, this
 	// is the specific device this driver is using.  When not bound
-	// to any device, this must be NULL.
+	// to any device, this must be NULL.  Drivers may set this to
+	// any non-NULL value if they are in a state where they do not
+	// wish to claim any device or interface (eg, if getting data
+	// from the HID parser).
 	Device_t *device;
 
 	friend class USBHost;
