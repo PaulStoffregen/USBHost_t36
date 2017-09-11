@@ -132,7 +132,7 @@ bool USBHIDParser::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 		} else {
 			return false;
 		}
-		out_pipe->callback_function = out_callback;
+		//out_pipe->callback_function = out_callback;
 	}
 	in_pipe->callback_function = in_callback;
 	for (uint32_t i=0; i < TOPUSAGE_LIST_LEN; i++) {
