@@ -152,11 +152,17 @@ void USBHIDParser::control(const Transfer_t *transfer)
 	// To decode hex dump to human readable HID report summary:
 	//   http://eleccelerator.com/usbdescreqparser/
 	uint32_t mesg = transfer->setup.word1;
-	//println("  mesg = ", mesg, HEX);
+	println("  mesg = ", mesg, HEX);
 	if (mesg == 0x22000681 && transfer->length == descsize) { // HID report descriptor
 		println("  got report descriptor");
 		parse();
 		queue_Data_Transfer(in_pipe, report, in_size, this);
+		if (device->idVendor == 0x054C && device->idProduct == 0x0268) {
+			println("send special PS3 feature command");
+			mk_setup(setup, 0x21, 9, 0x03F4, 0, 4); // ps3 tell to send report 1?
+			static uint8_t ps3_feature_F4_report[] = {0x42, 0x0c, 0x00, 0x00};
+			queue_Control_Transfer(device, &setup, ps3_feature_F4_report, this);
+		}
 	}
 }
 
@@ -394,7 +400,6 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 			p += 2;
 			break;
 		  case 2: val = p[1] | (p[2] << 8);
-			println("val16 = ", val, HEX);
 			p += 3;
 			break;
 		  case 3: val = p[1] | (p[2] << 8) | (p[3] << 16) | (p[4] << 24);
@@ -534,12 +539,14 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 			reset_local = true;
 			break;
 
-		  case 0xA4: // Push (yikes! Hope nobody really uses this?!)
-		  case 0xB4: // Pop (yikes! Hope nobody really uses this?!)
 		  case 0x34: // Physical Minimum (global)
 		  case 0x44: // Physical Maximum (global)
 		  case 0x54: // Unit Exponent (global)
 		  case 0x64: // Unit (global)
+			break; // Ignore these commonly used tags.  Hopefully not needed?
+
+		  case 0xA4: // Push (yikes! Hope nobody really uses this?!)
+		  case 0xB4: // Pop (yikes! Hope nobody really uses this?!)
 		  case 0x38: // Designator Index (local)
 		  case 0x48: // Designator Minimum (local)
 		  case 0x58: // Designator Maximum (local)
