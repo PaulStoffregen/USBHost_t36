@@ -1093,7 +1093,7 @@ bool USBHost::allocate_interrupt_pipe_bandwidth(Pipe_t *pipe, uint32_t maxlen, u
 void USBHost::add_qh_to_periodic_schedule(Pipe_t *pipe)
 {
 	// quick hack for testing, just put it into the first table entry
-	println("add_qh_to_periodic_schedule:");
+	println("add_qh_to_periodic_schedule: ", (uint32_t)pipe, HEX);
 #if 0
 	pipe->qh.horizontal_link = periodictable[0];
 	periodictable[0] = (uint32_t)&(pipe->qh) | 2; // 2=QH
@@ -1104,8 +1104,11 @@ void USBHost::add_qh_to_periodic_schedule(Pipe_t *pipe)
 	println("  interval = ", interval);
 	println("  offset =   ", offset);
 
-	// TODO: does this really make an inverted tree like EHCI figure 4-18, page 93
+	// By an interative miracle, hopefully make an inverted tree of EHCI figure 4-18, page 93
 	for (uint32_t i=offset; i < PERIODIC_LIST_SIZE; i += interval) {
+		print("    old slot ", i);
+		print(": ");
+		print_qh_list((Pipe_t *)(periodictable[i] & 0xFFFFFFE0));
 		uint32_t num = periodictable[i];
 		Pipe_t *node = (Pipe_t *)(num & 0xFFFFFFE0);
 		if ((num & 1) || ((num & 6) == 2 && node->periodic_interval < interval)) {
@@ -1116,13 +1119,32 @@ void USBHost::add_qh_to_periodic_schedule(Pipe_t *pipe)
 			println("  traverse list ", i);
 			// TODO: skip past iTD, siTD when/if we support isochronous
 			while (node->periodic_interval >= interval) {
+				if (node == pipe) goto nextslot;
+				print("  num ", num, HEX);
+				print("  node ", (uint32_t)node, HEX);
+				println("->", node->qh.horizontal_link, HEX);
 				if (node->qh.horizontal_link & 1) break;
 				num = node->qh.horizontal_link;
 				node = (Pipe_t *)(num & 0xFFFFFFE0);
 			}
-			pipe->qh.horizontal_link = num;
+			Pipe_t *n = node;
+			do {
+				if (n == pipe) goto nextslot;
+				n = (Pipe_t *)(n->qh.horizontal_link & 0xFFFFFFE0);
+			} while (n != NULL);
+			print("  adding at node ", (uint32_t)node, HEX);
+			print(", num=", num, HEX);
+			println(", node->qh.horizontal_link=", node->qh.horizontal_link, HEX);
+			pipe->qh.horizontal_link = node->qh.horizontal_link;
 			node->qh.horizontal_link = (uint32_t)pipe | 2; // 2=QH
+			// TODO: is it really necessary to keep doing the outer
+			// loop?  Does adding it here satisfy all cases?  If so
+			// we could avoid extra work by just returning here.
 		}
+		nextslot:
+		print("    new slot ", i);
+		print(": ");
+		print_qh_list((Pipe_t *)(periodictable[i] & 0xFFFFFFE0));
 	}
 #endif
 #if 1
