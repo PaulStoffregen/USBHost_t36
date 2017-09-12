@@ -521,7 +521,7 @@ private:
 	uint16_t in_size;
 	uint16_t out_size;
 	setup_t setup;
-	uint8_t descriptor[256];
+	uint8_t descriptor[512];
 	uint8_t report[64];
 	uint16_t descsize;
 	bool use_report_id;
@@ -745,7 +745,7 @@ public:
 	bool    available() { return joystickEvent; }
 	void    joystickDataClear();
 	uint32_t getButtons() { return buttons; }
-	int	getAxis(uint32_t index) { return (index < 8) ? axis[index] : 0; }
+	int	getAxis(uint32_t index) { return (index < (sizeof(axis)/sizeof(axis[0]))) ? axis[index] : 0; }
 protected:
 	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
@@ -758,7 +758,7 @@ private:
 	bool anychange = false;
 	volatile bool joystickEvent = false;
 	uint32_t buttons = 0;
-	int16_t axis[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+	int16_t axis[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 };
 
 #endif

@@ -52,7 +52,16 @@ void loop()
     Serial.print(joystick1.getAxis(0));
     Serial.print(", Y = ");
     Serial.print(joystick1.getAxis(1));
-
+    Serial.print(", Z = ");
+    Serial.print(joystick1.getAxis(2));
+    Serial.print(", Rz = ");
+    Serial.print(joystick1.getAxis(5));
+    Serial.print(", Rx = ");
+    Serial.print(joystick1.getAxis(3));
+    Serial.print(", Ry = ");
+    Serial.print(joystick1.getAxis(4));
+    Serial.print(", Hat = ");
+    Serial.print(joystick1.getAxis(9));
     Serial.println();
     joystick1.joystickDataClear();
   }
