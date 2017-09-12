@@ -739,5 +739,26 @@ private:
 };
 
 
+class JoystickController : public USBHIDInput {
+public:
+	JoystickController(USBHost &host) { USBHIDParser::driver_ready_for_hid_collection(this); }
+	bool    available() { return joystickEvent; }
+	void    joystickDataClear();
+	uint32_t getButtons() { return buttons; }
+	int	getAxis(uint32_t index) { return (index < 8) ? axis[index] : 0; }
+protected:
+	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
+	virtual void hid_input_data(uint32_t usage, int32_t value);
+	virtual void hid_input_end();
+	virtual void disconnect_collection(Device_t *dev);
+private:
+	Device_t *mydevice = NULL;
+	uint8_t collections_claimed = 0;
+	bool anychange = false;
+	volatile bool joystickEvent = false;
+	uint32_t buttons = 0;
+	int16_t axis[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+};
 
 #endif

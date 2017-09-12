@@ -16,6 +16,7 @@ USBHIDParser hid3(myusb);
 USBHIDParser hid4(myusb);
 USBHIDParser hid5(myusb);
 MouseController mouse1(myusb);
+JoystickController joystick1(myusb);
 
 void setup()
 {
@@ -31,7 +32,7 @@ void loop()
 {
   myusb.Task();
   if(mouse1.available()) {
-    Serial.print("buttons = ");
+    Serial.print("Mouse: buttons = ");
     Serial.print(mouse1.getButtons());
     Serial.print(",  mouseX = ");
     Serial.print(mouse1.getMouseX());
@@ -43,6 +44,17 @@ void loop()
     Serial.print(mouse1.getWheelH());
     Serial.println();
     mouse1.mouseDataClear();
+  }
+  if (joystick1.available()) {
+    Serial.print("Joystick: buttons = ");
+    Serial.print(joystick1.getButtons(), HEX);
+    Serial.print(", X = ");
+    Serial.print(joystick1.getAxis(0));
+    Serial.print(", Y = ");
+    Serial.print(joystick1.getAxis(1));
+
+    Serial.println();
+    joystick1.joystickDataClear();
   }
 }
 
