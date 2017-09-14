@@ -429,7 +429,11 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 			break;
 		  case 0x08: // Usage (local)
 			if (usage_count < USAGE_LIST_LEN) {
-				usage[usage_count++] = val;
+				// Usages: 0 is reserved 0x1-0x1f is sort of reserved for top level things like
+				// 0x1 - Pointer - A collection... So lets try ignoring these
+				if (val > 0x1f) {
+					usage[usage_count++] = val;
+				}
 			}
 			break;
 		  case 0x18: // Usage Minimum (local)
@@ -477,6 +481,8 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 				println("       type= ", val, HEX);
 				println("       min=  ", logical_min);
 				println("       max=  ", logical_max);
+				println("       reportcount=", report_count);
+				println("       usage count=", usage_count);
 				driver->hid_input_begin(topusage, val, logical_min, logical_max);
 				println("Input, total bits=", report_count * report_size);
 				if ((val & 2)) {
