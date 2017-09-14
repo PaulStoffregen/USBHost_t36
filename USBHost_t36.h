@@ -402,6 +402,11 @@ private:
 // Device drivers may inherit from this base class, if they wish to receive
 // HID input data fully decoded by the USBHIDParser driver
 class USBHIDInput {
+public:
+	bool connected(void) { return (mydevice != nullptr); }
+	uint16_t idVendor()  {return (mydevice != nullptr) ? mydevice->idVendor : 0;}
+	uint16_t idProduct() {return (mydevice != nullptr) ? mydevice->idProduct : 0; }
+
 private:
 	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
@@ -411,6 +416,9 @@ private:
 	void add_to_list();
 	USBHIDInput *next;
 	friend class USBHIDParser;
+protected:
+	Device_t *mydevice = NULL;
+
 };
 
 /************************************************/
@@ -728,7 +736,7 @@ protected:
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 private:
-	Device_t *mydevice = NULL;
+//	Device_t *mydevice = NULL;
 	uint8_t collections_claimed = 0;
 	volatile bool mouseEvent = false;
 	uint8_t buttons = 0;
@@ -753,7 +761,7 @@ protected:
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 private:
-	Device_t *mydevice = NULL;
+//	Device_t *mydevice = NULL;
 	uint8_t collections_claimed = 0;
 	bool anychange = false;
 	volatile bool joystickEvent = false;

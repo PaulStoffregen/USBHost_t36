@@ -2,6 +2,7 @@ USBHost	KEYWORD1
 USBHub	KEYWORD1
 KeyboardController	KEYWORD1
 MouseController	KEYWORD1
+JoystickController	KEYWORD1
 MIDIDevice	KEYWORD1
 Task	KEYWORD2
 getKey	KEYWORD2
