@@ -14,3 +14,7 @@ getButtons	KEYWORD2
 getWheel	KEYWORD2
 getMouseX	KEYWORD2
 getMouseY	KEYWORD2
+getAxis	KEYWORD2
+connected	KEYWORD2
+idVendor	KEYWORD2
+idProduct	KEYWORD2
