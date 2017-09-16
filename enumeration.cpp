@@ -328,7 +328,11 @@ void USBHost::claim_drivers(Device_t *dev)
 		}
 		if (desctype == 4 && desclen == 9) {
 			// found an interface, ask available drivers if they want it
+			// Maybe do two passes.  The first pass, let more specific drivers
+			// try to claim it first.  If no specific class tries to claim then
+			// try to see if more generic driver like HID input class can handle
 			prev = NULL;
+			bool driver_claimed_interface = false;
 			for (driver=available_drivers; driver != NULL; driver = driver->next) {
 				if (driver->device != NULL) continue;
 				// TODO: should parse ahead and give claim()
@@ -336,6 +340,7 @@ void USBHost::claim_drivers(Device_t *dev)
 				// of ALL descriptors, likely more interfaces
 				// this driver has no business parsing
 				if (driver->claim(dev, 1, p, end - p)) {
+					driver_claimed_interface = true;
 					// this driver claims iface
 					// remove it from available_drivers list
 					if (prev) {
@@ -354,6 +359,35 @@ void USBHost::claim_drivers(Device_t *dev)
 				}
 				prev = driver;
 			}
+			if (!driver_claimed_interface) {
+				prev = NULL;
+				for (driver=available_drivers; driver != NULL; driver = driver->next) {
+					if (driver->device != NULL) continue;
+					// TODO: should parse ahead and give claim()
+					// an accurate length.  (end - p) is the rest
+					// of ALL descriptors, likely more interfaces
+					// this driver has no business parsing
+					if (driver->claim(dev, 2, p, end - p)) {
+						// this driver claims iface
+						// remove it from available_drivers list
+						if (prev) {
+							prev->next = driver->next;
+						} else {
+							available_drivers = driver->next;
+						}
+						// add to list of drivers using this device
+						if (dev->drivers) {
+							dev->drivers->next = driver;
+						}
+						dev->drivers = driver;
+						driver->next = NULL;
+						driver->device = dev;
+						// not done, may be more interface for more drivers
+					}
+					prev = driver;
+				}
+			}
+
 		}
 		p += desclen;
 	}
@@ -418,6 +452,7 @@ void USBHost::disconnect_Device(Device_t *dev)
 		delete_Pipe(p);
 		p = next;
 	}
+	println("disconnect_Device: disconnect control_pipe");
 	delete_Pipe(dev->control_pipe);
 
 	// remove device from devlist and free its Device_t

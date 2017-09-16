@@ -1,5 +1,6 @@
 USBHost	KEYWORD1
 USBHub	KEYWORD1
+USBHIDParser	KEYWORD1
 KeyboardController	KEYWORD1
 MouseController	KEYWORD1
 JoystickController	KEYWORD1

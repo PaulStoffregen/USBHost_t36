@@ -41,7 +41,7 @@ void loop()
     if (keyboard1_connected) {
       Serial.printf("\n\n*** Keyboard 1 %04x:%04x Connected ***\n", keyboard1.idVendor(), keyboard1.idProduct());
     } else {
-      Serial.println("\n*** Mouse disconnected ***");
+      Serial.println("\n*** Keyboard 1 disconnected ***");
     }
   }
   bool keyboard2_connected_now = keyboard2.connected();
@@ -50,7 +50,7 @@ void loop()
     if (keyboard2_connected) {
       Serial.printf("\n\n*** Keyboard 2 %04x:%04x Connected ***\n", keyboard2.idVendor(), keyboard2.idProduct());
     } else {
-      Serial.println("\n*** Mouse disconnected ***");
+      Serial.println("\n*** Keyboard 2 disconnected ***");
     }
   }
 

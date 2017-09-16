@@ -44,7 +44,7 @@ bool USBHIDParser::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 	println("HIDParser claim this=", (uint32_t)this, HEX);
 
 	// only claim at interface level
-	if (type != 1) return false;
+	if (type != 2) return false;
 	if (len < 9+9+7) return false;
 
 	// interface descriptor
