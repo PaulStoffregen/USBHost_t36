@@ -317,7 +317,7 @@ USBHIDInput * USBHIDParser::find_driver(uint32_t topusage)
 	USBHIDInput *driver = available_hid_drivers_list;
 	while (driver) {
 		println("  driver ", (uint32_t)driver, HEX);
-		if (driver->claim_collection(device, topusage)) {
+		if (driver->claim_collection(this, device, topusage)) {
 			return driver;
 		}
 		driver = driver->next;
@@ -572,3 +572,22 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 	}
 }
 
+bool USBHIDInput::manufacturer(uint8_t *buf, uint16_t length, EventResponderRef  event_responder) {
+	if (usbhid_) 
+		return usbhid_->manufacturer(buf, length, event_responder);
+	else 
+		return false;
+}
+bool USBHIDInput::product(uint8_t *buf, uint16_t length, EventResponderRef  event_responder) {
+	if (usbhid_) 
+		return usbhid_->product(buf, length, event_responder);
+	else 
+		return false;
+}
+
+bool USBHIDInput::serialNumber(uint8_t *buf, uint16_t length, EventResponderRef  event_responder) {
+	if (usbhid_) 
+		return usbhid_->serialNumber(buf, length, event_responder);
+	else 
+		return false;
+}

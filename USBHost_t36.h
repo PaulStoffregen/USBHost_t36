@@ -25,6 +25,7 @@
 #define USB_HOST_TEENSY36_
 
 #include <stdint.h>
+#include <EventResponder.h>
 
 #if !defined(__MK66FX1M0__)
 #error "USBHost_t36 only works with Teensy 3.6.  Please select it in Tools > Boards"
@@ -56,7 +57,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-// #define USBHOST_PRINT_DEBUG
+//#define USBHOST_PRINT_DEBUG
 
 /************************************************/
 /*  Data Types                                  */
@@ -87,6 +88,7 @@ typedef struct Transfer_struct     Transfer_t;
 // USBHost.
 class USBDriver;
 class USBDriverTimer;
+class USBHIDParser;
 
 
 /************************************************/
@@ -121,6 +123,14 @@ struct Device_struct {
 	Pipe_t   *data_pipes;
 	Device_t *next;
 	USBDriver *drivers;
+	// function call back for query functions that require us to 
+	// wait for USB...
+	EventResponder *_query_event_responder;
+
+	uint16_t idVendor;
+	uint16_t idProduct;
+	uint16_t LanguageID;
+
 	uint8_t  speed; // 0=12, 1=1.5, 2=480 Mbit/sec
 	uint8_t  address;
 	uint8_t  hub_address;
@@ -131,9 +141,9 @@ struct Device_struct {
 	uint8_t  bDeviceProtocol;
 	uint8_t  bmAttributes;
 	uint8_t  bMaxPower;
-	uint16_t idVendor;
-	uint16_t idProduct;
-	uint16_t LanguageID;
+	uint8_t  stringIDManufacturer;
+	uint8_t  stringIDProduct;
+	uint8_t  stringIDSerial;
 };
 
 // Pipe_t holes all information about each USB endpoint/pipe
@@ -325,6 +335,10 @@ public:
 	bool connected(void) { return (device != nullptr); }
 	uint16_t idVendor()  {return (device != nullptr) ? device->idVendor : 0;}
 	uint16_t idProduct() {return (device != nullptr) ? device->idProduct : 0; }
+	bool manufacturer(uint8_t *buf, uint16_t length, EventResponderRef  event_responder);
+	bool product(uint8_t *buf, uint16_t length, EventResponderRef  event_responder);
+	bool serialNumber(uint8_t *buf, uint16_t length, EventResponderRef  event_responder);
+
 	// TODO: user-level functions
 	// check if device is bound/active/online
 	// query vid, pid
@@ -382,6 +396,7 @@ protected:
 	Device_t *device;
 
 	friend class USBHost;
+
 };
 
 // Device drivers may create these timer objects to schedule a timer call
@@ -410,8 +425,12 @@ public:
 	uint16_t idVendor()  {return (mydevice != nullptr) ? mydevice->idVendor : 0;}
 	uint16_t idProduct() {return (mydevice != nullptr) ? mydevice->idProduct : 0; }
 
+	bool manufacturer(uint8_t *buf, uint16_t length, EventResponderRef  event_responder);
+	bool product(uint8_t *buf, uint16_t length, EventResponderRef  event_responder);
+	bool serialNumber(uint8_t *buf, uint16_t length, EventResponderRef  event_responder);
+
 private:
-	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual bool claim_collection(USBHIDParser *usbhid, Device_t *dev, uint32_t topusage);
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
@@ -421,7 +440,7 @@ private:
 	friend class USBHIDParser;
 protected:
 	Device_t *mydevice = NULL;
-
+ 	USBHIDParser *usbhid_ = nullptr;
 };
 
 /************************************************/
@@ -733,13 +752,12 @@ public:
 	int     getWheel() { return wheel; }
 	int     getWheelH() { return wheelH; }
 protected:
-	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual bool claim_collection(USBHIDParser *usbhid, Device_t *dev, uint32_t topusage);
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 private:
-//	Device_t *mydevice = NULL;
 	uint8_t collections_claimed = 0;
 	volatile bool mouseEvent = false;
 	uint8_t buttons = 0;
@@ -758,13 +776,12 @@ public:
 	uint32_t getButtons() { return buttons; }
 	int	getAxis(uint32_t index) { return (index < (sizeof(axis)/sizeof(axis[0]))) ? axis[index] : 0; }
 protected:
-	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual bool claim_collection(USBHIDParser *usbhid, Device_t *dev, uint32_t topusage);
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 private:
-//	Device_t *mydevice = NULL;
 	uint8_t collections_claimed = 0;
 	bool anychange = false;
 	volatile bool joystickEvent = false;

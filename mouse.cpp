@@ -26,13 +26,14 @@
 
 
 
-bool MouseController::claim_collection(Device_t *dev, uint32_t topusage)
+bool MouseController::claim_collection(USBHIDParser *usbhid, Device_t *dev, uint32_t topusage)
 {
 	// only claim Desktop/Mouse
 	if (topusage != 0x10002) return false;
 	// only claim from one physical device
 	if (mydevice != NULL && dev != mydevice) return false;
 	mydevice = dev;
+	usbhid_ = usbhid;
 	collections_claimed++;
 	return true;
 }
@@ -42,6 +43,7 @@ void MouseController::disconnect_collection(Device_t *dev)
 	if (--collections_claimed == 0) {
 		mydevice = NULL;
 	}
+	//Serial.printf("*** Mouse - disconnect_collection claim count  %d\n", collections_claimed);
 }
 
 void MouseController::hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax)
