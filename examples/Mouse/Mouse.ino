@@ -25,7 +25,7 @@ bool joystick_connected = false;
 
 EventResponder event_responder;  // 
 
-
+uint8_t keyboard_leds = 0;
 
 
 void setup()
@@ -276,6 +276,17 @@ void loop()
       event_responder.triggerEvent(); // make sure it gets called;
   }
 
+  if (Serial.available()) {
+    keyboard_leds = Serial.read(); 
+    if ((keyboard_leds >= '0') && (keyboard_leds <= '9')) {
+      keyboard_leds -= '0';
+      // Test to see if we can play with LEDS on Keyboard...
+      Serial.printf("Set Keyboard Leds to %x\n", keyboard_leds);
+      if (keyboard1_connected) keyboard1.setLEDS(keyboard_leds); 
+      if (keyboard2_connected) keyboard2.setLEDS(keyboard_leds); 
+    }
+
+  }
 
 }
 
@@ -285,7 +296,18 @@ void OnPress(int key)
   Serial.print("key '");
   Serial.print((char)key);
   Serial.print("'  ");
-  Serial.println(key);
+  Serial.print(key);
+  Serial.print(" MOD: ");
+  if (keyboard1_connected) {
+    Serial.print(keyboard1.getModifiers(), HEX);
+    Serial.print(" OEM: ");
+    Serial.println(keyboard1.getOemKey(), HEX);
+  } else {
+    Serial.print(keyboard2.getModifiers(), HEX);
+    Serial.print(" OEM: ");
+    Serial.println(keyboard2.getOemKey(), HEX);
+  }
+
   //Serial.print("key ");
   //Serial.print((char)keyboard1.getKey());
   //Serial.print("  ");

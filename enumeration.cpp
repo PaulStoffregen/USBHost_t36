@@ -405,6 +405,7 @@ void USBHost::claim_drivers(Device_t *dev)
 					// of ALL descriptors, likely more interfaces
 					// this driver has no business parsing
 					if (driver->claim(dev, 2, p, end - p)) {
+						driver_claimed_interface = true;
 						// this driver claims iface
 						// remove it from available_drivers list
 						if (prev) {
@@ -420,6 +421,10 @@ void USBHost::claim_drivers(Device_t *dev)
 					}
 					prev = driver;
 				}
+			} 
+			if (!driver_claimed_interface) {
+				print("Unclaimed Interface: ");
+				print_hexbytes(p, end - p);
 			}
 
 		}

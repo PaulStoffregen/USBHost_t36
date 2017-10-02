@@ -58,7 +58,9 @@ bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descripto
 	if (descriptors[21] != 3) return false; // must be interrupt type
 	uint32_t size = descriptors[22] | (descriptors[23] << 8);
 	println("packet size = ", size);
-	if (size != 8) return false; // must be 8 bytes for Keyboard Boot Protocol
+	if (size != 8) {
+		return false; // must be 8 bytes for Keyboard Boot Protocol
+	} 
 	uint32_t interval = descriptors[24];
 	println("polling interval = ", interval);
 	datapipe = new_Pipe(dev, 3, endpoint, 1, 8, interval);
@@ -133,6 +135,7 @@ void KeyboardController::key_press(uint32_t mod, uint32_t key)
 	keyOEM = key;
 	keyCode = convert_to_unicode(mod, key);
 	println("  unicode = ", keyCode);
+//	Serial.printf("Keyboard Press mod: %x key: %x keycode: %x\n", mod, key, keyCode);
 	if (keyPressedFunction) {
 		keyPressedFunction(keyCode);
 	} else {
@@ -147,6 +150,7 @@ void KeyboardController::key_release(uint32_t mod, uint32_t key)
 	modifiers = mod;
 	keyOEM = key;
 	keyCode = convert_to_unicode(mod, key);
+//	Serial.printf("Keyboard Release mod: %x key: %x keycode: %x\n", mod, key, keyCode);
 	if (keyReleasedFunction) {
 		keyReleasedFunction(keyCode);
 	} else {
@@ -161,7 +165,10 @@ uint16_t KeyboardController::convert_to_unicode(uint32_t mod, uint32_t key)
 	// TODO: dead key sequences
 	if ((mod & 0x02) || (mod & 0x20)) key |= SHIFT_MASK;
 	for (int i=0; i < 96; i++) {
-		if (keycodes_ascii[i] == key) return i + 32;
+		if (keycodes_ascii[i] == key) {
+			if ((mod & 1) || (mod & 0x10)) return (i+32) & 0x1f;	// Control key is down
+			return i + 32;
+		}
 	}
 #ifdef ISO_8859_1_A0
 	for (int i=0; i < 96; i++) {
@@ -171,6 +178,15 @@ uint16_t KeyboardController::convert_to_unicode(uint32_t mod, uint32_t key)
 	return 0;
 }
 
+void KeyboardController::setLEDS(uint8_t leds) {
+	println("Keyboard setLEDS ", leds, HEX);
+ 	static uint8_t keyboard_keys_report[1] = {0};
+	setup_t keys_setup;
+	keyboard_keys_report[0] = leds;
+	queue_Data_Transfer(datapipe, report, 8, this);  
+	mk_setup(keys_setup, 0x21, 9, 0x200, 0, sizeof(keyboard_keys_report)); // hopefully this sets leds
+	queue_Control_Transfer(device, &keys_setup, keyboard_keys_report, this);
+}
 
 
 
