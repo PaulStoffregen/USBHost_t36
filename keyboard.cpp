@@ -179,22 +179,22 @@ void KeyboardController::new_data(const Transfer_t *transfer)
 
 
 void KeyboardController::numLock(bool f) {
-	if (num_lock_ != f) {
-		num_lock_ = f;
+	if (leds_.numLock != f) {
+		leds_.numLock = f;
 		updateLEDS();
 	}
 }
 
 void KeyboardController::capsLock(bool f) {
-	if (caps_lock_ != f) {
-		caps_lock_ = f;
+	if (leds_.capsLock != f) {
+		leds_.capsLock = f;
 		updateLEDS();
 	}
 }
 
 void KeyboardController::scrollLock(bool f) {
-	if (scroll_lock_ != f) {
-		scroll_lock_ = f;
+	if (leds_.scrollLock != f) {
+		leds_.scrollLock = f;
 		updateLEDS();
 	}
 }
@@ -223,13 +223,13 @@ void KeyboardController::key_release(uint32_t mod, uint32_t key)
 
 	// Look for modifier keys
 	if (key == M(KEY_NUM_LOCK)) {
-		numLock(!num_lock_);
+		numLock(!leds_.numLock);
 		// Lets toggle Numlock
 	} else if (key == M(KEY_CAPS_LOCK)) {
-		capsLock(!caps_lock_);
+		capsLock(!leds_.capsLock);
 
 	} else if (key == M(KEY_SCROLL_LOCK)) {
-		scrollLock(!scroll_lock_);
+		scrollLock(!leds_.scrollLock);
 	} else {
 		keyCode = convert_to_unicode(mod, key);
 		if (keyReleasedFunction) {
@@ -251,7 +251,7 @@ uint16_t KeyboardController::convert_to_unicode(uint32_t mod, uint32_t key)
 		for (uint8_t i = 0; i < (sizeof(keycode_numlock)/sizeof(keycode_numlock[0])); i++) {
 			if (keycode_numlock[i].code == key) {
 				// See if the user is using numlock or not... 
-				if (num_lock_) {
+				if (leds_.numLock) {
 					return keycode_numlock[i].charNumlockOn;
 				} else {
 					key = keycode_numlock[i].codeNumlockOff;
@@ -267,7 +267,7 @@ uint16_t KeyboardController::convert_to_unicode(uint32_t mod, uint32_t key)
 	}
 
 	if ((mod & 0x02) || (mod & 0x20)) key |= SHIFT_MASK;
-	if (caps_lock_) key ^= SHIFT_MASK;		// Caps lock will switch the Shift;
+	if (leds_.capsLock) key ^= SHIFT_MASK;		// Caps lock will switch the Shift;
 	for (int i=0; i < 96; i++) {
 		if (keycodes_ascii[i] == key) {
 			if ((mod & 1) || (mod & 0x10)) return (i+32) & 0x1f;	// Control key is down
@@ -290,25 +290,28 @@ uint16_t KeyboardController::convert_to_unicode(uint32_t mod, uint32_t key)
 	return 0;
 }
 
-void KeyboardController::setLEDS(uint8_t leds) {
+void KeyboardController::LEDS(uint8_t leds) {
 	println("Keyboard setLEDS ", leds, HEX);
- 	static uint8_t keyboard_keys_report[1] = {0};
-	setup_t keys_setup;
-	keyboard_keys_report[0] = leds;
-	queue_Data_Transfer(datapipe, report, 8, this);  
-	mk_setup(keys_setup, 0x21, 9, 0x200, 0, sizeof(keyboard_keys_report)); // hopefully this sets leds
-	queue_Control_Transfer(device, &keys_setup, keyboard_keys_report, this);
+	leds_.byte = leds;
+	updateLEDS();
 }
 
 void KeyboardController::updateLEDS() {
+	println("KBD: Update LEDS", leds_.byte, HEX);
 	if (processing_new_data_) {
+		println("  Update defered");
 		update_leds_ = true; 
 		return; 	// defer until later
 	}
 
-	// Maybe should use data types for this... 
-	uint8_t  leds = (num_lock_? 1 : 0) | (caps_lock_? 2 : 0) | (scroll_lock_? 4 : 0);
-	setLEDS(leds);
+	// Now lets tell keyboard new state. 
+ 	static uint8_t keyboard_keys_report[1] = {0};
+	setup_t keys_setup;
+	keyboard_keys_report[0] = leds_.byte;
+	queue_Data_Transfer(datapipe, report, 8, this);  
+	mk_setup(keys_setup, 0x21, 9, 0x200, 0, sizeof(keyboard_keys_report)); // hopefully this sets leds
+	queue_Control_Transfer(device, &keys_setup, keyboard_keys_report, this);
+
 	update_leds_ = false;
 }
 

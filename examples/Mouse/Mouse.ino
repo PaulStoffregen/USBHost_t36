@@ -282,8 +282,8 @@ void loop()
       keyboard_leds -= '0';
       // Test to see if we can play with LEDS on Keyboard...
       Serial.printf("Set Keyboard Leds to %x\n", keyboard_leds);
-      if (keyboard1_connected) keyboard1.setLEDS(keyboard_leds); 
-      if (keyboard2_connected) keyboard2.setLEDS(keyboard_leds); 
+      if (keyboard1_connected) keyboard1.LEDS(keyboard_leds); 
+      if (keyboard2_connected) keyboard2.LEDS(keyboard_leds); 
     }
 
   }
@@ -301,11 +301,15 @@ void OnPress(int key)
   if (keyboard1_connected) {
     Serial.print(keyboard1.getModifiers(), HEX);
     Serial.print(" OEM: ");
-    Serial.println(keyboard1.getOemKey(), HEX);
+    Serial.print(keyboard1.getOemKey(), HEX);
+    Serial.print(" LEDS: ");
+    Serial.println(keyboard1.LEDS(), HEX);
   } else {
     Serial.print(keyboard2.getModifiers(), HEX);
     Serial.print(" OEM: ");
-    Serial.println(keyboard2.getOemKey(), HEX);
+    Serial.print(keyboard2.getOemKey(), HEX);
+    Serial.print(" LEDS: ");
+    Serial.println(keyboard2.LEDS(), HEX);
   }
 
   //Serial.print("key ");

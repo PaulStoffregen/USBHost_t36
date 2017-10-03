@@ -9,10 +9,17 @@ Task	KEYWORD2
 getKey	KEYWORD2
 getModifiers	KEYWORD2
 getOemKey	KEYWORD2
+LEDS	KEYWORD2
+updateLEDS	KEYWORD2
+numLock	KEYWORD2
+capsLock	KEYWORD2
+capsLock	KEYWORD2
+scrollLock	KEYWORD2
 attachPress	KEYWORD2
 attachRelease	KEYWORD2
 getButtons	KEYWORD2
 getWheel	KEYWORD2
+getWheelH	KEYWORD2
 getMouseX	KEYWORD2
 getMouseY	KEYWORD2
 getAxis	KEYWORD2
