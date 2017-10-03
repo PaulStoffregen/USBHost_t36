@@ -25,6 +25,49 @@
 #include "USBHost_t36.h"  // Read this header first for key info
 #include "keylayouts.h"   // from Teensyduino core library
 
+typedef struct {
+	KEYCODE_TYPE code;
+	uint8_t		 ascii;
+} keycode_extra_t;
+
+typedef struct {
+	KEYCODE_TYPE code;
+	KEYCODE_TYPE codeNumlockOff;
+	uint8_t charNumlockOn;		// We will assume when num lock is on we have all characters...
+} keycode_numlock_t;
+
+#ifdef M
+#undef M
+#endif
+#define M(n) ((n) & KEYCODE_MASK)
+
+keycode_extra_t keycode_extras[] = {
+	{M(KEY_ENTER), '\n'},
+	{M(KEY_ESC), 0x1b},
+	{M(KEY_TAB), 0x9 }
+};
+
+// Some of these mapped to key + shift.
+keycode_numlock_t keycode_numlock[] = {
+	{M(KEYPAD_SLASH), 	'/', '/'},  
+	{M(KEYPAD_ASTERIX), '*', '*'},
+	{M(KEYPAD_MINUS),	'-', '-'},
+	{M(KEYPAD_PLUS), 	'+', '+'},
+	{M(KEYPAD_ENTER), 	'\n', '\n'},
+	{M(KEYPAD_1), 		0x80 | M(KEY_END), '1'},
+	{M(KEYPAD_2), 		0x80 | M(KEY_DOWN), '2'},
+	{M(KEYPAD_3), 		0x80 | M(KEY_PAGE_DOWN), '3'},
+	{M(KEYPAD_4), 		0x80 | M(KEY_LEFT), '4'},
+	{M(KEYPAD_5), 		0x00, '5'},
+	{M(KEYPAD_6), 		0x80 | M(KEY_RIGHT), '6'},
+	{M(KEYPAD_7), 		0x80 | M(KEY_HOME),  '7'},
+	{M(KEYPAD_8), 		0x80 | M(KEY_UP),  '8'},
+	{M(KEYPAD_9), 		0x80 | M(KEY_PAGE_UP), '9'},
+	{M(KEYPAD_0), 		0x80 | M(KEY_INSERT), '0'},
+	{M(KEYPAD_PERIOD), 	0x80 | M(KEY_DELETE), '.'}
+};	
+
+
 
 void KeyboardController::init()
 {
@@ -108,6 +151,7 @@ static bool contains(uint8_t b, const uint8_t *data)
 
 void KeyboardController::new_data(const Transfer_t *transfer)
 {
+	processing_new_data_ = true;
 	println("KeyboardController Callback (member)");
 	print("  KB Data: ");
 	print_hexbytes(transfer->buffer, 8);
@@ -125,6 +169,34 @@ void KeyboardController::new_data(const Transfer_t *transfer)
 	}
 	memcpy(prev_report, report, 8);
 	queue_Data_Transfer(datapipe, report, 8, this);
+	processing_new_data_ = false;
+
+	// See if we have any outstanding leds to update
+	if (update_leds_) {
+		updateLEDS();
+	}
+}
+
+
+void KeyboardController::numLock(bool f) {
+	if (num_lock_ != f) {
+		num_lock_ = f;
+		updateLEDS();
+	}
+}
+
+void KeyboardController::capsLock(bool f) {
+	if (caps_lock_ != f) {
+		caps_lock_ = f;
+		updateLEDS();
+	}
+}
+
+void KeyboardController::scrollLock(bool f) {
+	if (scroll_lock_ != f) {
+		scroll_lock_ = f;
+		updateLEDS();
+	}
 }
 
 void KeyboardController::key_press(uint32_t mod, uint32_t key)
@@ -135,7 +207,6 @@ void KeyboardController::key_press(uint32_t mod, uint32_t key)
 	keyOEM = key;
 	keyCode = convert_to_unicode(mod, key);
 	println("  unicode = ", keyCode);
-//	Serial.printf("Keyboard Press mod: %x key: %x keycode: %x\n", mod, key, keyCode);
 	if (keyPressedFunction) {
 		keyPressedFunction(keyCode);
 	} else {
@@ -149,12 +220,23 @@ void KeyboardController::key_release(uint32_t mod, uint32_t key)
 	println("  release, key=", key);
 	modifiers = mod;
 	keyOEM = key;
-	keyCode = convert_to_unicode(mod, key);
-//	Serial.printf("Keyboard Release mod: %x key: %x keycode: %x\n", mod, key, keyCode);
-	if (keyReleasedFunction) {
-		keyReleasedFunction(keyCode);
+
+	// Look for modifier keys
+	if (key == M(KEY_NUM_LOCK)) {
+		numLock(!num_lock_);
+		// Lets toggle Numlock
+	} else if (key == M(KEY_CAPS_LOCK)) {
+		capsLock(!caps_lock_);
+
+	} else if (key == M(KEY_SCROLL_LOCK)) {
+		scrollLock(!scroll_lock_);
 	} else {
-		keyReleased();
+		keyCode = convert_to_unicode(mod, key);
+		if (keyReleasedFunction) {
+			keyReleasedFunction(keyCode);
+		} else {
+			keyReleased();
+		}
 	}
 }
 
@@ -163,13 +245,43 @@ uint16_t KeyboardController::convert_to_unicode(uint32_t mod, uint32_t key)
 	// TODO: special keys
 	// TODO: caps lock
 	// TODO: dead key sequences
+	if (key & SHIFT_MASK) {
+		// Many of these keys will look like they are other keys with shift mask... 
+		// Check for any of our mapped extra keys
+		for (uint8_t i = 0; i < (sizeof(keycode_numlock)/sizeof(keycode_numlock[0])); i++) {
+			if (keycode_numlock[i].code == key) {
+				// See if the user is using numlock or not... 
+				if (num_lock_) {
+					return keycode_numlock[i].charNumlockOn;
+				} else {
+					key = keycode_numlock[i].codeNumlockOff;
+					if (!(key & 0x80)) return key;	// we have hard coded value
+					key &= 0x7f;	// mask off the extra and break out to process as other characters...
+					break;
+				}
+			}
+		}
+
+		// If we made it here without doing something then return 0;
+		if (key & SHIFT_MASK) return 0;
+	}
+
 	if ((mod & 0x02) || (mod & 0x20)) key |= SHIFT_MASK;
+	if (caps_lock_) key ^= SHIFT_MASK;		// Caps lock will switch the Shift;
 	for (int i=0; i < 96; i++) {
 		if (keycodes_ascii[i] == key) {
 			if ((mod & 1) || (mod & 0x10)) return (i+32) & 0x1f;	// Control key is down
 			return i + 32;
 		}
 	}
+
+	// Check for any of our mapped extra keys
+	for (uint8_t i = 0; i < (sizeof(keycode_extras)/sizeof(keycode_extras[0])); i++) {
+		if (keycode_extras[i].code == key) {
+			return keycode_extras[i].ascii;
+		}
+	}
+
 #ifdef ISO_8859_1_A0
 	for (int i=0; i < 96; i++) {
 		if (keycodes_iso_8859_1[i] == key) return i + 160;
@@ -186,6 +298,18 @@ void KeyboardController::setLEDS(uint8_t leds) {
 	queue_Data_Transfer(datapipe, report, 8, this);  
 	mk_setup(keys_setup, 0x21, 9, 0x200, 0, sizeof(keyboard_keys_report)); // hopefully this sets leds
 	queue_Control_Transfer(device, &keys_setup, keyboard_keys_report, this);
+}
+
+void KeyboardController::updateLEDS() {
+	if (processing_new_data_) {
+		update_leds_ = true; 
+		return; 	// defer until later
+	}
+
+	// Maybe should use data types for this... 
+	uint8_t  leds = (num_lock_? 1 : 0) | (caps_lock_? 2 : 0) | (scroll_lock_? 4 : 0);
+	setLEDS(leds);
+	update_leds_ = false;
 }
 
 

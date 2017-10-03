@@ -573,6 +573,15 @@ public:
 	void     attachPress(void (*f)(int unicode)) { keyPressedFunction = f; }
 	void     attachRelease(void (*f)(int unicode)) { keyReleasedFunction = f; }
 	void	 setLEDS(uint8_t leds);
+	void	 updateLEDS(void);
+
+	bool 	 numLock() {return num_lock_;}
+	bool  	 capsLock() {return caps_lock_;}
+	bool 	 scrollLock() {return scroll_lock_;}
+
+	void 	 numLock(bool f);
+	void  	 capsLock(bool f);
+	void 	 scrollLock(bool f);
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
@@ -594,6 +603,12 @@ private:
 	uint8_t modifiers;
 	uint8_t keyOEM;
 	uint8_t prev_report[8];
+	bool num_lock_ = false;
+	bool caps_lock_ = false;
+	bool scroll_lock_ = false;
+	bool update_leds_ = false;
+	bool processing_new_data_ = false;
+
 	Pipe_t mypipes[2] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
 };
