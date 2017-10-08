@@ -202,7 +202,7 @@ void USBHub::send_setreset(uint32_t port)
 
 static uint32_t lowestbit(uint32_t bitmask)
 {
-	return 31 - __builtin_clz(bitmask);
+	return __builtin_ctz(bitmask);
 }
 
 void USBHub::control(const Transfer_t *transfer)
