@@ -322,6 +322,9 @@ protected:
 // All USB device drivers inherit from this base class.
 class USBDriver : public USBHost {
 public:
+	operator bool() { return (device != nullptr); }
+	uint16_t idVendor() { return (device != nullptr) ? device->idVendor : 0; }
+	uint16_t idProduct() { return (device != nullptr) ? device->idProduct : 0; }
 	// TODO: user-level functions
 	// check if device is bound/active/online
 	// query vid, pid
