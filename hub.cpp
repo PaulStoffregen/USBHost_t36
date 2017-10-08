@@ -212,6 +212,8 @@ void USBHub::control(const Transfer_t *transfer)
 
 	uint32_t port = transfer->setup.wIndex;
 	uint32_t mesg = transfer->setup.word1;
+	print("  Port:", port, HEX);
+	println(" Mesg: ", mesg, HEX);
 
 	switch (mesg) {
 	  case 0x290006A0: // read hub descriptor
@@ -234,6 +236,7 @@ void USBHub::control(const Transfer_t *transfer)
 			changepipe->callback_function = callback;
 			queue_Data_Transfer(changepipe, &changebits, 1, this);
 		}
+
 		break;
 
 	  case 0x000000A0: // get hub status

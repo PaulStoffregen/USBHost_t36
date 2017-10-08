@@ -1222,6 +1222,7 @@ void USBHost::delete_Pipe(Pipe_t *pipe)
 		}
 	} else {
 		// remove from the periodic schedule
+		println("  remove from periodic schedule");
 		for (uint32_t i=0; i < PERIODIC_LIST_SIZE; i++) {
 			uint32_t num = periodictable[i];
 			if (num & 1) continue;
@@ -1259,13 +1260,16 @@ void USBHost::delete_Pipe(Pipe_t *pipe)
 	// TODO: do we need to look at pipe->qh.current ??
 	//
 	// free all the transfers still attached to the QH
+	println("  free all transfers still attached");
 	Transfer_t *tr = (Transfer_t *)(pipe->qh.next);
 	while ((uint32_t)tr & 0xFFFFFFE0) {
+		println("    TR: ", (uint32_t)tr, HEX);
 		Transfer_t *next = (Transfer_t *)(tr->qtd.next);
 		free_Transfer(tr);
 		tr = next;
 	}
 	// hopefully we found everything...
+	println("  free_Pipe");
 	free_Pipe(pipe);
 }
 

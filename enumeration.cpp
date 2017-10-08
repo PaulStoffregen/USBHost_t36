@@ -135,6 +135,20 @@ Device_t * USBHost::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_p
 }
 
 
+void ConvertStringDescriptorToASCIIString(uint8_t buffer[], uint8_t length) {
+	// Try to verify - The first byte should be length and the 2nd byte should be 0x3
+	uint8_t count_bytes_returned = buffer[0];
+	uint8_t *pb = buffer;	// start output to first character...
+	if (pb == nullptr)
+		return;	// don't do anything if no buffer
+	if (buffer[1] == 0x3) {
+		for (uint8_t i = 2; i < count_bytes_returned; i += 2) {
+			*pb++ = buffer[i];
+		}
+	}
+	*pb = 0;	// make sure NULL terminated. 
+}
+
 // Control transfer callback function.  ALL control transfers from all
 // devices call this function when they complete.  When control transfers
 // are created by drivers, the driver is called to handle the result.
@@ -185,10 +199,10 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->bDeviceProtocol = enumbuf[6];
 			dev->idVendor = enumbuf[8] | (enumbuf[9] << 8);
 			dev->idProduct = enumbuf[10] | (enumbuf[11] << 8);
-			enumbuf[0] = enumbuf[14];
-			enumbuf[1] = enumbuf[15];
-			enumbuf[2] = enumbuf[16];
-			if ((enumbuf[0] | enumbuf[1] | enumbuf[2]) > 0) {
+			dev->stringIDManufacturer = enumbuf[14];
+			dev->stringIDProduct = enumbuf[15];
+			dev->stringIDSerial = enumbuf[16];
+			if ((enumbuf[14] | enumbuf[15] | enumbuf[16]) > 0) {
 				dev->enum_state = 3;
 			} else {
 				dev->enum_state = 11;
@@ -205,43 +219,55 @@ void USBHost::enumeration(const Transfer_t *transfer)
 				dev->enum_state = 11;
 			} else {
 				dev->LanguageID = enumbuf[6] | (enumbuf[7] << 8);
-				if (enumbuf[0]) dev->enum_state = 5;
-				else if (enumbuf[1]) dev->enum_state = 7;
-				else if (enumbuf[2]) dev->enum_state = 9;
+				if (dev->stringIDManufacturer) dev->enum_state = 5;
+				else if (dev->stringIDProduct) dev->enum_state = 7;
+				else if (dev->stringIDSerial) dev->enum_state = 9;
 				else dev->enum_state = 11;
 			}
 			break;
 		case 5: // request Manufacturer string
 			len = sizeof(enumbuf) - 4;
-			mk_setup(enumsetup, 0x80, 6, 0x0300 | enumbuf[0], dev->LanguageID, len);
+			mk_setup(enumsetup, 0x80, 6, 0x0300 | dev->stringIDManufacturer, dev->LanguageID, len);
 			queue_Control_Transfer(dev, &enumsetup, enumbuf + 4, NULL);
 			dev->enum_state = 6;
 			return;
 		case 6: // parse Manufacturer string
 			// TODO: receive the string...
-			if (enumbuf[1]) dev->enum_state = 7;
-			else if (enumbuf[2]) dev->enum_state = 9;
+			if (enumbuf[4] && (enumbuf[5] == 3)) {
+				print("Manufacturer string: ");
+				print_hexbytes(&enumbuf[4], enumbuf[4]);
+			}
+			if (dev->stringIDProduct) dev->enum_state = 7;
+			else if (dev->stringIDSerial) dev->enum_state = 9;
 			else dev->enum_state = 11;
 			break;
 		case 7: // request Product string
 			len = sizeof(enumbuf) - 4;
-			mk_setup(enumsetup, 0x80, 6, 0x0300 | enumbuf[1], dev->LanguageID, len);
+			mk_setup(enumsetup, 0x80, 6, 0x0300 | dev->stringIDProduct, dev->LanguageID, len);
 			queue_Control_Transfer(dev, &enumsetup, enumbuf + 4, NULL);
 			dev->enum_state = 8;
 			return;
 		case 8: // parse Product string
 			// TODO: receive the string...
-			if (enumbuf[2]) dev->enum_state = 9;
+			if (enumbuf[4] && (enumbuf[5] == 3)) {
+				print("Product string: ");
+				print_hexbytes(&enumbuf[4], enumbuf[4]);
+			}
+			if (dev->stringIDSerial) dev->enum_state = 9;
 			else dev->enum_state = 11;
 			break;
 		case 9: // request Serial Number string
 			len = sizeof(enumbuf) - 4;
-			mk_setup(enumsetup, 0x80, 6, 0x0300 | enumbuf[2], dev->LanguageID, len);
+			mk_setup(enumsetup, 0x80, 6, 0x0300 | dev->stringIDSerial, dev->LanguageID, len);
 			queue_Control_Transfer(dev, &enumsetup, enumbuf + 4, NULL);
 			dev->enum_state = 10;
 			return;
 		case 10: // parse Serial Number string
 			// TODO: receive the string...
+			if (enumbuf[4] && (enumbuf[5] == 3)) {
+				print("Serial string: ");
+				print_hexbytes(&enumbuf[4], enumbuf[4]);
+			}
 			dev->enum_state = 11;
 			break;
 		case 11: // request first 9 bytes of config desc
@@ -277,6 +303,20 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			// for resetting their ports and starting their enumeration
 			// when the port enables.
 			USBHost::enumeration_busy = false;
+			return;
+		case 42: // Callback due to user request of data...
+			// Clear out state before calling users function, as to allow
+			// their callback to maybe call for next data they are interested in
+			dev->enum_state = 15;
+			EventResponder *event_responder;
+			event_responder = dev->_query_event_responder;
+			dev->_query_event_responder = nullptr;
+			// Lets try to convert the users return string from Unicode to Ascii. 
+			//print_hexbytes(transfer->buffer, transfer->length);
+			ConvertStringDescriptorToASCIIString((uint8_t*)transfer->buffer, transfer->length);
+			if (event_responder) {
+				event_responder->triggerEvent();
+			}
 			return;
 		case 15: // control transfers for other stuff?
 			// TODO: handle other standard control: set/clear feature, etc
@@ -328,7 +368,11 @@ void USBHost::claim_drivers(Device_t *dev)
 		}
 		if (desctype == 4 && desclen == 9) {
 			// found an interface, ask available drivers if they want it
+			// Maybe do two passes.  The first pass, let more specific drivers
+			// try to claim it first.  If no specific class tries to claim then
+			// try to see if more generic driver like HID input class can handle
 			prev = NULL;
+			bool driver_claimed_interface = false;
 			for (driver=available_drivers; driver != NULL; driver = driver->next) {
 				if (driver->device != NULL) continue;
 				// TODO: should parse ahead and give claim()
@@ -336,6 +380,7 @@ void USBHost::claim_drivers(Device_t *dev)
 				// of ALL descriptors, likely more interfaces
 				// this driver has no business parsing
 				if (driver->claim(dev, 1, p, end - p)) {
+					driver_claimed_interface = true;
 					// this driver claims iface
 					// remove it from available_drivers list
 					if (prev) {
@@ -344,16 +389,44 @@ void USBHost::claim_drivers(Device_t *dev)
 						available_drivers = driver->next;
 					}
 					// add to list of drivers using this device
-					if (dev->drivers) {
-						dev->drivers->next = driver;
-					}
+					driver->next = dev->drivers;
 					dev->drivers = driver;
-					driver->next = NULL;
 					driver->device = dev;
 					// not done, may be more interface for more drivers
 				}
 				prev = driver;
 			}
+			if (!driver_claimed_interface) {
+				prev = NULL;
+				for (driver=available_drivers; driver != NULL; driver = driver->next) {
+					if (driver->device != NULL) continue;
+					// TODO: should parse ahead and give claim()
+					// an accurate length.  (end - p) is the rest
+					// of ALL descriptors, likely more interfaces
+					// this driver has no business parsing
+					if (driver->claim(dev, 2, p, end - p)) {
+						driver_claimed_interface = true;
+						// this driver claims iface
+						// remove it from available_drivers list
+						if (prev) {
+							prev->next = driver->next;
+						} else {
+							available_drivers = driver->next;
+						}
+						// add to list of drivers using this device
+						driver->next = dev->drivers;
+						dev->drivers = driver;
+						driver->device = dev;
+						// not done, may be more interface for more drivers
+					}
+					prev = driver;
+				}
+			} 
+			if (!driver_claimed_interface) {
+				print("Unclaimed Interface: ");
+				print_hexbytes(p, end - p);
+			}
+
 		}
 		p += desclen;
 	}
@@ -418,6 +491,7 @@ void USBHost::disconnect_Device(Device_t *dev)
 		delete_Pipe(p);
 		p = next;
 	}
+	println("disconnect_Device: disconnect control_pipe");
 	delete_Pipe(dev->control_pipe);
 
 	// remove device from devlist and free its Device_t
