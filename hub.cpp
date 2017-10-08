@@ -210,6 +210,7 @@ void USBHub::control(const Transfer_t *transfer)
 	println("USBHub control callback");
 	print_hexbytes(transfer->buffer, transfer->length);
 
+	sending_control_transfer = 0;
 	uint32_t port = transfer->setup.wIndex;
 	uint32_t mesg = transfer->setup.word1;
 
@@ -265,7 +266,7 @@ void USBHub::control(const Transfer_t *transfer)
 	// allow only a single control transfer to occur at once
 	// which isn't fast, but requires only 3 Transfer_t and
 	// allows reusing the setup and other buffers
-	sending_control_transfer = 0;
+	if (sending_control_transfer) return;
 	if (send_pending_poweron) {
 		send_poweron(lowestbit(send_pending_poweron));
 	} else if (send_pending_clearstatus_connect) {
