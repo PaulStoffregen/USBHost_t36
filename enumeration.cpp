@@ -344,11 +344,8 @@ void USBHost::claim_drivers(Device_t *dev)
 						available_drivers = driver->next;
 					}
 					// add to list of drivers using this device
-					if (dev->drivers) {
-						dev->drivers->next = driver;
-					}
+					driver->next = dev->drivers;
 					dev->drivers = driver;
-					driver->next = NULL;
 					driver->device = dev;
 					// not done, may be more interface for more drivers
 				}
