@@ -57,6 +57,10 @@ bool USBHIDParser::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 	// do not claim boot protocol keyboards
 	if (descriptors[6] == 1 && descriptors[7] == 1) return false;
 
+	print("HID Parser Claim: ");
+	print_hexbytes(descriptors, len);
+
+
 	// hid interface descriptor
 	uint32_t hidlen = descriptors[9];
 	if (hidlen < 9) return false;
@@ -198,6 +202,14 @@ void USBHIDParser::disconnect()
 // Called when the HID device sends a report
 void USBHIDParser::in_data(const Transfer_t *transfer)
 {
+	/*Serial.print("HID: ");
+	uint8_t *pb = (uint8_t*)transfer->buffer;
+	for (uint8_t i = 0; i < transfer->length; i++) {
+		Serial.print(pb[i], HEX);
+		Serial.print(" ");
+	}
+	Serial.println(); */
+
 	print("HID: ");
 	print_hexbytes(transfer->buffer, transfer->length);
 	const uint8_t *buf = (const uint8_t *)transfer->buffer;
@@ -531,6 +543,10 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 							print("  usage = ", u, HEX);
 							println("  data = 1");
 							driver->hid_input_data(u, 1);
+						} else {
+							print ("  usage =", u, HEX);
+							print(" out of range: ", logical_min, HEX);
+							println(" ", logical_max, HEX);
 						}
 						bitindex += report_size;
 					}
