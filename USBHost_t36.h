@@ -753,9 +753,11 @@ public:
 	virtual int available(void);
 	virtual int peek(void);
 	virtual int read(void);
+	virtual int availableForWrite();
 	virtual size_t write(uint8_t c);
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
+	virtual void control(const Transfer_t *transfer);
 	virtual void disconnect();
 private:
 	static void rx_callback(const Transfer_t *transfer);
@@ -769,22 +771,27 @@ private:
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
 	uint32_t bigbuffer[(BUFFER_SIZE+3)/4];
+	setup_t setup;
+	uint8_t setupdata[8];
+	uint32_t baudrate;
 	Pipe_t *rxpipe;
 	Pipe_t *txpipe;
 	uint8_t *rx1;	// location for first incoming packet
 	uint8_t *rx2;	// location for second incoming packet
 	uint8_t *rxbuf;	// receive circular buffer
-	uint16_t rxhead;// receive head
-	uint16_t rxtail;// receive tail
 	uint8_t *tx1;	// location for first outgoing packet
 	uint8_t *tx2;	// location for second outgoing packet
 	uint8_t *txbuf;
-	uint16_t txhead;
-	uint16_t txtail;
+	volatile uint16_t rxhead;// receive head
+	volatile uint16_t rxtail;// receive tail
+	volatile uint16_t txhead;
+	volatile uint16_t txtail;
 	uint16_t rxsize;// size of receive circular buffer
 	uint16_t txsize;// size of transmit circular buffer
-	uint8_t  rxstate;// bitmask: which receive packets are queued
-	bool     ignore_first_two_bytes;
+	volatile uint8_t  rxstate;// bitmask: which receive packets are queued
+	volatile uint8_t  txstate;
+	uint8_t pending_control;
+	enum { CDCACM, FTDI, PL2303, CH341 } sertype;
 };
 
 
