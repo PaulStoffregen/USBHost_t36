@@ -744,6 +744,50 @@ private:
 };
 
 
+class USBSerial: public USBDriver, public Stream {
+public:
+	enum { BUFFER_SIZE = 4200 }; // must hold at least 6 max size packets, plus 2 extra bytes
+	USBSerial(USBHost &host) { init(); }
+	void begin(uint32_t baud, uint32_t format=0);
+	void end(void);
+	virtual int available(void);
+	virtual int peek(void);
+	virtual int read(void);
+	virtual size_t write(uint8_t c);
+protected:
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
+	virtual void disconnect();
+private:
+	static void rx_callback(const Transfer_t *transfer);
+	static void tx_callback(const Transfer_t *transfer);
+	void rx_data(const Transfer_t *transfer);
+	void tx_data(const Transfer_t *transfer);
+	void init();
+	static bool check_rxtx_ep(uint32_t &rxep, uint32_t &txep);
+	bool init_buffers(uint32_t rsize, uint32_t tsize);
+private:
+	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
+	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
+	uint32_t bigbuffer[(BUFFER_SIZE+3)/4];
+	Pipe_t *rxpipe;
+	Pipe_t *txpipe;
+	uint8_t *rx1;	// location for first incoming packet
+	uint8_t *rx2;	// location for second incoming packet
+	uint8_t *rxbuf;	// receive circular buffer
+	uint16_t rxhead;// receive head
+	uint16_t rxtail;// receive tail
+	uint8_t *tx1;	// location for first outgoing packet
+	uint8_t *tx2;	// location for second outgoing packet
+	uint8_t *txbuf;
+	uint16_t txhead;
+	uint16_t txtail;
+	uint16_t rxsize;// size of receive circular buffer
+	uint16_t txsize;// size of transmit circular buffer
+	uint8_t  rxstate;// bitmask: which receive packets are queued
+	bool     ignore_first_two_bytes;
+};
+
+
 class MouseController : public USBHIDInput {
 public:
 	MouseController(USBHost &host) { USBHIDParser::driver_ready_for_hid_collection(this); }
