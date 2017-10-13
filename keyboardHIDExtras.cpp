@@ -30,7 +30,10 @@
 bool KeyboardHIDExtrasController::claim_collection(Device_t *dev, uint32_t topusage)
 {
 	// Lets try to claim a few specific Keyboard related collection/reports
-	if ((topusage != TOPUSAGE_SYS_CONTROL) && (topusage != TOPUSAGE_CONSUMER_CONTROL)) return false;
+	//Serial.printf("KBH Claim %x\n", topusage);
+	if ((topusage != TOPUSAGE_SYS_CONTROL) 
+		&& (topusage != TOPUSAGE_CONSUMER_CONTROL)
+		) return false;
 	// only claim from one physical device
 	//Serial.println("KeyboardHIDExtrasController claim collection");
 	if (mydevice != NULL && dev != mydevice) return false;
@@ -56,7 +59,9 @@ void KeyboardHIDExtrasController::hid_input_begin(uint32_t topusage, uint32_t ty
 
 void KeyboardHIDExtrasController::hid_input_data(uint32_t usage, int32_t value)
 {
-	//Serial.printf("KeyboardHIDExtrasController: usage=%X, value=%d\n", usage, value);
+	// Hack ignore 0xff00 high words as these are user values... 
+	if ((usage & 0xffff0000) == 0xff000000) return; 
+	//Serial.printf("KeyboardHIDExtrasController: topusage= %x usage=%X, value=%d\n", topusage_, usage, value);
 
 	// See if the value is in our keys_down list
 	usage &= 0xffff;		// only keep the actual key
