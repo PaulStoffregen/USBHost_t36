@@ -19,6 +19,11 @@ USBHIDParser hid5(myusb);
 MouseController mouse1(myusb);
 JoystickController joystick1(myusb);
 
+USBDriver *drivers[] = {&hub1, &hub2, &hub3, &keyboard1, &keyboard2, &hid1, &hid2, &hid3, &hid4, &hid5};
+#define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[1]))
+const char * driver_names[CNT_DEVICES] = {"Hub1","Hub2","Hub3", "KB1", "KB2", "HID1", "HID2", "HID3", "HID4", "HID5" };
+bool driver_active[CNT_DEVICES] = {false, false, false, false};
+
 void setup()
 {
   while (!Serial) ; // wait for Arduino Serial Monitor
@@ -34,6 +39,20 @@ void setup()
 void loop()
 {
   myusb.Task();
+
+  for (uint8_t i = 0; i < CNT_DEVICES; i++) {
+    if (*drivers[i] != driver_active[i]) {
+      if (driver_active[i]) {
+        Serial.printf("*** Device %s - disconnected ***\n", driver_names[i]);
+        driver_active[i] = false;
+      } else {
+        Serial.printf("*** Device %s - connected ***\n", driver_names[i]);
+        driver_active[i] = true;
+
+      }
+    }
+  }
+
   if(mouse1.available()) {
     Serial.print("Mouse: buttons = ");
     Serial.print(mouse1.getButtons());
