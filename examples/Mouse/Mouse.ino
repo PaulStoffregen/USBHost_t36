@@ -27,7 +27,7 @@ bool driver_active[CNT_DEVICES] = {false, false, false, false};
 void setup()
 {
   while (!Serial) ; // wait for Arduino Serial Monitor
-  Serial.println("USB Host Testing");
+  Serial.println("\n\nUSB Host Testing");
   myusb.begin();
   keyboard1.attachPress(OnPress);
   keyboard2.attachPress(OnPress);
@@ -46,7 +46,7 @@ void loop()
         Serial.printf("*** Device %s - disconnected ***\n", driver_names[i]);
         driver_active[i] = false;
       } else {
-        Serial.printf("*** Device %s - connected ***\n", driver_names[i]);
+        Serial.printf("*** Device %s %x:%x - connected ***\n", driver_names[i], drivers[i]->idVendor(), drivers[i]->idProduct());
         driver_active[i] = true;
 
       }
