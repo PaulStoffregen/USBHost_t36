@@ -141,6 +141,7 @@ typedef union {
 } setup_t;
 
 // Device_t holds all the information about a USB device
+#define DEVICE_STRUCT_STRING_BUF_SIZE 48
 struct Device_struct {
 	Pipe_t   *control_pipe;
 	Pipe_t   *data_pipes;
@@ -159,6 +160,8 @@ struct Device_struct {
 	uint16_t idVendor;
 	uint16_t idProduct;
 	uint16_t LanguageID;
+	uint8_t	 string_buf[DEVICE_STRUCT_STRING_BUF_SIZE]; // Probably want a place to allocate fewer of these...
+	uint8_t	 iStrings[3];			// 3 indexes - vendor string, product string, serial number. 
 };
 
 // Pipe_t holes all information about each USB endpoint/pipe
@@ -248,6 +251,7 @@ protected:
 	static volatile bool enumeration_busy;
 private:
 	static void isr();
+	static void convertStringDescriptorToASCIIString(uint8_t string_index, Device_t *dev, const Transfer_t *transfer);
 	static void claim_drivers(Device_t *dev);
 	static uint32_t assign_address(void);
 	static bool queue_Transfer(Pipe_t *pipe, Transfer_t *transfer);
@@ -350,6 +354,11 @@ public:
 	operator bool() { return (device != nullptr); }
 	uint16_t idVendor() { return (device != nullptr) ? device->idVendor : 0; }
 	uint16_t idProduct() { return (device != nullptr) ? device->idProduct : 0; }
+
+	const uint8_t *manufacturer() { return (device != nullptr) ? &(device->string_buf[device->iStrings[0]]) : nullptr; }
+	const uint8_t *product() { return (device != nullptr) ? &(device->string_buf[device->iStrings[1]]) : nullptr; }
+	const uint8_t *serialNumber() { return (device != nullptr) ? &(device->string_buf[device->iStrings[2]]) : nullptr; }
+
 	// TODO: user-level functions
 	// check if device is bound/active/online
 	// query vid, pid

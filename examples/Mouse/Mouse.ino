@@ -49,6 +49,12 @@ void loop()
         Serial.printf("*** Device %s %x:%x - connected ***\n", driver_names[i], drivers[i]->idVendor(), drivers[i]->idProduct());
         driver_active[i] = true;
 
+        const uint8_t *psz = drivers[i]->manufacturer();
+        if (psz && *psz) Serial.printf("  manufacturer: %s\n", psz);
+        psz = drivers[i]->product();
+        if (psz && *psz) Serial.printf("  product: %s\n", psz);
+        psz = drivers[i]->serialNumber();
+        if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
       }
     }
   }
