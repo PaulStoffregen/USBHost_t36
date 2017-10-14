@@ -83,6 +83,7 @@ bool USBSerial::claim(Device_t *dev, int type, const uint8_t *descriptors, uint3
 			pending_control = 0x0F;
 			mk_setup(setup, 0x40, 0, 0, 0, 0); // reset port
 			queue_Control_Transfer(dev, &setup, NULL, this);
+			control_queued = true;
 			return true;
 		}
 	}
@@ -138,12 +139,14 @@ void USBSerial::disconnect()
 void USBSerial::control(const Transfer_t *transfer)
 {
 	println("control callback (serial)");
+	control_queued = false;
 
 	// set data format
 	if (pending_control & 1) {
 		pending_control &= ~1;
 		mk_setup(setup, 0x40, 4, 8, 0, 0); // data format 8N1
 		queue_Control_Transfer(device, &setup, NULL, this);
+		control_queued = true;
 		return;
 	}
 	// set baud rate
@@ -152,6 +155,7 @@ void USBSerial::control(const Transfer_t *transfer)
 		uint32_t baudval = 3000000 / baudrate;
 		mk_setup(setup, 0x40, 3, baudval, 0, 0);
 		queue_Control_Transfer(device, &setup, NULL, this);
+		control_queued = true;
 		return;
 	}
 	// configure flow control
@@ -159,6 +163,7 @@ void USBSerial::control(const Transfer_t *transfer)
 		pending_control &= ~4;
 		mk_setup(setup, 0x40, 2, 0, 0, 0);
 		queue_Control_Transfer(device, &setup, NULL, this);
+		control_queued = true;
 		return;
 	}
 	// set DTR
@@ -166,9 +171,9 @@ void USBSerial::control(const Transfer_t *transfer)
 		pending_control &= ~8;
 		mk_setup(setup, 0x40, 1, 0x0101, 0, 0);
 		queue_Control_Transfer(device, &setup, NULL, this);
+		control_queued = true;
 		return;
 	}
-
 }
 
 void USBSerial::rx_callback(const Transfer_t *transfer)
@@ -203,30 +208,41 @@ void USBSerial::rx_data(const Transfer_t *transfer)
 			len = 0;
 		}
 	}
-	if (len > 0) {
-		print("rx: ");
-		print_hexbytes(p, len);
-	}
+	//if (len > 0) {
+		//print("rx: ");
+		//print_hexbytes(p, len);
+	//}
 	// Copy data from packet buffer to circular buffer.
 	// Assume the buffer will always have space, since we
 	// check before queuing the buffers
 	uint32_t head = rxhead;
 	uint32_t tail = rxtail;
+	if (++head >= rxsize) head = 0;
 	uint32_t avail;
 	if (len > 0) {
+		//print("head=", head);
+		//print(", tail=", tail);
 		avail = rxsize - head;
+		//print(", avail=", avail);
+		//println(", rxsize=", rxsize);
 		if (avail > len) avail = len;
 		memcpy(rxbuf + head, p, avail);
 		if (len <= avail) {
-			head += avail;
+			head += avail - 1;
 			if (head >= rxsize) head = 0;
 		} else {
-			head = len - avail;
-			memcpy(rxbuf, p + avail, head);
+			head = len - avail - 1;
+			memcpy(rxbuf, p + avail, head + 1);
 		}
 		rxhead = head;
 	}
-	// re-queue packet buffer(s) if possible
+	rx_queue_packets(head, tail);
+}
+
+// re-queue packet buffer(s) if possible
+void USBSerial::rx_queue_packets(uint32_t head, uint32_t tail)
+{
+	uint32_t avail;
 	if (head >= tail) {
 		avail = rxsize - 1 - head + tail;
 	} else {
@@ -266,6 +282,11 @@ void USBSerial::tx_data(const Transfer_t *transfer)
 
 void USBSerial::begin(uint32_t baud, uint32_t format)
 {
+	NVIC_DISABLE_IRQ(IRQ_USBHS);
+	baudrate = baud;
+	pending_control |= 2;
+	if (!control_queued) control(NULL);
+	NVIC_ENABLE_IRQ(IRQ_USBHS);
 }
 
 void USBSerial::end(void)
@@ -278,7 +299,7 @@ int USBSerial::available(void)
 	uint32_t head = rxhead;
 	uint32_t tail = rxtail;
 	if (head >= tail) return head - tail;
-	return 0;
+	return rxsize + head - tail;
 }
 
 int USBSerial::peek(void)
@@ -300,7 +321,11 @@ int USBSerial::read(void)
 	if (++tail >= rxsize) tail = 0;
 	int c = rxbuf[tail];
 	rxtail = tail;
-	// TODO: if rx packet not queued, and buffer now can fit a full packet, queue it
+	if ((rxstate & 0x03) != 0x03) {
+		NVIC_DISABLE_IRQ(IRQ_USBHS);
+		rx_queue_packets(head, tail);
+		NVIC_ENABLE_IRQ(IRQ_USBHS);
+	}
 	return c;
 }
 

@@ -746,7 +746,7 @@ private:
 
 class USBSerial: public USBDriver, public Stream {
 public:
-	enum { BUFFER_SIZE = 4200 }; // must hold at least 6 max size packets, plus 2 extra bytes
+	enum { BUFFER_SIZE = 390 }; // must hold at least 6 max size packets, plus 2 extra bytes
 	USBSerial(USBHost &host) { init(); }
 	void begin(uint32_t baud, uint32_t format=0);
 	void end(void);
@@ -764,6 +764,7 @@ private:
 	static void tx_callback(const Transfer_t *transfer);
 	void rx_data(const Transfer_t *transfer);
 	void tx_data(const Transfer_t *transfer);
+	void rx_queue_packets(uint32_t head, uint32_t tail);
 	void init();
 	static bool check_rxtx_ep(uint32_t &rxep, uint32_t &txep);
 	bool init_buffers(uint32_t rsize, uint32_t tsize);
@@ -791,6 +792,7 @@ private:
 	volatile uint8_t  rxstate;// bitmask: which receive packets are queued
 	volatile uint8_t  txstate;
 	uint8_t pending_control;
+	bool control_queued;
 	enum { CDCACM, FTDI, PL2303, CH341 } sertype;
 };
 
