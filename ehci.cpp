@@ -457,6 +457,39 @@ void USBDriverTimer::start(uint32_t microseconds)
 	list->next = this;
 }
 
+void USBDriverTimer::stop()
+{
+	__disable_irq();
+	if (active_timers) {
+		if (active_timers == this) {
+			USBHS_GPTIMER1CTL = 0;
+			if (next) {
+				uint32_t usec_til_next = USBHS_GPTIMER1CTL & 0xFFFFFF;
+				usec_til_next += next->usec;
+				next->usec = usec_til_next;
+				USBHS_GPTIMER1LD = usec_til_next;
+				USBHS_GPTIMER1CTL = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
+				next->prev = NULL;
+				active_timers = next;
+			} else {
+				active_timers = NULL;
+			}
+		} else {
+			for (USBDriverTimer *t = active_timers->next; t; t = t->next) {
+				if (t == this) {
+					t->prev->next = t->next;
+					if (t->next) {
+						t->next->usec += t->usec;
+						t->next->prev = t->prev;
+					}
+					break;
+				}
+			}
+		}
+	}
+	__enable_irq();
+}
+
 
 static uint32_t QH_capabilities1(uint32_t nak_count_reload, uint32_t control_endpoint_flag,
 	uint32_t max_packet_length, uint32_t head_of_list, uint32_t data_toggle_control,

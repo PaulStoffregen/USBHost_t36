@@ -391,6 +391,7 @@ public:
 	USBDriverTimer(USBDriver *d) : driver(d) { }
 	void init(USBDriver *d) { driver = d; };
 	void start(uint32_t microseconds);
+	void stop();
 	void *pointer;
 	uint32_t integer;
 	uint32_t started_micros; // testing only
@@ -747,7 +748,7 @@ private:
 class USBSerial: public USBDriver, public Stream {
 public:
 	enum { BUFFER_SIZE = 390 }; // must hold at least 6 max size packets, plus 2 extra bytes
-	USBSerial(USBHost &host) { init(); }
+	USBSerial(USBHost &host) : txtimer(this) { init(); }
 	void begin(uint32_t baud, uint32_t format=0);
 	void end(void);
 	virtual int available(void);
@@ -760,6 +761,7 @@ protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
 	virtual void disconnect();
+	virtual void timer_event(USBDriverTimer *whichTimer);
 private:
 	static void rx_callback(const Transfer_t *transfer);
 	static void tx_callback(const Transfer_t *transfer);
@@ -772,6 +774,7 @@ private:
 private:
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
+	USBDriverTimer txtimer;
 	uint32_t bigbuffer[(BUFFER_SIZE+3)/4];
 	setup_t setup;
 	uint8_t setupdata[8];

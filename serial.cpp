@@ -28,6 +28,11 @@
 #define print   USBHost::print
 #define println USBHost::println
 
+
+/************************************************************/
+//  Initialization and claiming of devices & interfaces
+/************************************************************/
+
 void USBSerial::init()
 {
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
@@ -135,6 +140,9 @@ void USBSerial::disconnect()
 }
 
 
+/************************************************************/
+//  Control Transfer For Configuration
+/************************************************************/
 
 
 void USBSerial::control(const Transfer_t *transfer)
@@ -176,6 +184,11 @@ void USBSerial::control(const Transfer_t *transfer)
 		return;
 	}
 }
+
+
+/************************************************************/
+//  Interrupt-based Data Movement
+/************************************************************/
 
 void USBSerial::rx_callback(const Transfer_t *transfer)
 {
@@ -281,14 +294,54 @@ void USBSerial::tx_data(const Transfer_t *transfer)
 		println("tx2:");
 		txstate &= 0xFD;
 	}
-	// TODO: anything need to be done with latency timeout?
+}
+
+
+void USBSerial::timer_event(USBDriverTimer *whichTimer)
+{
+	println("txtimer");
+	uint32_t count;
+	uint32_t head = txhead;
+	uint32_t tail = txtail;
+	if (head == tail) {
+		return; // nothing to transmit
+	} else if (head > tail) {
+		count = head - tail;
+	} else {
+		count = txsize + head - tail;
+	}
+	uint8_t *p;
+	if ((txstate & 0x01) == 0) {
+		p = tx1;
+		txstate |= 0x01;
+	} else if ((txstate & 0x02) == 0) {
+		p = tx2;
+		txstate |= 0x02;
+	} else {
+		txtimer.start(1200);
+		return; // no outgoing buffers available, try again later
+	}
+	if (++tail >= txsize) tail = 0;
+	uint32_t n = txsize - tail;
+	if (n > count) n = count;
+	memcpy(p, txbuf + tail, n);
+	if (n >= count) {
+		tail += n - 1;
+		if (tail >= txsize) tail = 0;
+	} else {
+		uint32_t len = count - n;
+		memcpy(p + n, txbuf, len);
+		tail = len - 1;
+	}
+	txtail = tail;
+	queue_Data_Transfer(txpipe, p, count, this);
 }
 
 
 
-
-
-
+/************************************************************/
+//  User Functions - must disable USBHQ IRQ for EHCI access
+/************************************************************/
 
 void USBSerial::begin(uint32_t baud, uint32_t format)
 {
@@ -301,6 +354,7 @@ void USBSerial::begin(uint32_t baud, uint32_t format)
 
 void USBSerial::end(void)
 {
+	// TODO: lower DTR
 }
 
 int USBSerial::available(void)
@@ -407,32 +461,12 @@ size_t USBSerial::write(uint8_t c)
 			return 1;
 		}
 	}
-	// TODO: otherwise set a latency timer to transmit partial packet
+	// otherwise, set a latency timer to later transmit partial packet
+	txtimer.stop();
+	txtimer.start(3500);
 	NVIC_ENABLE_IRQ(IRQ_USBHS);
 	return 1;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
