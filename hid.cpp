@@ -32,6 +32,9 @@
 // callbacks with the arriving data full decoded to data/usage
 // pairs.
 
+#define print   USBHost::print_
+#define println USBHost::println_
+
 void USBHIDParser::init()
 {
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));

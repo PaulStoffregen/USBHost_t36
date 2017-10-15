@@ -97,6 +97,9 @@ static void remove_from_async_followup_list(Transfer_t *transfer);
 static void add_to_periodic_followup_list(Transfer_t *first, Transfer_t *last);
 static void remove_from_periodic_followup_list(Transfer_t *transfer);
 
+#define print   USBHost::print_
+#define println USBHost::println_
+
 void USBHost::begin()
 {
 	// Teensy 3.6 has USB host power controlled by PTE6
@@ -393,13 +396,13 @@ void USBHost::isr()
 
 void USBDriverTimer::start(uint32_t microseconds)
 {
-#if defined(USBHOST_PRINT_DEBUG) && 0
-	Serial.print("start_timer, us = ");
-	Serial.print(microseconds);
-	Serial.print(", driver = ");
-	Serial.print((uint32_t)driver, HEX);
-	Serial.print(", this = ");
-	Serial.println((uint32_t)this, HEX);
+#if 0
+	USBHost::print_("start_timer, us = ");
+	USBHost::print_(microseconds);
+	USBHost::print_(", driver = ");
+	USBHost::print_((uint32_t)driver, HEX);
+	USBHost::print_(", this = ");
+	USBHost::println_((uint32_t)this, HEX);
 #endif
 	if (!driver) return;
 	if (microseconds < 100) return; // minimum timer duration

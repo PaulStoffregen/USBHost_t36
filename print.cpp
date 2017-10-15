@@ -31,7 +31,7 @@
 
 #ifdef USBHOST_PRINT_DEBUG
 
-void USBHost::print(const Transfer_t *transfer)
+void USBHost::print_(const Transfer_t *transfer)
 {
 	if (!((uint32_t)transfer & 0xFFFFFFE0)) return;
 	Serial.print("Transfer @ ");
@@ -50,7 +50,7 @@ void USBHost::print(const Transfer_t *transfer)
 	Serial.println();
 }
 
-void USBHost::print(const Transfer_t *first, const Transfer_t *last)
+void USBHost::print_(const Transfer_t *first, const Transfer_t *last)
 {
 	Serial.print("Transfer Followup List ");
 	Serial.print((uint32_t)first, HEX);
@@ -91,7 +91,7 @@ void USBHost::print_token(uint32_t token)
 	}
 }
 
-void USBHost::print(const Pipe_t *pipe)
+void USBHost::print_(const Pipe_t *pipe)
 {
 	if (!((uint32_t)pipe & 0xFFFFFFE0)) return;
 	Serial.print("Pipe ");
@@ -125,7 +125,7 @@ void USBHost::print(const Pipe_t *pipe)
 	Serial.println();
 	const Transfer_t *t = (Transfer_t *)pipe->qh.next;
 	while (((uint32_t)t & 0xFFFFFFE0)) {
-		print(t);
+		print_(t);
 		t = (Transfer_t *)t->qtd.next;
 	}
 	//Serial.print();

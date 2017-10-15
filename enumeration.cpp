@@ -58,6 +58,8 @@ volatile bool USBHost::enumeration_busy = false;
 static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen);
 static void pipe_set_addr(Pipe_t *pipe, uint32_t addr);
 
+#define print   USBHost::print_
+#define println USBHost::println_
 
 // The main user function to cause internal state to update.  Since we do
 // almost everything with DMA and interrupts, the only work to do here is

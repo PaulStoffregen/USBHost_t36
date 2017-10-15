@@ -270,71 +270,72 @@ private:
 	static void followup_Error(void);
 protected:
 #ifdef USBHOST_PRINT_DEBUG
-	static void print(const Transfer_t *transfer);
-	static void print(const Transfer_t *first, const Transfer_t *last);
+	static void print_(const Transfer_t *transfer);
+	static void print_(const Transfer_t *first, const Transfer_t *last);
 	static void print_token(uint32_t token);
-	static void print(const Pipe_t *pipe);
+	static void print_(const Pipe_t *pipe);
 	static void print_driverlist(const char *name, const USBDriver *driver);
 	static void print_qh_list(const Pipe_t *list);
 	static void print_hexbytes(const void *ptr, uint32_t len);
-	static void print(const char *s)	{ Serial.print(s); }
-	static void print(int n)		{ Serial.print(n); }
-	static void print(unsigned int n)	{ Serial.print(n); }
-	static void print(long n)		{ Serial.print(n); }
-	static void print(unsigned long n)	{ Serial.print(n); }
-	static void println(const char *s)	{ Serial.println(s); }
-	static void println(int n)		{ Serial.println(n); }
-	static void println(unsigned int n)	{ Serial.println(n); }
-	static void println(long n)		{ Serial.println(n); }
-	static void println(unsigned long n)	{ Serial.println(n); }
-	static void println()			{ Serial.println(); }
-	static void print(uint32_t n, uint8_t b) { Serial.print(n, b); }
-	static void println(uint32_t n, uint8_t b) { Serial.println(n, b); }
-	static void print(const char *s, int n, uint8_t b = DEC) {
+	static void print_(const char *s)	{ Serial.print(s); }
+	static void print_(int n)		{ Serial.print(n); }
+	static void print_(unsigned int n)	{ Serial.print(n); }
+	static void print_(long n)		{ Serial.print(n); }
+	static void print_(unsigned long n)	{ Serial.print(n); }
+	static void println_(const char *s)	{ Serial.println(s); }
+	static void println_(int n)		{ Serial.println(n); }
+	static void println_(unsigned int n)	{ Serial.println(n); }
+	static void println_(long n)		{ Serial.println(n); }
+	static void println_(unsigned long n)	{ Serial.println(n); }
+	static void println_()			{ Serial.println(); }
+	static void print_(uint32_t n, uint8_t b) { Serial.print(n, b); }
+	static void println_(uint32_t n, uint8_t b) { Serial.println(n, b); }
+	static void print_(const char *s, int n, uint8_t b = DEC) {
 		Serial.print(s); Serial.print(n, b); }
-	static void print(const char *s, unsigned int n, uint8_t b = DEC) {
+	static void print_(const char *s, unsigned int n, uint8_t b = DEC) {
 		Serial.print(s); Serial.print(n, b); }
-	static void print(const char *s, long n, uint8_t b = DEC) {
+	static void print_(const char *s, long n, uint8_t b = DEC) {
 		Serial.print(s); Serial.print(n, b); }
-	static void print(const char *s, unsigned long n, uint8_t b = DEC) {
+	static void print_(const char *s, unsigned long n, uint8_t b = DEC) {
 		Serial.print(s); Serial.print(n, b); }
-	static void println(const char *s, int n, uint8_t b = DEC) {
+	static void println_(const char *s, int n, uint8_t b = DEC) {
 		Serial.print(s); Serial.println(n, b); }
-	static void println(const char *s, unsigned int n, uint8_t b = DEC) {
+	static void println_(const char *s, unsigned int n, uint8_t b = DEC) {
 		Serial.print(s); Serial.println(n, b); }
-	static void println(const char *s, long n, uint8_t b = DEC) {
+	static void println_(const char *s, long n, uint8_t b = DEC) {
 		Serial.print(s); Serial.println(n, b); }
-	static void println(const char *s, unsigned long n, uint8_t b = DEC) {
+	static void println_(const char *s, unsigned long n, uint8_t b = DEC) {
 		Serial.print(s); Serial.println(n, b); }
+	friend class USBDriverTimer; // for access to print & println
 #else
-	static void print(const Transfer_t *transfer) {}
-	static void print(const Transfer_t *first, const Transfer_t *last) {}
+	static void print_(const Transfer_t *transfer) {}
+	static void print_(const Transfer_t *first, const Transfer_t *last) {}
 	static void print_token(uint32_t token) {}
-	static void print(const Pipe_t *pipe) {}
+	static void print_(const Pipe_t *pipe) {}
 	static void print_driverlist(const char *name, const USBDriver *driver) {}
 	static void print_qh_list(const Pipe_t *list) {}
 	static void print_hexbytes(const void *ptr, uint32_t len) {}
-	static void print(const char *s) {}
-	static void print(int n) {}
-	static void print(unsigned int n) {}
-	static void print(long n) {}
-	static void print(unsigned long n) {}
-	static void println(const char *s) {}
-	static void println(int n) {}
-	static void println(unsigned int n) {}
-	static void println(long n) {}
-	static void println(unsigned long n) {}
-	static void println() {}
-	static void print(uint32_t n, uint8_t b) {}
-	static void println(uint32_t n, uint8_t b) {}
-	static void print(const char *s, int n, uint8_t b = DEC) {}
-	static void print(const char *s, unsigned int n, uint8_t b = DEC) {}
-	static void print(const char *s, long n, uint8_t b = DEC) {}
-	static void print(const char *s, unsigned long n, uint8_t b = DEC) {}
-	static void println(const char *s, int n, uint8_t b = DEC) {}
-	static void println(const char *s, unsigned int n, uint8_t b = DEC) {}
-	static void println(const char *s, long n, uint8_t b = DEC) {}
-	static void println(const char *s, unsigned long n, uint8_t b = DEC) {}
+	static void print_(const char *s) {}
+	static void print_(int n) {}
+	static void print_(unsigned int n) {}
+	static void print_(long n) {}
+	static void print_(unsigned long n) {}
+	static void println_(const char *s) {}
+	static void println_(int n) {}
+	static void println_(unsigned int n) {}
+	static void println_(long n) {}
+	static void println_(unsigned long n) {}
+	static void println_() {}
+	static void print_(uint32_t n, uint8_t b) {}
+	static void println_(uint32_t n, uint8_t b) {}
+	static void print_(const char *s, int n, uint8_t b = DEC) {}
+	static void print_(const char *s, unsigned int n, uint8_t b = DEC) {}
+	static void print_(const char *s, long n, uint8_t b = DEC) {}
+	static void print_(const char *s, unsigned long n, uint8_t b = DEC) {}
+	static void println_(const char *s, int n, uint8_t b = DEC) {}
+	static void println_(const char *s, unsigned int n, uint8_t b = DEC) {}
+	static void println_(const char *s, long n, uint8_t b = DEC) {}
+	static void println_(const char *s, unsigned long n, uint8_t b = DEC) {}
 #endif
 	static void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
 			uint32_t wValue, uint32_t wIndex, uint32_t wLength) {

@@ -24,6 +24,8 @@
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
 
+#define print   USBHost::print_
+#define println USBHost::println_
 
 void MIDIDevice::init()
 {

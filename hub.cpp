@@ -29,6 +29,9 @@
 // begin responding to address zero.
 volatile bool USBHub::reset_busy = false;
 
+#define print   USBHost::print_
+#define println USBHost::println_
+
 void USBHub::init()
 {
 	contribute_Devices(mydevices, sizeof(mydevices)/sizeof(Device_t));

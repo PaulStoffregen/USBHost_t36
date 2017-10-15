@@ -89,7 +89,8 @@ keycode_numlock_t keycode_numlock[] = {
 	{M(KEYPAD_PERIOD), 	0x80 | M(KEY_DELETE), '.'}
 };
 
-
+#define print   USBHost::print_
+#define println USBHost::println_
 
 void KeyboardController::init()
 {
