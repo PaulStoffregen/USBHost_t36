@@ -56,7 +56,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-// #define USBHOST_PRINT_DEBUG
+//#define USBHOST_PRINT_DEBUG
 
 /************************************************/
 /*  Data Types                                  */
@@ -88,6 +88,31 @@ typedef struct Transfer_struct     Transfer_t;
 class USBDriver;
 class USBDriverTimer;
 
+/************************************************/
+/*  Added Defines                               */
+/************************************************/
+#define KEYD_UP    		0xDA
+#define KEYD_DOWN    	0xD9
+#define KEYD_LEFT   	0xD8
+#define KEYD_RIGHT   	0xD7
+#define KEYD_INSERT		0xD1
+#define KEYD_DELETE		0xD4
+#define KEYD_PAGE_UP    0xD3
+#define KEYD_PAGE_DOWN  0xD6
+#define KEYD_HOME      	0xD2
+#define KEYD_END       	0xD5
+#define KEYD_F1        	0xC2
+#define KEYD_F2        	0xC3
+#define KEYD_F3        	0xC4
+#define KEYD_F4        	0xC5
+#define KEYD_F5        	0xC6
+#define KEYD_F6        	0xC7
+#define KEYD_F7        	0xC8
+#define KEYD_F8        	0xC9
+#define KEYD_F9        	0xCA
+#define KEYD_F10       	0xCB
+#define KEYD_F11       	0xCC
+#define KEYD_F12       	0xCD
 
 /************************************************/
 /*  Data Structure Definitions                  */
@@ -116,6 +141,7 @@ typedef union {
 } setup_t;
 
 // Device_t holds all the information about a USB device
+#define DEVICE_STRUCT_STRING_BUF_SIZE 48
 struct Device_struct {
 	Pipe_t   *control_pipe;
 	Pipe_t   *data_pipes;
@@ -134,6 +160,8 @@ struct Device_struct {
 	uint16_t idVendor;
 	uint16_t idProduct;
 	uint16_t LanguageID;
+	uint8_t	 string_buf[DEVICE_STRUCT_STRING_BUF_SIZE]; // Probably want a place to allocate fewer of these...
+	uint8_t	 iStrings[3];			// 3 indexes - vendor string, product string, serial number. 
 };
 
 // Pipe_t holes all information about each USB endpoint/pipe
@@ -223,6 +251,7 @@ protected:
 	static volatile bool enumeration_busy;
 private:
 	static void isr();
+	static void convertStringDescriptorToASCIIString(uint8_t string_index, Device_t *dev, const Transfer_t *transfer);
 	static void claim_drivers(Device_t *dev);
 	static uint32_t assign_address(void);
 	static bool queue_Transfer(Pipe_t *pipe, Transfer_t *transfer);
@@ -325,6 +354,11 @@ public:
 	operator bool() { return (device != nullptr); }
 	uint16_t idVendor() { return (device != nullptr) ? device->idVendor : 0; }
 	uint16_t idProduct() { return (device != nullptr) ? device->idProduct : 0; }
+
+	const uint8_t *manufacturer() { return (device != nullptr) ? &(device->string_buf[device->iStrings[0]]) : nullptr; }
+	const uint8_t *product() { return (device != nullptr) ? &(device->string_buf[device->iStrings[1]]) : nullptr; }
+	const uint8_t *serialNumber() { return (device != nullptr) ? &(device->string_buf[device->iStrings[2]]) : nullptr; }
+
 	// TODO: user-level functions
 	// check if device is bound/active/online
 	// query vid, pid
@@ -509,7 +543,7 @@ public:
 	static void driver_ready_for_hid_collection(USBHIDInput *driver);
 protected:
 	enum { TOPUSAGE_LIST_LEN = 4 };
-	enum { USAGE_LIST_LEN = 12 };
+	enum { USAGE_LIST_LEN = 24 };
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
 	virtual void disconnect();
@@ -821,6 +855,7 @@ protected:
 private:
 	uint8_t collections_claimed = 0;
 	volatile bool mouseEvent = false;
+	volatile bool hid_input_begin_ = false;
 	uint8_t buttons = 0;
 	int     mouseX = 0;
 	int     mouseY = 0;
@@ -849,5 +884,34 @@ private:
 	uint32_t buttons = 0;
 	int16_t axis[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 };
+
+
+class KeyboardHIDExtrasController : public USBHIDInput {
+public:
+	KeyboardHIDExtrasController(USBHost &host) { USBHIDParser::driver_ready_for_hid_collection(this); }
+	void	clear() { event_ = false;}
+	bool	available() { return event_; }
+	void     attachPress(void (*f)(uint32_t top, uint16_t code)) { keyPressedFunction = f; }
+	void     attachRelease(void (*f)(uint32_t top, uint16_t code)) { keyReleasedFunction = f; }
+	enum {MAX_KEYS_DOWN=4};
+//	uint32_t buttons() { return buttons_; }
+protected:
+	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
+	virtual void hid_input_data(uint32_t usage, int32_t value);
+	virtual void hid_input_end();
+	virtual void disconnect_collection(Device_t *dev);
+private:
+	void (*keyPressedFunction)(uint32_t top, uint16_t code);
+	void (*keyReleasedFunction)(uint32_t top, uint16_t code);
+	uint32_t topusage_ = 0;					// What top report am I processing?
+	uint8_t collections_claimed_ = 0;
+	volatile bool event_ = false;
+	volatile bool hid_input_begin_ = false;
+	volatile bool hid_input_data_ = false; 	// did we receive any valid data with report? 
+	uint8_t count_keys_down_ = 0;
+	uint16_t keys_down[MAX_KEYS_DOWN];
+};
+
 
 #endif

@@ -44,7 +44,29 @@ typedef struct {
 keycode_extra_t keycode_extras[] = {
 	{M(KEY_ENTER), '\n'},
 	{M(KEY_ESC), 0x1b},
-	{M(KEY_TAB), 0x9 }
+	{M(KEY_TAB), 0x9 },
+	{M(KEY_UP), KEYD_UP },
+	{M(KEY_DOWN), KEYD_DOWN },
+	{M(KEY_LEFT), KEYD_LEFT },
+	{M(KEY_RIGHT), KEYD_RIGHT },
+	{M(KEY_INSERT), KEYD_INSERT },
+	{M(KEY_DELETE), KEYD_DELETE }, 
+	{M(KEY_PAGE_UP), KEYD_PAGE_UP },
+	{M(KEY_PAGE_DOWN), KEYD_PAGE_DOWN }, 
+	{M(KEY_HOME), KEYD_HOME },
+	{M(KEY_END), KEYD_END },   
+	{M(KEY_F1), KEYD_F1 },
+	{M(KEY_F2), KEYD_F2 },     
+	{M(KEY_F3), KEYD_F3 },     
+	{M(KEY_F4), KEYD_F4 },     
+	{M(KEY_F5), KEYD_F5 },     
+	{M(KEY_F6), KEYD_F6 },     
+	{M(KEY_F7), KEYD_F7 },     
+	{M(KEY_F8), KEYD_F8 },     
+	{M(KEY_F9), KEYD_F9  },     
+	{M(KEY_F10), KEYD_F10 },    
+	{M(KEY_F11), KEYD_F11 },    
+	{M(KEY_F12), KEYD_F12 }    
 };
 
 // Some of these mapped to key + shift.
@@ -242,9 +264,10 @@ void KeyboardController::key_release(uint32_t mod, uint32_t key)
 
 uint16_t KeyboardController::convert_to_unicode(uint32_t mod, uint32_t key)
 {
-	// TODO: special keys
-	// TODO: caps lock
+	// WIP: special keys
 	// TODO: dead key sequences
+
+
 	if (key & SHIFT_MASK) {
 		// Many of these keys will look like they are other keys with shift mask...
 		// Check for any of our mapped extra keys
@@ -261,10 +284,18 @@ uint16_t KeyboardController::convert_to_unicode(uint32_t mod, uint32_t key)
 				}
 			}
 		}
-
-		// If we made it here without doing something then return 0;
-		if (key & SHIFT_MASK) return 0;
 	}
+
+	// Check for any of our mapped extra keys - Done early as some of these keys are 
+	// above and some below the SHIFT_MASK value
+	for (uint8_t i = 0; i < (sizeof(keycode_extras)/sizeof(keycode_extras[0])); i++) {
+		if (keycode_extras[i].code == key) {
+			return keycode_extras[i].ascii;
+		}
+	}
+
+	// If we made it here without doing something then return 0;
+	if (key & SHIFT_MASK) return 0;
 
 	if ((mod & 0x02) || (mod & 0x20)) key |= SHIFT_MASK;
 	if (leds_.capsLock) key ^= SHIFT_MASK;		// Caps lock will switch the Shift;
@@ -275,12 +306,6 @@ uint16_t KeyboardController::convert_to_unicode(uint32_t mod, uint32_t key)
 		}
 	}
 
-	// Check for any of our mapped extra keys
-	for (uint8_t i = 0; i < (sizeof(keycode_extras)/sizeof(keycode_extras[0])); i++) {
-		if (keycode_extras[i].code == key) {
-			return keycode_extras[i].ascii;
-		}
-	}
 
 #ifdef ISO_8859_1_A0
 	for (int i=0; i < 96; i++) {

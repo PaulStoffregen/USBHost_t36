@@ -47,6 +47,7 @@ void MouseController::disconnect_collection(Device_t *dev)
 void MouseController::hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax)
 {
 	// TODO: check if absolute coordinates
+	hid_input_begin_ = true;
 }
 
 void MouseController::hid_input_data(uint32_t usage, int32_t value)
@@ -84,7 +85,10 @@ void MouseController::hid_input_data(uint32_t usage, int32_t value)
 
 void MouseController::hid_input_end()
 {
-	mouseEvent = true;
+	if (hid_input_begin_) {
+		mouseEvent = true;
+		hid_input_begin_ = false;
+	}
 }
 
 void MouseController::mouseDataClear() {

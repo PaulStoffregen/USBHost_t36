@@ -201,6 +201,10 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 4;
 			return;
 		case 4: // parse Language ID
+			dev->iStrings[0] = 0;  // Set indexes into string buffer to say not there...
+			dev->iStrings[1] = 0;
+			dev->iStrings[2] = 0;
+			dev->string_buf[0] = 0;	// have trailing NULL..
 			if (enumbuf[4] < 4 || enumbuf[5] != 3) {
 				dev->enum_state = 11;
 			} else {
@@ -218,6 +222,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 6;
 			return;
 		case 6: // parse Manufacturer string
+			convertStringDescriptorToASCIIString(0, dev, transfer);
 			// TODO: receive the string...
 			if (enumbuf[1]) dev->enum_state = 7;
 			else if (enumbuf[2]) dev->enum_state = 9;
@@ -230,7 +235,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 8;
 			return;
 		case 8: // parse Product string
-			// TODO: receive the string...
+			convertStringDescriptorToASCIIString(1, dev, transfer);
 			if (enumbuf[2]) dev->enum_state = 9;
 			else dev->enum_state = 11;
 			break;
@@ -241,7 +246,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 10;
 			return;
 		case 10: // parse Serial Number string
-			// TODO: receive the string...
+			convertStringDescriptorToASCIIString(2, dev, transfer);
 			dev->enum_state = 11;
 			break;
 		case 11: // request first 9 bytes of config desc
@@ -285,6 +290,33 @@ void USBHost::enumeration(const Transfer_t *transfer)
 		}
 	}
 }
+
+void  USBHost::convertStringDescriptorToASCIIString(uint8_t string_index, Device_t *dev, const Transfer_t *transfer) {
+	uint8_t *buffer = (uint8_t*)transfer->buffer;
+	uint8_t buf_index = string_index? dev->iStrings[string_index]+1 : 0;
+
+	// Try to verify - The first byte should be length and the 2nd byte should be 0x3
+	if (!buffer || (buffer[1] != 0x3)) {
+		return;	// No string so can simply return
+	}
+
+	dev->iStrings[string_index] = buf_index;	// remember our starting positio
+	uint8_t count_bytes_returned = buffer[0];
+	if ((buf_index + count_bytes_returned/2) >= DEVICE_STRUCT_STRING_BUF_SIZE)
+		count_bytes_returned = (DEVICE_STRUCT_STRING_BUF_SIZE - buf_index) * 2;
+
+	// Now copy into our storage buffer. 
+	for (uint8_t i = 2; (i < count_bytes_returned) && (buf_index < (DEVICE_STRUCT_STRING_BUF_SIZE -1)); i += 2) {
+		dev->string_buf[buf_index++] = buffer[i];
+	} 
+	dev->string_buf[buf_index] = 0;	// null terminate. 
+
+	// Update other indexes to point to null character
+	while (++string_index < 3) {
+		dev->iStrings[string_index] = buf_index;	// point to trailing NULL character
+	}
+}
+
 
 void USBHost::claim_drivers(Device_t *dev)
 {
