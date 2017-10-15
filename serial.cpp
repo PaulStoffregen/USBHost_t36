@@ -78,6 +78,7 @@ bool USBSerial::claim(Device_t *dev, int type, const uint8_t *descriptors, uint3
 				queue_Data_Transfer(rxpipe, rx2, 64, this);
 				rxstate = 3;
 			}
+			txstate = 0;
 			txpipe->callback_function = tx_callback;
 			baudrate = 115200;
 			pending_control = 0x0F;
@@ -236,6 +237,8 @@ void USBSerial::rx_data(const Transfer_t *transfer)
 		}
 		rxhead = head;
 	}
+	// TODO: can be this more efficient?  We know from above which
+	// buffer is no longer queued, so possible skip most of this work?
 	rx_queue_packets(head, tail);
 }
 
@@ -271,7 +274,14 @@ void USBSerial::rx_queue_packets(uint32_t head, uint32_t tail)
 
 void USBSerial::tx_data(const Transfer_t *transfer)
 {
-	println("tx: ");
+	if (transfer->buffer == tx1) {
+		println("tx1:");
+		txstate &= 0xFE;
+	} else if (transfer->buffer == tx2) {
+		println("tx2:");
+		txstate &= 0xFD;
+	}
+	// TODO: anything need to be done with latency timeout?
 }
 
 
@@ -348,16 +358,59 @@ size_t USBSerial::write(uint8_t c)
 	}
 	txbuf[head] = c;
 	txhead = head;
-	// TODO: if full packet in buffer and tx packet ready, queue it
+	//print("head=", head);
+	//println(", tail=", txtail);
+
+	// if full packet in buffer and tx packet ready, queue it
+	NVIC_DISABLE_IRQ(IRQ_USBHS);
+	uint32_t tail = txtail;
+	if ((txstate & 0x03) != 0x03) {
+		// at least one packet buffer is ready to transmit
+		uint32_t count;
+		if (head >= tail) {
+			count = head - tail;
+		} else {
+			count = txsize + head - tail;
+		}
+		uint32_t packetsize = tx2 - tx1;
+		if (count >= packetsize) {
+			//println("txsize=", txsize);
+			uint8_t *p;
+			if ((txstate & 0x01) == 0) {
+				p = tx1;
+				txstate |= 0x01;
+			} else /* if ((txstate & 0x02) == 0) */ {
+				p = tx2;
+				txstate |= 0x02;
+			}
+			// copy data to packet buffer
+			if (++tail >= txsize) tail = 0;
+			uint32_t n = txsize - tail;
+			if (n > packetsize) n = packetsize;
+			//print("memcpy, offset=", tail);
+			//println(", len=", n);
+			memcpy(p, txbuf + tail, n);
+			if (n >= packetsize) {
+				tail += n - 1;
+				if (tail >= txsize) tail = 0;
+			} else {
+				//n = txsize - n;
+				uint32_t len = packetsize - n;
+				//println("memcpy, offset=0, len=", len);
+				memcpy(p + n, txbuf, len);
+				tail = len - 1;
+			}
+			txtail = tail;
+			//println("queue tx packet, newtail=", tail);
+			queue_Data_Transfer(txpipe, p, packetsize, this);
+			NVIC_ENABLE_IRQ(IRQ_USBHS);
+			return 1;
+		}
+	}
 	// TODO: otherwise set a latency timer to transmit partial packet
+	NVIC_ENABLE_IRQ(IRQ_USBHS);
 	return 1;
 }
-
-
-
-
-
-
 
 
 

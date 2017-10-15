@@ -755,6 +755,7 @@ public:
 	virtual int read(void);
 	virtual int availableForWrite();
 	virtual size_t write(uint8_t c);
+	using Print::write;
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
