@@ -287,13 +287,50 @@ void USBSerial::rx_queue_packets(uint32_t head, uint32_t tail)
 
 void USBSerial::tx_data(const Transfer_t *transfer)
 {
-	if (transfer->buffer == tx1) {
+	uint32_t mask;
+	uint8_t *p = (uint8_t *)transfer->buffer;
+	if (p == tx1) {
 		println("tx1:");
-		txstate &= 0xFE;
-	} else if (transfer->buffer == tx2) {
+		mask = 1;
+		//txstate &= 0xFE;
+	} else if (p == tx2) {
 		println("tx2:");
-		txstate &= 0xFD;
+		mask = 2;
+		//txstate &= 0xFD;
+	} else {
+		return; // should never happen
 	}
+	// check how much more data remains in the transmit buffer
+	uint32_t head = txhead;
+	uint32_t tail = txtail;
+	uint32_t count;
+	if (head >= tail) {
+		count = head - tail;
+	} else {
+		count = txsize + head - tail;
+	}
+	uint32_t packetsize = tx2 - tx1;
+	if (count < packetsize) {
+		// not enough data in buffer to fill a full packet
+		txstate &= ~mask;
+		return;
+	}
+	// immediately transmit another full packet, if we have enough data
+	println("TX:moar data!!!!");
+	if (++tail >= txsize) tail = 0;
+	uint32_t n = txsize - tail;
+	if (n > packetsize) n = packetsize;
+	memcpy(p, txbuf + tail, n);
+	if (n >= packetsize) {
+		tail += n - 1;
+		if (tail >= txsize) tail = 0;
+	} else {
+		uint32_t len = packetsize - n;
+		memcpy(p + n, txbuf, len);
+		tail = len - 1;
+	}
+	txtail = tail;
+	queue_Data_Transfer(txpipe, p, packetsize, this);
 }
 
 

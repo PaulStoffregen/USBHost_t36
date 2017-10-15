@@ -747,7 +747,8 @@ private:
 
 class USBSerial: public USBDriver, public Stream {
 public:
-	enum { BUFFER_SIZE = 390 }; // must hold at least 6 max size packets, plus 2 extra bytes
+	// FIXME: need different USBSerial, with bigger buffers for 480 Mbit & faster speed
+	enum { BUFFER_SIZE = 648 }; // must hold at least 6 max size packets, plus 2 extra bytes
 	USBSerial(USBHost &host) : txtimer(this) { init(); }
 	void begin(uint32_t baud, uint32_t format=0);
 	void end(void);
