@@ -56,7 +56,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-//#define USBHOST_PRINT_DEBUG
+#define USBHOST_PRINT_DEBUG
 
 /************************************************/
 /*  Data Types                                  */
@@ -834,6 +834,166 @@ private:
 	uint8_t pending_control;
 	bool control_queued;
 	enum { CDCACM, FTDI, PL2303, CH341 } sertype;
+};
+
+
+class AntPlus: public USBDriver {
+public:
+	AntPlus(USBHost &host) : /* txtimer(this),*/  updatetimer(this) { init(); }
+	void begin(const uint8_t key=0);
+protected:
+	virtual void Task();
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
+	virtual void disconnect();
+	virtual void timer_event(USBDriverTimer *whichTimer);
+private:
+	static void rx_callback(const Transfer_t *transfer);
+	static void tx_callback(const Transfer_t *transfer);
+	void rx_data(const Transfer_t *transfer);
+	void tx_data(const Transfer_t *transfer);
+	void init();
+	size_t write(const void *data, const size_t size);
+	int read(void *data, const size_t size);
+	void transmit();
+private:
+	Pipe_t mypipes[2] __attribute__ ((aligned(32)));
+	Transfer_t mytransfers[3] __attribute__ ((aligned(32)));
+	//USBDriverTimer txtimer;
+	USBDriverTimer updatetimer;
+	Pipe_t *rxpipe;
+	Pipe_t *txpipe;
+	bool first_update;
+	uint8_t txbuffer[240];
+	uint8_t rxpacket[64];
+	volatile uint16_t txhead;
+	volatile uint16_t txtail;
+	volatile bool     txready;
+	volatile uint8_t  rxlen;
+private:
+	enum _eventi {
+		EVENTI_MESSAGE = 0,
+		EVENTI_CHANNEL,
+		EVENTI_TOTAL
+	};
+	enum _profiles {
+		PROFILE_HRM = 0,
+		PROFILE_SPDCAD,
+		PROFILE_POWER,
+		PROFILE_STRIDE,
+		PROFILE_SPEED,
+		PROFILE_CADENCE,
+		PROFILE_TOTAL
+	};
+	typedef struct {
+		uint16_t deviceId;
+		uint8_t deviceType;
+		uint8_t transType;
+	} TDEVICET;
+	typedef struct {
+		uint8_t channel;
+		uint8_t RFFreq;
+		uint8_t networkNumber;
+		uint8_t stub;
+		uint8_t searchTimeout;
+		uint8_t channelType;
+		uint8_t deviceType;
+		uint8_t transType;
+		uint16_t channelPeriod;
+		uint16_t searchWaveform;
+		uint32_t deviceNumber; // deviceId
+		TDEVICET dev;
+		struct {
+			uint8_t chanIdOnce;
+			uint8_t keyAccepted;
+			uint8_t profileValid;
+			uint8_t channelStatus;
+			uint8_t channelStatusOld;
+		} flags;
+	} TDCONFIG;
+	//typedef struct {
+		//int (*cbPtr) (const int channel, const int messageId,
+			//const uint8_t *payLoad, const size_t dataLength, void *userPtr);
+		//void *uPtr; // user variable sent with each event
+	//} TEVENTFUNC;
+	//typedef struct {
+		//void (*cbPtr) (TDCONFIG *cfg, const uint8_t *payLoad,
+			//const size_t dataLength, void *userPtr);
+		//void *uPtr; // user variable sent with each payload
+	//} TPAYLOADFUNC;
+	typedef struct {
+		uint8_t initOnce;
+		uint8_t key; // key index
+		int iDevice; // index to the antplus we're interested in, if > one found
+		//TEVENTFUNC eventCb[EVENTI_TOTAL];
+		//TPAYLOADFUNC payloadCb[PROFILE_TOTAL];
+		TDCONFIG dcfg[PROFILE_TOTAL]; // channel config, we're using one channel per device
+	} TLIBANTPLUS;
+	TLIBANTPLUS ant;
+	int (*callbackFunc)(uint32_t msg, intptr_t *value1, uint32_t value2);
+	//int dispatchMessage(const uint8_t *stream, const int len);
+	void dispatchPayload(TDCONFIG *cfg, const uint8_t *payload, const int len);
+	static const uint8_t *getAntKey(const uint8_t keyIdx);
+	static uint8_t calcMsgChecksum (const uint8_t *buffer, const uint8_t len);
+	static uint8_t * findStreamSync(uint8_t *stream, const size_t rlen, int *pos);
+	static int msgCheckIntegrity(uint8_t *stream, const int len);
+	static int msgGetLength(uint8_t *stream);
+	int handleMessages(uint8_t *buffer, int tBytes);
+	//int registerEventCallback(const int which, void *eventFunc, void *userPtr);
+	//int registerPayloadCallback(const int profile, void *eventFunc, void *userPtr);
+
+	void setCallbackFunc(int (*func)(uint32_t msg, intptr_t *value1, uint32_t value2));
+	void sendMessage(uint32_t msg, intptr_t *value1, uint32_t value2);
+	void sendMessageChannelStatus(TDCONFIG *cfg, const uint32_t channelStatus);
+
+	void message_channel(const int chan, const int eventId,
+		const uint8_t *payload, const size_t dataLength);
+	void message_response(const int chan, const int msgId,
+		const uint8_t *payload, const size_t dataLength);
+	void message_event(const int channel, const int msgId,
+		const uint8_t *payload, const size_t dataLength);
+
+
+	//int SetPayloadHandler(const int profile, void *eventFunc, void *userPtr);
+	//int SetEventHandler(const int which, void *eventFunc, void *userPtr);
+	int ResetSystem();
+	int RequestMessage(const int channel, const int message);
+	int SetNetworkKey(const int netNumber, const uint8_t *key);
+	int SetChannelSearchTimeout(const int channel, const int searchTimeout);
+	int SetChannelPeriod(const int channel, const int period);
+	int SetChannelRFFreq(const int channel, const int freq);
+	int SetSearchWaveform(const int channel, const int wave);
+	int OpenChannel(const int channel);
+	int CloseChannel(const int channel);
+	int AssignChannel(const int channel, const int channelType, const int network);
+	int SetChannelId(const int channel, const int deviceNum, const int deviceType,
+		const int transmissionType);
+	int SendBurstTransferPacket(const int channelSeq, const uint8_t *data);
+	int SendBurstTransfer(const int channel, const uint8_t *data, const int nunPackets);
+	int SendBroadcastData(const int channel, const uint8_t *data);
+	int SendAcknowledgedData(const int channel, const uint8_t *data);
+	int SendExtAcknowledgedData(const int channel, const int devNum, const int devType,
+		const int TranType, const uint8_t *data);
+	int SendExtBroadcastData(const int channel, const int devNum, const int devType,
+		const int TranType, const uint8_t *data);
+	int SendExtBurstTransferPacket(const int chanSeq, const int devNum,
+		const int devType, const int TranType, const uint8_t *data);
+	int SendExtBurstTransfer(const int channel, const int devNum, const int devType,
+		const int tranType, const uint8_t *data, const int nunPackets);
+
+	static void profileSetup_HRM(TDCONFIG *cfg, const uint32_t deviceId);
+	static void profileSetup_SPDCAD(TDCONFIG *cfg, const uint32_t deviceId);
+	static void profileSetup_POWER(TDCONFIG *cfg, const uint32_t deviceId);
+	static void profileSetup_STRIDE(TDCONFIG *cfg, const uint32_t deviceId);
+	static void profileSetup_SPEED(TDCONFIG *cfg, const uint32_t deviceId);
+	static void profileSetup_CADENCE(TDCONFIG *cfg, const uint32_t deviceId);
+
+	void payload_HRM(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength);
+	void payload_SPDCAD(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength);
+	void payload_POWER(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength);
+	void payload_STRIDE(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength);
+	void payload_SPEED(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength);
+	void payload_CADENCE(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength);
+
 };
 
 
