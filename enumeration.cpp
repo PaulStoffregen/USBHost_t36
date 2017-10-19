@@ -119,6 +119,7 @@ Device_t * USBHost::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_p
 		free_Device(dev);
 		return NULL;
 	}
+	dev->strbuf = allocate_string_buffer();  // try to allocate a string buffer; 
 	dev->control_pipe->callback_function = &enumeration;
 	dev->control_pipe->direction = 1; // 1=IN
 	// Here is where the enumeration process officially begins.
@@ -203,10 +204,6 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 4;
 			return;
 		case 4: // parse Language ID
-			dev->iStrings[0] = 0;  // Set indexes into string buffer to say not there...
-			dev->iStrings[1] = 0;
-			dev->iStrings[2] = 0;
-			dev->string_buf[0] = 0;	// have trailing NULL..
 			if (enumbuf[4] < 4 || enumbuf[5] != 3) {
 				dev->enum_state = 11;
 			} else {
@@ -294,28 +291,31 @@ void USBHost::enumeration(const Transfer_t *transfer)
 }
 
 void  USBHost::convertStringDescriptorToASCIIString(uint8_t string_index, Device_t *dev, const Transfer_t *transfer) {
+	strbuf_t *strbuf = dev->strbuf; 
+	if (!strbuf) return;	// don't have a buffer
+
 	uint8_t *buffer = (uint8_t*)transfer->buffer;
-	uint8_t buf_index = string_index? dev->iStrings[string_index]+1 : 0;
+	uint8_t buf_index = string_index? strbuf->iStrings[string_index]+1 : 0;
 
 	// Try to verify - The first byte should be length and the 2nd byte should be 0x3
 	if (!buffer || (buffer[1] != 0x3)) {
 		return;	// No string so can simply return
 	}
 
-	dev->iStrings[string_index] = buf_index;	// remember our starting positio
+	strbuf->iStrings[string_index] = buf_index;	// remember our starting positio
 	uint8_t count_bytes_returned = buffer[0];
 	if ((buf_index + count_bytes_returned/2) >= DEVICE_STRUCT_STRING_BUF_SIZE)
 		count_bytes_returned = (DEVICE_STRUCT_STRING_BUF_SIZE - buf_index) * 2;
 
 	// Now copy into our storage buffer. 
 	for (uint8_t i = 2; (i < count_bytes_returned) && (buf_index < (DEVICE_STRUCT_STRING_BUF_SIZE -1)); i += 2) {
-		dev->string_buf[buf_index++] = buffer[i];
+		strbuf->buffer[buf_index++] = buffer[i];
 	} 
-	dev->string_buf[buf_index] = 0;	// null terminate. 
+	strbuf->buffer[buf_index] = 0;	// null terminate. 
 
 	// Update other indexes to point to null character
 	while (++string_index < 3) {
-		dev->iStrings[string_index] = buf_index;	// point to trailing NULL character
+		strbuf->iStrings[string_index] = buf_index;	// point to trailing NULL character
 	}
 }
 
@@ -461,6 +461,9 @@ void USBHost::disconnect_Device(Device_t *dev)
 				prev_dev->next = p->next;
 			}
 			println("removed Device_t from devlist");
+			if (p->strbuf != nullptr ) {
+				free_string_buffer(p->strbuf);
+			}
 			free_Device(p);
 			break;
 		}
