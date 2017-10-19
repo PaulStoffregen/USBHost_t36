@@ -8,6 +8,7 @@ USBHost myusb;
 USBHub hub1(myusb);
 USBHub hub2(myusb);
 USBHub hub3(myusb);
+USBHub hub4(myusb);
 KeyboardController keyboard1(myusb);
 KeyboardController keyboard2(myusb);
 KeyboardHIDExtrasController hidextras(myusb);
@@ -19,15 +20,23 @@ USBHIDParser hid5(myusb);
 MouseController mouse1(myusb);
 JoystickController joystick1(myusb);
 
-USBDriver *drivers[] = {&hub1, &hub2, &hub3, &keyboard1, &keyboard2, &hid1, &hid2, &hid3, &hid4, &hid5};
-#define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[1]))
-const char * driver_names[CNT_DEVICES] = {"Hub1","Hub2","Hub3", "KB1", "KB2", "HID1", "HID2", "HID3", "HID4", "HID5" };
+USBDriver *drivers[] = {&hub1, &hub2, &hub3, &hub4, &keyboard1, &keyboard2, &hid1, &hid2, &hid3, &hid4, &hid5};
+#define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[0]))
+const char * driver_names[CNT_DEVICES] = {"Hub1","Hub2", "Hub3", "Hub4" "KB1", "KB2", "HID1", "HID2", "HID3", "HID4", "HID5" };
 bool driver_active[CNT_DEVICES] = {false, false, false, false};
+
+// Lets also look at HID Input devices
+USBHIDInput *hiddrivers[] = {&mouse1, &joystick1};
+#define CNT_HIDDEVICES (sizeof(hiddrivers)/sizeof(hiddrivers[0]))
+const char * hid_driver_names[CNT_DEVICES] = {"Mouse1","Joystick1"};
+bool hid_driver_active[CNT_DEVICES] = {false, false};
+
 
 void setup()
 {
   while (!Serial) ; // wait for Arduino Serial Monitor
   Serial.println("\n\nUSB Host Testing");
+  Serial.println(sizeof(USBHub), DEC);
   myusb.begin();
   keyboard1.attachPress(OnPress);
   keyboard2.attachPress(OnPress);
@@ -58,6 +67,27 @@ void loop()
       }
     }
   }
+
+  for (uint8_t i = 0; i < CNT_HIDDEVICES; i++) {
+    if (*hiddrivers[i] != hid_driver_active[i]) {
+      if (hid_driver_active[i]) {
+        Serial.printf("*** HID Device %s - disconnected ***\n", hid_driver_names[i]);
+        hid_driver_active[i] = false;
+      } else {
+        Serial.printf("*** HID Device %s %x:%x - connected ***\n", hid_driver_names[i], hiddrivers[i]->idVendor(), hiddrivers[i]->idProduct());
+        hid_driver_active[i] = true;
+
+        const uint8_t *psz = hiddrivers[i]->manufacturer();
+        if (psz && *psz) Serial.printf("  manufacturer: %s\n", psz);
+        psz = hiddrivers[i]->product();
+        if (psz && *psz) Serial.printf("  product: %s\n", psz);
+        psz = hiddrivers[i]->serialNumber();
+        if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
+      }
+    }
+  }
+
+
 
   if(mouse1.available()) {
     Serial.print("Mouse: buttons = ");

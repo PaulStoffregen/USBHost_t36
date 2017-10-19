@@ -56,7 +56,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-#define USBHOST_PRINT_DEBUG
+//#define USBHOST_PRINT_DEBUG
 
 /************************************************/
 /*  Data Types                                  */
@@ -140,13 +140,22 @@ typedef union {
  };
 } setup_t;
 
+typedef struct {
+	enum {STRING_BUF_SIZE=50};
+	enum {STR_ID_MAN=0, STR_ID_PROD, STR_ID_SERIAL, STR_ID_CNT};
+	uint8_t iStrings[STR_ID_CNT];	// Index into array for the three indexes
+	uint8_t buffer[STRING_BUF_SIZE];
+} strbuf_t;
+
+#define DEVICE_STRUCT_STRING_BUF_SIZE 50
+
 // Device_t holds all the information about a USB device
-#define DEVICE_STRUCT_STRING_BUF_SIZE 48
 struct Device_struct {
 	Pipe_t   *control_pipe;
 	Pipe_t   *data_pipes;
 	Device_t *next;
 	USBDriver *drivers;
+	strbuf_t *strbuf;
 	uint8_t  speed; // 0=12, 1=1.5, 2=480 Mbit/sec
 	uint8_t  address;
 	uint8_t  hub_address;
@@ -160,8 +169,6 @@ struct Device_struct {
 	uint16_t idVendor;
 	uint16_t idProduct;
 	uint16_t LanguageID;
-	uint8_t	 string_buf[DEVICE_STRUCT_STRING_BUF_SIZE]; // Probably want a place to allocate fewer of these...
-	uint8_t	 iStrings[3];			// 3 indexes - vendor string, product string, serial number. 
 };
 
 // Pipe_t holes all information about each USB endpoint/pipe
@@ -248,6 +255,7 @@ protected:
 	static void contribute_Devices(Device_t *devices, uint32_t num);
 	static void contribute_Pipes(Pipe_t *pipes, uint32_t num);
 	static void contribute_Transfers(Transfer_t *transfers, uint32_t num);
+	static void contribute_String_Buffers(strbuf_t *strbuf, uint32_t num);
 	static volatile bool enumeration_busy;
 private:
 	static void isr();
@@ -263,6 +271,8 @@ private:
 	static void free_Pipe(Pipe_t *q);
 	static Transfer_t * allocate_Transfer(void);
 	static void free_Transfer(Transfer_t *q);
+	static strbuf_t * allocate_string_buffer(void);
+	static void free_string_buffer(strbuf_t *strbuf);
 	static bool allocate_interrupt_pipe_bandwidth(Pipe_t *pipe,
 		uint32_t maxlen, uint32_t interval);
 	static void add_qh_to_periodic_schedule(Pipe_t *pipe);
@@ -356,9 +366,12 @@ public:
 	uint16_t idVendor() { return (device != nullptr) ? device->idVendor : 0; }
 	uint16_t idProduct() { return (device != nullptr) ? device->idProduct : 0; }
 
-	const uint8_t *manufacturer() { return (device != nullptr) ? &(device->string_buf[device->iStrings[0]]) : nullptr; }
-	const uint8_t *product() { return (device != nullptr) ? &(device->string_buf[device->iStrings[1]]) : nullptr; }
-	const uint8_t *serialNumber() { return (device != nullptr) ? &(device->string_buf[device->iStrings[2]]) : nullptr; }
+	const uint8_t *manufacturer() 
+		{  return  ((device == nullptr) || (device->strbuf == nullptr)) ? nullptr : &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; }
+	const uint8_t *product() 
+		{  return  ((device == nullptr) || (device->strbuf == nullptr)) ? nullptr : &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; }
+	const uint8_t *serialNumber()
+		{  return  ((device == nullptr) || (device->strbuf == nullptr)) ? nullptr : &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
 
 	// TODO: user-level functions
 	// check if device is bound/active/online
@@ -415,7 +428,6 @@ protected:
 	// wish to claim any device or interface (eg, if getting data
 	// from the HID parser).
 	Device_t *device;
-
 	friend class USBHost;
 };
 
@@ -445,6 +457,13 @@ public:
 	operator bool() { return (mydevice != nullptr); }
 	uint16_t idVendor() { return (mydevice != nullptr) ? mydevice->idVendor : 0; }
 	uint16_t idProduct() { return (mydevice != nullptr) ? mydevice->idProduct : 0; }
+	const uint8_t *manufacturer() 
+		{  return  ((mydevice == nullptr) || (mydevice->strbuf == nullptr)) ? nullptr : &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; }
+	const uint8_t *product() 
+		{  return  ((mydevice == nullptr) || (mydevice->strbuf == nullptr)) ? nullptr : &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; }
+	const uint8_t *serialNumber()
+		{  return  ((mydevice == nullptr) || (mydevice->strbuf == nullptr)) ? nullptr : &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
+
 private:
 	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
@@ -508,6 +527,7 @@ private:
 	Device_t mydevices[MAXPORTS];
 	Pipe_t mypipes[2] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
+	strbuf_t mystring_bufs[1];
 	USBDriverTimer debouncetimer;
 	USBDriverTimer resettimer;
 	setup_t setup;
@@ -572,6 +592,7 @@ private:
 	bool use_report_id;
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
+	strbuf_t mystring_bufs[1];
 };
 
 
@@ -634,6 +655,7 @@ private:
 	bool processing_new_data_ = false;
 	Pipe_t mypipes[2] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
+	strbuf_t mystring_bufs[1];
 };
 
 class MIDIDevice : public USBDriver {
@@ -777,6 +799,7 @@ private:
 	void (*handleTimeCodeQuarterFrame)(uint16_t data);
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
+	strbuf_t mystring_bufs[1];
 };
 
 
@@ -810,6 +833,7 @@ private:
 private:
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
+	strbuf_t mystring_bufs[1];
 	USBDriverTimer txtimer;
 	uint32_t bigbuffer[(BUFFER_SIZE+3)/4];
 	setup_t setup;
@@ -858,6 +882,7 @@ private:
 private:
 	Pipe_t mypipes[2] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[3] __attribute__ ((aligned(32)));
+	strbuf_t mystring_bufs[1];
 	//USBDriverTimer txtimer;
 	USBDriverTimer updatetimer;
 	Pipe_t *rxpipe;

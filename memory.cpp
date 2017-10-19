@@ -53,7 +53,7 @@
 static Device_t * free_Device_list = NULL;
 static Pipe_t * free_Pipe_list = NULL;
 static Transfer_t * free_Transfer_list = NULL;
-
+static strbuf_t * free_strbuf_list = NULL;
 // A small amount of non-driver memory, just to get things started
 // TODO: is this really necessary?  Can these be eliminated, so we
 // use only memory from the drivers?
@@ -107,6 +107,25 @@ void USBHost::free_Transfer(Transfer_t *transfer)
 	free_Transfer_list = transfer;
 }
 
+strbuf_t * USBHost::allocate_string_buffer(void)
+{
+	strbuf_t *strbuf = free_strbuf_list;
+	if (strbuf) {
+		free_strbuf_list = *(strbuf_t **)strbuf;
+		strbuf->iStrings[strbuf_t::STR_ID_MAN] = 0;  // Set indexes into string buffer to say not there...
+		strbuf->iStrings[strbuf_t::STR_ID_PROD] = 0;
+		strbuf->iStrings[strbuf_t::STR_ID_SERIAL] = 0;
+		strbuf->buffer[0] = 0;	// have trailing NULL..
+	} 
+	return strbuf;
+}
+
+void USBHost::free_string_buffer(strbuf_t *strbuf) 
+{
+	*(strbuf_t **)strbuf = free_strbuf_list;
+	free_strbuf_list = strbuf;
+}
+
 void USBHost::contribute_Devices(Device_t *devices, uint32_t num)
 {
 	Device_t *end = devices + num;
@@ -131,4 +150,13 @@ void USBHost::contribute_Transfers(Transfer_t *transfers, uint32_t num)
 		free_Transfer(transfer);
 	}
 }
+
+void USBHost::contribute_String_Buffers(strbuf_t *strbufs, uint32_t num)
+{
+	strbuf_t *end = strbufs + num;
+	for (strbuf_t *str = strbufs ; str < end; str++) {
+		free_string_buffer(str);
+	}
+}
+
 
