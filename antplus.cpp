@@ -56,6 +56,8 @@ void AntPlus::init()
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
 	driver_ready_for_device(this);
 	callbackFunc = NULL;
+	user_onStatusChange = NULL;
+	user_onDeviceID = NULL;
 }
 
 bool AntPlus::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
@@ -388,9 +390,12 @@ void AntPlus::sendMessageChannelStatus(TDCONFIG *cfg, const uint32_t channelStat
 {
 	cfg->flags.channelStatus = channelStatus;
 	if (cfg->flags.channelStatus != cfg->flags.channelStatusOld) {
-		uint32_t status = cfg->flags.channelStatus&0x0F;
-		status |= ((cfg->channel&0x0F)<<4);
-		sendMessage(ANTP_MSG_CHANNELSTATUS, NULL, status);
+		//uint32_t status = cfg->flags.channelStatus&0x0F;
+		//status |= ((cfg->channel&0x0F)<<4);
+		//sendMessage(ANTP_MSG_CHANNELSTATUS, NULL, status);
+		if (user_onStatusChange) {
+			(*user_onStatusChange)(cfg->channel, cfg->flags.channelStatus);
+		}
 		cfg->flags.channelStatusOld = cfg->flags.channelStatus;
 	}
 }
@@ -597,21 +602,28 @@ void AntPlus::message_event(const int channel, const int msgId,
 	  	break;
 
 	  case MESG_CAPABILITIES_ID:
-		//printf(" @ capabilities:");
-		//printf("   Max ANT Channels: %i",payload[STREAM_CAP_MAXCHANNELS]);
-		//printf("   Max ANT Networks: %i",payload[STREAM_CAP_MAXNETWORKS]);
-		//printf("   Std. option: 0x%X",payload[STREAM_CAP_STDOPTIONS]);
-		//printf("   Advanced: 0x%X",payload[STREAM_CAP_ADVANCED]);
-		//printf("   Advanced2: 0x%X",payload[STREAM_CAP_ADVANCED2]);
+		printf(" @ capabilities:");
+		printf("   Max ANT Channels: %i",payload[STREAM_CAP_MAXCHANNELS]);
+		printf("   Max ANT Networks: %i",payload[STREAM_CAP_MAXNETWORKS]);
+		printf("   Std. option: 0x%X",payload[STREAM_CAP_STDOPTIONS]);
+		printf("   Advanced: 0x%X",payload[STREAM_CAP_ADVANCED]);
+		printf("   Advanced2: 0x%X",payload[STREAM_CAP_ADVANCED2]);
 	  	break;
 
 	case MESG_CHANNEL_ID_ID:
 		//TDCONFIG *cfg = (TDCONFIG*)&ant->dcfg[chan];
-        	ant.dcfg[chan].dev.deviceId = payload[STREAM_CHANNELID_DEVNO_LO] | (payload[STREAM_CHANNELID_DEVNO_HI] << 8);
-		ant.dcfg[chan].dev.deviceType = payload[STREAM_CHANNELID_DEVTYPE];
-		ant.dcfg[chan].dev.transType = payload[STREAM_CHANNELID_TRANTYPE];
+        	//ant.dcfg[chan].dev.deviceId = payload[STREAM_CHANNELID_DEVNO_LO] | (payload[STREAM_CHANNELID_DEVNO_HI] << 8);
+		//ant.dcfg[chan].dev.deviceType = payload[STREAM_CHANNELID_DEVTYPE];
+		//ant.dcfg[chan].dev.transType = payload[STREAM_CHANNELID_TRANTYPE];
 		//printf(" @ CHANNEL ID: channel %i, deviceId:%i, deviceType:%i, transType:%i)", chan, cfg->dev.deviceId, cfg->dev.deviceType, cfg->dev.transType);
-		sendMessage(ANTP_MSG_DEVICEID, (intptr_t *)&(ant.dcfg[chan].dev), chan);
+		//sendMessage(ANTP_MSG_DEVICEID, (intptr_t *)&(ant.dcfg[chan].dev), chan);
+		if (user_onDeviceID) {
+			int devid = payload[STREAM_CHANNELID_DEVNO_LO];
+			devid |= payload[STREAM_CHANNELID_DEVNO_HI] << 8;
+			int devtype = payload[STREAM_CHANNELID_DEVTYPE];
+			int transtype = payload[STREAM_CHANNELID_TRANTYPE];
+			(*user_onDeviceID)(chan, devid, devtype, transtype);
+		}
 #if 0
 		if (cfg->dev.scidDeviceType != cfg->deviceType){
 			printf(" @ CHANNEL ID: this is not the device we're looking for");
@@ -623,7 +635,7 @@ void AntPlus::message_event(const int channel, const int msgId,
 		break;
 
 	case MESG_VERSION_ID:
-		//printf(" @ version: '%s'", (char*)&payload[STREAM_VERSION_STRING]);
+		printf(" @ version: '%s'", (char*)&payload[STREAM_VERSION_STRING]);
 		break;
 	};
 }

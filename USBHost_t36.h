@@ -865,6 +865,12 @@ class AntPlus: public USBDriver {
 public:
 	AntPlus(USBHost &host) : /* txtimer(this),*/  updatetimer(this) { init(); }
 	void begin(const uint8_t key=0);
+	void onStatusChange(void (*function)(int channel, int status)) {
+		user_onStatusChange = function;
+	}
+	void onDeviceID(void (*function)(int channel, int devId, int devType, int transType)) {
+		user_onDeviceID = function;
+	}
 protected:
 	virtual void Task();
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
@@ -911,11 +917,6 @@ private:
 		PROFILE_TOTAL
 	};
 	typedef struct {
-		uint16_t deviceId;
-		uint8_t deviceType;
-		uint8_t transType;
-	} TDEVICET;
-	typedef struct {
 		uint8_t channel;
 		uint8_t RFFreq;
 		uint8_t networkNumber;
@@ -927,7 +928,6 @@ private:
 		uint16_t channelPeriod;
 		uint16_t searchWaveform;
 		uint32_t deviceNumber; // deviceId
-		TDEVICET dev;
 		struct {
 			uint8_t chanIdOnce;
 			uint8_t keyAccepted;
@@ -944,6 +944,8 @@ private:
 	} TLIBANTPLUS;
 	TLIBANTPLUS ant;
 	int (*callbackFunc)(uint32_t msg, intptr_t *value1, uint32_t value2);
+	void (*user_onStatusChange)(int channel, int status);
+	void (*user_onDeviceID)(int channel, int devId, int devType, int transType);
 	void dispatchPayload(TDCONFIG *cfg, const uint8_t *payload, const int len);
 	static const uint8_t *getAntKey(const uint8_t keyIdx);
 	static uint8_t calcMsgChecksum (const uint8_t *buffer, const uint8_t len);
