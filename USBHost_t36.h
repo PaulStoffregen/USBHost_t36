@@ -894,6 +894,7 @@ private:
 	volatile uint16_t txtail;
 	volatile bool     txready;
 	volatile uint8_t  rxlen;
+	volatile bool     do_polling;
 private:
 	enum _eventi {
 		EVENTI_MESSAGE = 0,
@@ -935,27 +936,14 @@ private:
 			uint8_t channelStatusOld;
 		} flags;
 	} TDCONFIG;
-	//typedef struct {
-		//int (*cbPtr) (const int channel, const int messageId,
-			//const uint8_t *payLoad, const size_t dataLength, void *userPtr);
-		//void *uPtr; // user variable sent with each event
-	//} TEVENTFUNC;
-	//typedef struct {
-		//void (*cbPtr) (TDCONFIG *cfg, const uint8_t *payLoad,
-			//const size_t dataLength, void *userPtr);
-		//void *uPtr; // user variable sent with each payload
-	//} TPAYLOADFUNC;
 	typedef struct {
 		uint8_t initOnce;
 		uint8_t key; // key index
 		int iDevice; // index to the antplus we're interested in, if > one found
-		//TEVENTFUNC eventCb[EVENTI_TOTAL];
-		//TPAYLOADFUNC payloadCb[PROFILE_TOTAL];
 		TDCONFIG dcfg[PROFILE_TOTAL]; // channel config, we're using one channel per device
 	} TLIBANTPLUS;
 	TLIBANTPLUS ant;
 	int (*callbackFunc)(uint32_t msg, intptr_t *value1, uint32_t value2);
-	//int dispatchMessage(const uint8_t *stream, const int len);
 	void dispatchPayload(TDCONFIG *cfg, const uint8_t *payload, const int len);
 	static const uint8_t *getAntKey(const uint8_t keyIdx);
 	static uint8_t calcMsgChecksum (const uint8_t *buffer, const uint8_t len);
@@ -963,23 +951,15 @@ private:
 	static int msgCheckIntegrity(uint8_t *stream, const int len);
 	static int msgGetLength(uint8_t *stream);
 	int handleMessages(uint8_t *buffer, int tBytes);
-	//int registerEventCallback(const int which, void *eventFunc, void *userPtr);
-	//int registerPayloadCallback(const int profile, void *eventFunc, void *userPtr);
-
 	void setCallbackFunc(int (*func)(uint32_t msg, intptr_t *value1, uint32_t value2));
 	void sendMessage(uint32_t msg, intptr_t *value1, uint32_t value2);
 	void sendMessageChannelStatus(TDCONFIG *cfg, const uint32_t channelStatus);
-
 	void message_channel(const int chan, const int eventId,
 		const uint8_t *payload, const size_t dataLength);
 	void message_response(const int chan, const int msgId,
 		const uint8_t *payload, const size_t dataLength);
 	void message_event(const int channel, const int msgId,
 		const uint8_t *payload, const size_t dataLength);
-
-
-	//int SetPayloadHandler(const int profile, void *eventFunc, void *userPtr);
-	//int SetEventHandler(const int which, void *eventFunc, void *userPtr);
 	int ResetSystem();
 	int RequestMessage(const int channel, const int message);
 	int SetNetworkKey(const int netNumber, const uint8_t *key);

@@ -101,6 +101,7 @@ bool AntPlus::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_
 		updatetimer.start(500000);
 		queue_Data_Transfer(rxpipe, rxpacket, 64, this);
 		rxlen = 0;
+		do_polling = false;
 		return true;
 	}
 	return false;
@@ -135,6 +136,7 @@ void AntPlus::rx_data(const Transfer_t *transfer)
 		rxlen = 0;
 	} else {
 		rxlen = len; // signal arrival of data to Task()
+		// TODO: should someday use EventResponder to call from yield()
 	}
 }
 
@@ -223,6 +225,8 @@ void AntPlus::timer_event(USBDriverTimer *whichTimer)
 		if (first_update) {
 			ResetSystem();
 			first_update = false;
+		} else {
+			do_polling = true;
 		}
 		//println("ant update timer");
 	}
@@ -245,13 +249,26 @@ void AntPlus::Task()
 		rxlen = 0;
 		NVIC_ENABLE_IRQ(IRQ_USBHS);
 	}
-
-
-
+	if (do_polling) {
+		do_polling = false;
+		for (int i = 0; i < PROFILE_TOTAL; i++) {
+			TDCONFIG *cfg = &ant.dcfg[i];
+			if (!(cfg->flags.profileValid)) continue;
+			//printf("#### %i %i: %i %i %i ####", i, cfg->channel,
+			// cfg->flags.channelStatus, cfg->flags.keyAccepted,
+			// cfg->flags.chanIdOnce);
+			if (cfg->flags.channelStatus) {
+				RequestMessage(cfg->channel, MESG_CHANNEL_STATUS_ID);
+			} else {
+				AssignChannel(cfg->channel, cfg->channelType, cfg->networkNumber);
+				RequestMessage(cfg->channel, MESG_CHANNEL_STATUS_ID);
+				if (!cfg->flags.keyAccepted && !cfg->flags.chanIdOnce) {
+					SetNetworkKey(cfg->networkNumber, getAntKey(ant.key));
+				}
+			}
+		}
+	}
 }
-
-
-
 
 
 
@@ -271,14 +288,6 @@ static const uint8_t antkeys[KEY_TOTAL][8] = {
 //{0xFD,0x38,0xBE,0xA6,0x40,0x5D,0x26,0x99}
 };
 
-
-
-/*int AntPlus::dispatchMessage(const uint8_t *stream, const int len)
-{
-	return ant.eventCb[EVENTI_MESSAGE].cbPtr(stream[STREAM_CHANNEL],
-		stream[STREAM_MESSAGE], &stream[STREAM_DATA],
-		(size_t)stream[STREAM_LENGTH], ant.eventCb[EVENTI_MESSAGE].uPtr);
-}*/
 
 uint8_t AntPlus::calcMsgChecksum(const uint8_t *buffer, const uint8_t len)
 {
@@ -356,37 +365,12 @@ int AntPlus::handleMessages(uint8_t *buffer, int tBytes)
 		message_event(stream[STREAM_CHANNEL], stream[STREAM_MESSAGE],
 			&stream[STREAM_DATA], (size_t)stream[STREAM_LENGTH]);
 
-
-
 		int len = msgGetLength(stream);
 		stream += len;
 		tBytes -= len;
 	}
 	return 1;
 }
-
-/*int AntPlus::registerEventCallback(const int which, void *eventFunc, void *userPtr)
-{
-	if (which < EVENTI_TOTAL) {
-		ant.eventCb[which].cbPtr = (int (*)(int, int, const uint8_t*, size_t, void*))eventFunc;
-		ant.eventCb[which].uPtr = userPtr;
-		return 1;
-	}
-	//printf("invalid callback id {%i}\n.", which);
-	return 0;
-}*/
-
-/*int AntPlus::registerPayloadCallback(const int profile, void *eventFunc, void *userPtr)
-{
-	if (profile < PROFILE_TOTAL) {
-		ant.payloadCb[profile].cbPtr = (void (*)(TDCONFIG*, const uint8_t*, size_t, void*))eventFunc;
-		ant.payloadCb[profile].uPtr = userPtr;
-		return 1;
-	}
-	//printf("invalid callback id {%i}\n.", profile);
-	return 0;
-}*/
-
 
 
 // TODO: replace this with multiple Arduino style OnXYZ callbacks
@@ -417,7 +401,6 @@ void AntPlus::message_channel(const int chan, const int eventId,
 	//printf(" $ chan event: chan:%i, msgId:0x%.2X, payload:%p, dataLen:%i, uPtr:%p", chan, eventId, payload, (int)dataLength, uPtr);
 	//dump_hexbytes(payload, dataLength);
 
-	//TLIBANTPLUS *ant = (AntPlus::TLIBANTPLUS*)uPtr;
 	TDCONFIG *cfg = &(ant.dcfg[chan]);
 
 	switch (eventId){
@@ -579,7 +562,6 @@ void AntPlus::message_event(const int channel, const int msgId,
 	//printf(" @ msg event cb: Chan:%i, Id:0x%.2X, payload:%p, len:%i, ptr:%p", channel, msgId, payload, (int)dataLength, uPtr);
 	//dump_hexbytes(payload, dataLength);
 
-	//TLIBANTPLUS *ant = (TLIBANTPLUS*)uPtr;
 	uint8_t chan = 0;
 	if (channel >= 0 && channel < PROFILE_TOTAL) chan = channel;
 
@@ -646,16 +628,6 @@ void AntPlus::message_event(const int channel, const int msgId,
 	};
 }
 
-
-//int AntPlus::SetPayloadHandler(const int profile, void *eventFunc, void *userPtr)
-//{
-	//return registerPayloadCallback(profile, eventFunc, userPtr);
-//}
-
-//int AntPlus::SetEventHandler(const int which, void *eventFunc, void *userPtr)
-//{
-	//return registerEventCallback(which, eventFunc, userPtr);
-//}
 
 int AntPlus::ResetSystem()
 {
@@ -954,12 +926,6 @@ int AntPlus::SendExtBurstTransfer(const int channel, const int devNum, const int
 	return ret;
 }
 
-//const uint8_t *libantplus_GetNetworkKey (const uint8_t keyIdx)
-//{
-	//return antplus_getAntKey(keyIdx);
-//}
-
-
 
 
 void AntPlus::profileSetup_HRM(TDCONFIG *cfg, const uint32_t deviceId)
@@ -1170,10 +1136,10 @@ void AntPlus::begin(const uint8_t key)
 	int deviceId = 0; // TODO: user API to set this?
 	profileSetup_HRM(&ant.dcfg[PROFILE_HRM], deviceId);
 	profileSetup_SPDCAD(&ant.dcfg[PROFILE_SPDCAD], deviceId);
-	profileSetup_POWER(&ant.dcfg[PROFILE_POWER], deviceId);
-	profileSetup_STRIDE(&ant.dcfg[PROFILE_STRIDE], deviceId);
-	profileSetup_SPEED(&ant.dcfg[PROFILE_SPEED], deviceId);
-	profileSetup_CADENCE(&ant.dcfg[PROFILE_CADENCE], deviceId);
+	//profileSetup_POWER(&ant.dcfg[PROFILE_POWER], deviceId);
+	//profileSetup_STRIDE(&ant.dcfg[PROFILE_STRIDE], deviceId);
+	//profileSetup_SPEED(&ant.dcfg[PROFILE_SPEED], deviceId);
+	//profileSetup_CADENCE(&ant.dcfg[PROFILE_CADENCE], deviceId);
 
 	//ant.eventCb[EVENTI_MESSAGE].cbPtr = &message_event;
 	//SetEventHandler(EVENTI_MESSAGE, (void*)message_event, (void*)ant);
