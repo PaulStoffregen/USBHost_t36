@@ -149,7 +149,9 @@ void AntPlus::tx_data(const Transfer_t *transfer)
 	//print(", tail=", (p-1) - txbuffer);
 	//println(", tail=", txtail);
 	uint32_t tail = txtail;
-	tail += *(p-1) + 1;
+	uint8_t size = *(p-1);
+	tail += size + 1;
+	if (tail >= sizeof(txbuffer)) tail -= sizeof(txbuffer);
 	txtail = tail;
 	//println("new tail=", tail);
 	txready = true;
