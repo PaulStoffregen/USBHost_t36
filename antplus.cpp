@@ -55,9 +55,13 @@ void AntPlus::init()
 	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
 	driver_ready_for_device(this);
-	callbackFunc = NULL;
 	user_onStatusChange = NULL;
 	user_onDeviceID = NULL;
+	user_onHeartRateMonitor = NULL;
+	user_onSpeedCadence = NULL;
+	user_onSpeed = NULL;
+	user_onCadence = NULL;
+	wheelCircumference = WHEEL_CIRCUMFERENCE;
 }
 
 bool AntPlus::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
@@ -377,24 +381,10 @@ int AntPlus::handleMessages(uint8_t *buffer, int tBytes)
 }
 
 
-// TODO: replace this with multiple Arduino style OnXYZ callbacks
-void AntPlus::setCallbackFunc(int (*func)(uint32_t msg, intptr_t *value1, uint32_t value2))
-{
-	callbackFunc = func;
-}
-// TODO: replace this with multiple Arduino style OnXYZ callbacks
-void AntPlus::sendMessage(uint32_t msg, intptr_t *value1, uint32_t value2)
-{
-	if (callbackFunc) (*callbackFunc)(msg, value1, value2);
-}
-
 void AntPlus::sendMessageChannelStatus(TDCONFIG *cfg, const uint32_t channelStatus)
 {
 	cfg->flags.channelStatus = channelStatus;
 	if (cfg->flags.channelStatus != cfg->flags.channelStatusOld) {
-		//uint32_t status = cfg->flags.channelStatus&0x0F;
-		//status |= ((cfg->channel&0x0F)<<4);
-		//sendMessage(ANTP_MSG_CHANNELSTATUS, NULL, status);
 		if (user_onStatusChange) {
 			(*user_onStatusChange)(cfg->channel, cfg->flags.channelStatus);
 		}
@@ -618,7 +608,6 @@ void AntPlus::message_event(const int channel, const int msgId,
 		//ant.dcfg[chan].dev.deviceType = payload[STREAM_CHANNELID_DEVTYPE];
 		//ant.dcfg[chan].dev.transType = payload[STREAM_CHANNELID_TRANTYPE];
 		//printf(" @ CHANNEL ID: channel %i, deviceId:%i, deviceType:%i, transType:%i)", chan, cfg->dev.deviceId, cfg->dev.deviceType, cfg->dev.transType);
-		//sendMessage(ANTP_MSG_DEVICEID, (intptr_t *)&(ant.dcfg[chan].dev), chan);
 		if (user_onDeviceID) {
 			int devid = payload[STREAM_CHANNELID_DEVNO_LO];
 			devid |= payload[STREAM_CHANNELID_DEVNO_HI] << 8;
@@ -1062,7 +1051,6 @@ void AntPlus::profileSetup_CADENCE(TDCONFIG *cfg, const uint32_t deviceId)
 	cfg->flags.profileValid = 1;
 }
 
-#if 0
 
 /*
 uint64_t factory_passkey (uint64_t device_id, uint8_t *buffer)
@@ -1074,102 +1062,13 @@ uint64_t factory_passkey (uint64_t device_id, uint8_t *buffer)
 
 	return n;
 }
-
 */
-int libantplus_Start ()
-{
-#if 0
-	uint8_t buffer[8];
-	factory_passkey(3825666043, buffer);
-	dump_hexbytes(buffer, 8);
-#endif
-
-	int ct = 0;
-	uint32_t deviceId;
-
-	for (int i = 0; i < PROFILE_TOTAL; i++){
-		deviceId = 0;
-		if (antplus_sendMessage(ANTP_MSG_PROFILE_SELECT, (intptr_t*)&deviceId, i) != 1)
-			continue;
-
-		ct++;
-		//printf("enabling profile %i", i);
-
-		switch (i){
-		  case PROFILE_HRM:
-			profileSetup_HRM(&ant->dcfg[PROFILE_HRM], deviceId);
-			libantplus_SetPayloadHandler(PROFILE_HRM, (void*)payload_HRM, (void*)NULL);
-			break;
-		  case PROFILE_SPDCAD:
-			profileSetup_SPDCAD(&ant->dcfg[PROFILE_SPDCAD], deviceId);
-			libantplus_SetPayloadHandler(PROFILE_SPDCAD, (void*)payload_SPDCAD, (void*)NULL);
-			break;
-		  case PROFILE_POWER:
-			profileSetup_POWER(&ant->dcfg[PROFILE_POWER], deviceId);
-			libantplus_SetPayloadHandler(PROFILE_POWER, (void*)payload_POWER, (void*)NULL);
-			break;
-		  case PROFILE_STRIDE:
-			profileSetup_STRIDE(&ant->dcfg[PROFILE_STRIDE], deviceId);
-			libantplus_SetPayloadHandler(PROFILE_STRIDE, (void*)payload_STRIDE, (void*)NULL);
-			break;
-		  case PROFILE_SPEED:
-			profileSetup_SPEED(&ant->dcfg[PROFILE_SPEED], deviceId);
-			libantplus_SetPayloadHandler(PROFILE_SPEED, (void*)payload_SPEED, (void*)NULL);
-			break;
-		  case PROFILE_CADENCE:
-			profileSetup_CADENCE(&ant->dcfg[PROFILE_CADENCE], deviceId);
-			libantplus_SetPayloadHandler(PROFILE_CADENCE, (void*)payload_CADENCE, (void*)NULL);
-			break;
-		}
-	}
-
-	return ct;
-}
-
-
-TLIBANTPLUS *libantplus_Init (const uint8_t networkKey)
-{
-	if (networkKey >= KEY_TOTAL){
-		//printf("libantplus_Init(): invalid networkKey (%i)");
-		//return NULL;
-		ant->key = KEY_DEFAULT;
-	}else{
-		ant->key = networkKey;
-	}
-
-	libantplus_SetEventHandler(EVENTI_MESSAGE, (void*)message_event, (void*)ant);
-	return ant;
-}
-#endif
 
 
 void AntPlus::begin(const uint8_t key)
 {
 	ant.key = (key < KEY_TOTAL) ? key : 0;
-
-	int deviceId = 0; // TODO: user API to set this?
-	profileSetup_HRM(&ant.dcfg[PROFILE_HRM], deviceId);
-	profileSetup_SPDCAD(&ant.dcfg[PROFILE_SPDCAD], deviceId);
-	//profileSetup_POWER(&ant.dcfg[PROFILE_POWER], deviceId);
-	//profileSetup_STRIDE(&ant.dcfg[PROFILE_STRIDE], deviceId);
-	//profileSetup_SPEED(&ant.dcfg[PROFILE_SPEED], deviceId);
-	//profileSetup_CADENCE(&ant.dcfg[PROFILE_CADENCE], deviceId);
-
-	//ant.eventCb[EVENTI_MESSAGE].cbPtr = &message_event;
-	//SetEventHandler(EVENTI_MESSAGE, (void*)message_event, (void*)ant);
 }
-
-/*
-int AntPlus::registerEventCallback(const int which, void *eventFunc, void *userPtr)
-{
-	if (which < EVENTI_TOTAL) {
-		ant.eventCb[which].cbPtr = (int (*)(int, int, const uint8_t*, size_t, void*))eventFunc;
-
-*/
-
-
-
-
 
 
 
@@ -1206,64 +1105,54 @@ const uint8_t * AntPlus::getAntKey(const uint8_t keyIdx)
 
 void AntPlus::payload_HRM(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength)
 {
-	hrm.current.bpm = data[STREAM_RXBROADCAST_DEV120_HR];
-	hrm.current.sequence = data[STREAM_RXBROADCAST_DEV120_SEQ];
-	//const int page = data[1]&0x0F;
-	if (hrm.previous.sequence != hrm.current.sequence || hrm.previous.bpm != hrm.current.bpm){
-		if (hrm.current.bpm) {
-			hrm.current.time = (data[STREAM_RXBROADCAST_DEV120_BEATLO]
-				+ (data[STREAM_RXBROADCAST_DEV120_BEATHI] << 8));
-			hrm.current.interval = hrm.current.time - hrm.previous.time;
-			hrm.current.interval = (((int32_t)hrm.current.interval)
-				* (int32_t)1000) / (int32_t)1024;
-			//printf("page %i", page);
-			sendMessage(ANTP_MSG_PROFILE_DATA, (intptr_t*)&hrm, PROFILE_HRM);
-			hrm.previous.time = hrm.current.time;
-			hrm.previous.interval = hrm.current.interval;
-			hrm.previous.sequence = hrm.current.sequence;
-			hrm.previous.bpm = hrm.current.bpm;
-		}
+	uint8_t bpm = data[STREAM_RXBROADCAST_DEV120_HR];
+	uint8_t sequence = data[STREAM_RXBROADCAST_DEV120_SEQ];
+	if ((sequence == hrm.previous.sequence && bpm == hrm.previous.bpm) || bpm == 0) {
+		return;
 	}
-	printf("payload_HRM: page:%i, Sequence:%i, BPM:%i, %i %i", data[1]&0x0F,
-	  hrm.current.sequence, hrm.current.bpm, hrm.current.time, hrm.current.interval);
+	uint16_t time = (data[STREAM_RXBROADCAST_DEV120_BEATLO]
+		+ (data[STREAM_RXBROADCAST_DEV120_BEATHI] << 8));
+	int interval = (uint16_t)(time - hrm.previous.time) * (uint32_t)1000 / (uint32_t)1024;
+	if (user_onHeartRateMonitor) {
+		(*user_onHeartRateMonitor)(bpm, interval, sequence);
+	}
+	hrm.previous.time = time;
+	hrm.previous.sequence = sequence;
+	hrm.previous.bpm = bpm;
+	//printf("payload_HRM: page:%i, Sequence:%i, BPM:%i, %i %i",
+	//  data[1]&0x0F, sequence, bpm, time, interval);
 }
 
 void AntPlus::payload_SPDCAD(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength)
 {
-	spdcad.current.cadenceTime = data[1];
-	spdcad.current.cadenceTime |= (data[2] << 8);
-	spdcad.current.cadenceCt = data[3];
-	spdcad.current.cadenceCt |= (data[4] << 8);
-	spdcad.current.speedTime = data[5];
-	spdcad.current.speedTime |= (data[6] << 8);
-	spdcad.current.speedCt = data[7];
-	spdcad.current.speedCt |= (data[8] << 8);
-	if (spdcad.current.cadenceTime == spdcad.previous.cadenceTime
-	  && spdcad.current.cadenceCt != spdcad.previous.cadenceCt
-	  && spdcad.current.speedTime != spdcad.previous.speedTime
-	  && spdcad.current.speedCt != spdcad.previous.speedCt) {
+	uint16_t cadenceTime = data[1] | (data[2] << 8);
+	uint16_t cadenceCt = data[3] | (data[4] << 8);
+	uint16_t speedTime = data[5] | (data[6] << 8);
+	uint16_t speedCt = data[7] | (data[8] << 8);
+	if (cadenceTime == spdcad.previous.cadenceTime
+	  && cadenceCt != spdcad.previous.cadenceCt
+	  && speedTime != spdcad.previous.speedTime
+	  && speedCt != spdcad.previous.speedCt) {
 		return; // no change
 	}
-	uint16_t cadence = (60 * (spdcad.current.cadenceCt - spdcad.previous.cadenceCt) * 1024) / (spdcad.current.cadenceTime - spdcad.previous.cadenceTime);
-	spdcad.current.cadence = cadence;
-	if (!spdcad.wheelCircumference) spdcad.wheelCircumference = WHEEL_CIRCUMFERENCE;
-	uint32_t speedRotationDelta = spdcad.current.speedCt - spdcad.previous.speedCt;	// number wheel revolutions
-	float speedTimeDelta = (float)(spdcad.current.speedTime - spdcad.previous.speedTime) / 1024.0f;	// time for above revolutions
-	float distance = (speedRotationDelta * (float)spdcad.wheelCircumference) / 1000.0f; // calculated distance (meters) travelled as per above
-	float speed = (distance / (speedTimeDelta / 3600.0f)) / 1000.0f; // its why we're here
-	spdcad.current.speed = speed * 100;
-	spdcad.current.distance += distance;
-	sendMessage(ANTP_MSG_PROFILE_DATA, (intptr_t*)&spdcad, PROFILE_SPDCAD);
-	spdcad.previous.cadenceTime = spdcad.current.cadenceTime;
-	spdcad.previous.cadence = spdcad.current.cadence;
-	spdcad.previous.cadenceCt = spdcad.current.cadenceCt;
-	spdcad.previous.speedTime = spdcad.current.speedTime;
-	spdcad.previous.speedCt = spdcad.current.speedCt;
-	spdcad.previous.speed = spdcad.current.speed;
-	spdcad.previous.distance = spdcad.current.distance;
-	printf("payload_SPDCAD: speed: %.2f, cadence: %i, total distance: %.2f",
-	  spdcad.current.speed/100.0f, spdcad.current.cadence,
-	  spdcad.current.distance/1000.0f);
+	uint16_t cadence = (60 * (cadenceCt - spdcad.previous.cadenceCt) * 1024) / (cadenceTime - spdcad.previous.cadenceTime);
+	// number wheel revolutions
+	uint32_t speedRotationDelta = speedCt - spdcad.previous.speedCt;
+	// time for above revolutions
+	float speedTimeDelta = (float)(speedTime - spdcad.previous.speedTime) / 1024.0f;
+	// calculated distance (meters) travelled as per above
+	float distance = (speedRotationDelta * (float)wheelCircumference) / 1000.0f;
+	spdcad.distance += distance;
+	float speed = (distance / (speedTimeDelta / 3600.0f)) / 1000.0f;
+	if (user_onSpeedCadence) {
+		(*user_onSpeedCadence)(speed, spdcad.distance * 0.001f, cadence);
+	}
+	spdcad.previous.cadenceTime = cadenceTime;
+	spdcad.previous.cadenceCt = cadenceCt;
+	spdcad.previous.speedTime = speedTime;
+	spdcad.previous.speedCt = speedCt;
+	//printf("payload_SPDCAD: speed: %.2f, cadence: %i, total distance: %.2f",
+	//  speed, cadence, spdcad.distance);
 }
 
 void AntPlus::payload_POWER(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength)
@@ -1285,13 +1174,13 @@ void AntPlus::payload_STRIDE(TDCONFIG *cfg, const uint8_t *data, const size_t da
 	//printf("payload_STRIDE: len:%i", dataLength);
 	int page = data[1];
 	if (page == 0) {
-		stride.current.strides = data[7];
-		sendMessage(ANTP_MSG_PROFILE_DATA, (intptr_t*)&stride, PROFILE_STRIDE);
+		//stride.current.strides = data[7];
+		//sendMessage(ANTP_MSG_PROFILE_DATA, (intptr_t*)&stride, PROFILE_STRIDE);
 		//stride.previous.strides = stride.current.strides;
 	} else if (page == 1) {
-		stride.current.speed = ((float)(data[4]&0x0f) + (float)(data[5]/256.0f));
-		stride.current.cadence = ((float)data[3] + (float)((data[4] << 4) / 16.0f));
-		sendMessage(ANTP_MSG_PROFILE_DATA, (intptr_t*)&stride, PROFILE_STRIDE);
+		//stride.current.speed = ((float)(data[4]&0x0f) + (float)(data[5]/256.0f));
+		//stride.current.cadence = ((float)data[3] + (float)((data[4] << 4) / 16.0f));
+		//sendMessage(ANTP_MSG_PROFILE_DATA, (intptr_t*)&stride, PROFILE_STRIDE);
 		//stride.previous.speed = stride.current.speed;
 		//stride.previous.cadence = stride.current.cadence;
 	}
@@ -1300,41 +1189,41 @@ void AntPlus::payload_STRIDE(TDCONFIG *cfg, const uint8_t *data, const size_t da
 void AntPlus::payload_SPEED(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength)
 {
 	//printf("payload_SPEED: len:%i", dataLength);
-	spd.current.speedTime = data[5] | (data[6] << 8);
-	spd.current.speedCt = data[7] | (data[8] << 8);
-	if (spd.current.speedTime == spd.previous.speedTime
-	  && spd.current.speedCt == spd.previous.speedCt) {
+	uint16_t speedTime = data[5] | (data[6] << 8);
+	uint16_t speedCt = data[7] | (data[8] << 8);
+	if (speedTime == spd.previous.speedTime && speedCt == spd.previous.speedCt) {
 		return; // no change
 	}
-	uint32_t speedRotationDelta = spd.current.speedCt - spd.previous.speedCt;	// number wheel revolutions
-	float speedTimeDelta = (float)(spd.current.speedTime - spd.previous.speedTime) / 1024.0f;	// time for above revolutions
-	if (!spd.wheelCircumference) spd.wheelCircumference = WHEEL_CIRCUMFERENCE;
-	float distance = (speedRotationDelta * (float)spd.wheelCircumference) / 1000.0f;		// calculated distance (meters) travelled as per above
-	float speed = (distance / (speedTimeDelta / 3600.0f)) / 1000.0f; // its why we're here
-	spd.current.speed = speed * 100;
-	spd.current.distance += distance;
-	sendMessage(ANTP_MSG_PROFILE_DATA, (intptr_t*)&spd, PROFILE_SPEED);
-	spd.previous.speedTime = spd.current.speedTime;
-	spd.previous.speedCt = spd.current.speedCt;
-	spd.previous.speed = spd.current.speed;
-	spd.previous.distance = spd.current.distance;
+	// number wheel revolutions
+	uint32_t speedRotationDelta = speedCt - spd.previous.speedCt;
+	// time for above revolutions
+	float speedTimeDelta = (float)(speedTime - spd.previous.speedTime) / 1024.0f;
+	// calculated distance (meters) travelled as per above
+	float distance = (speedRotationDelta * (float)wheelCircumference) / 1000.0f;
+	spd.distance += distance;
+	float speed = (distance / (speedTimeDelta / 3600.0f)) / 1000.0f;
+	if (user_onSpeed) {
+		(*user_onSpeed)(speed, spd.distance);
+	}
+	spd.previous.speedTime = speedTime;
+	spd.previous.speedCt = speedCt;
 }
 
 void AntPlus::payload_CADENCE(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength)
 {
 	//printf("payload_CADENCE: len:%i", dataLength);
-	cad.current.cadenceTime = data[5] | (data[6] << 8);
-	cad.current.cadenceCt = data[7] | (data[8] << 8);
-	if (cad.current.cadenceTime == cad.previous.cadenceTime
-	  && cad.current.cadenceCt == cad.previous.cadenceCt) {
+	uint16_t cadenceTime = data[5] | (data[6] << 8);
+	uint16_t cadenceCt = data[7] | (data[8] << 8);
+	if (cadenceTime == cad.previous.cadenceTime
+	  && cadenceCt == cad.previous.cadenceCt) {
 		return; // no change
 	}
-	uint16_t cadence = (60 * (cad.current.cadenceCt - cad.previous.cadenceCt) * 1024) / (cad.current.cadenceTime - cad.previous.cadenceTime);
-	cad.current.cadence = cadence;
-	sendMessage(ANTP_MSG_PROFILE_DATA, (intptr_t*)&cad, PROFILE_CADENCE);
-	cad.previous.cadenceTime = cad.current.cadenceTime;
-	cad.previous.cadence = cad.current.cadence;
-	cad.previous.cadenceCt = cad.current.cadenceCt;
+	uint16_t cadence = (60 * (cadenceCt - cad.previous.cadenceCt) * 1024) / (cadenceTime - cad.previous.cadenceTime);
+	if (user_onCadence) {
+		(*user_onCadence)(cadence);
+	}
+	cad.previous.cadenceTime = cadenceTime;
+	cad.previous.cadenceCt = cadenceCt;
 }
 
 
