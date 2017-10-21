@@ -366,9 +366,9 @@ public:
 	uint16_t idVendor() { return (device != nullptr) ? device->idVendor : 0; }
 	uint16_t idProduct() { return (device != nullptr) ? device->idProduct : 0; }
 
-	const uint8_t *manufacturer() 
+	const uint8_t *manufacturer()
 		{  return  ((device == nullptr) || (device->strbuf == nullptr)) ? nullptr : &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; }
-	const uint8_t *product() 
+	const uint8_t *product()
 		{  return  ((device == nullptr) || (device->strbuf == nullptr)) ? nullptr : &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; }
 	const uint8_t *serialNumber()
 		{  return  ((device == nullptr) || (device->strbuf == nullptr)) ? nullptr : &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
@@ -457,9 +457,9 @@ public:
 	operator bool() { return (mydevice != nullptr); }
 	uint16_t idVendor() { return (mydevice != nullptr) ? mydevice->idVendor : 0; }
 	uint16_t idProduct() { return (mydevice != nullptr) ? mydevice->idProduct : 0; }
-	const uint8_t *manufacturer() 
+	const uint8_t *manufacturer()
 		{  return  ((mydevice == nullptr) || (mydevice->strbuf == nullptr)) ? nullptr : &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; }
-	const uint8_t *product() 
+	const uint8_t *product()
 		{  return  ((mydevice == nullptr) || (mydevice->strbuf == nullptr)) ? nullptr : &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; }
 	const uint8_t *serialNumber()
 		{  return  ((mydevice == nullptr) || (mydevice->strbuf == nullptr)) ? nullptr : &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
@@ -557,6 +557,7 @@ private:
 	static volatile bool reset_busy;
 };
 
+//--------------------------------------------------------------------------
 
 class USBHIDParser : public USBDriver {
 public:
@@ -595,7 +596,7 @@ private:
 	strbuf_t mystring_bufs[1];
 };
 
-
+//--------------------------------------------------------------------------
 
 class KeyboardController : public USBDriver /* , public USBHIDInput */ {
 public:
@@ -657,6 +658,89 @@ private:
 	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
 };
+
+//--------------------------------------------------------------------------
+
+class KeyboardHIDExtrasController : public USBHIDInput {
+public:
+	KeyboardHIDExtrasController(USBHost &host) { USBHIDParser::driver_ready_for_hid_collection(this); }
+	void	clear() { event_ = false;}
+	bool	available() { return event_; }
+	void     attachPress(void (*f)(uint32_t top, uint16_t code)) { keyPressedFunction = f; }
+	void     attachRelease(void (*f)(uint32_t top, uint16_t code)) { keyReleasedFunction = f; }
+	enum {MAX_KEYS_DOWN=4};
+//	uint32_t buttons() { return buttons_; }
+protected:
+	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
+	virtual void hid_input_data(uint32_t usage, int32_t value);
+	virtual void hid_input_end();
+	virtual void disconnect_collection(Device_t *dev);
+private:
+	void (*keyPressedFunction)(uint32_t top, uint16_t code);
+	void (*keyReleasedFunction)(uint32_t top, uint16_t code);
+	uint32_t topusage_ = 0;					// What top report am I processing?
+	uint8_t collections_claimed_ = 0;
+	volatile bool event_ = false;
+	volatile bool hid_input_begin_ = false;
+	volatile bool hid_input_data_ = false; 	// did we receive any valid data with report?
+	uint8_t count_keys_down_ = 0;
+	uint16_t keys_down[MAX_KEYS_DOWN];
+};
+
+//--------------------------------------------------------------------------
+
+class MouseController : public USBHIDInput {
+public:
+	MouseController(USBHost &host) { USBHIDParser::driver_ready_for_hid_collection(this); }
+	bool	available() { return mouseEvent; }
+	void	mouseDataClear();
+	uint8_t getButtons() { return buttons; }
+	int     getMouseX() { return mouseX; }
+	int     getMouseY() { return mouseY; }
+	int     getWheel() { return wheel; }
+	int     getWheelH() { return wheelH; }
+protected:
+	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
+	virtual void hid_input_data(uint32_t usage, int32_t value);
+	virtual void hid_input_end();
+	virtual void disconnect_collection(Device_t *dev);
+private:
+	uint8_t collections_claimed = 0;
+	volatile bool mouseEvent = false;
+	volatile bool hid_input_begin_ = false;
+	uint8_t buttons = 0;
+	int     mouseX = 0;
+	int     mouseY = 0;
+	int     wheel = 0;
+	int     wheelH = 0;
+};
+
+//--------------------------------------------------------------------------
+
+class JoystickController : public USBHIDInput {
+public:
+	JoystickController(USBHost &host) { USBHIDParser::driver_ready_for_hid_collection(this); }
+	bool    available() { return joystickEvent; }
+	void    joystickDataClear();
+	uint32_t getButtons() { return buttons; }
+	int	getAxis(uint32_t index) { return (index < (sizeof(axis)/sizeof(axis[0]))) ? axis[index] : 0; }
+protected:
+	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
+	virtual void hid_input_data(uint32_t usage, int32_t value);
+	virtual void hid_input_end();
+	virtual void disconnect_collection(Device_t *dev);
+private:
+	uint8_t collections_claimed = 0;
+	bool anychange = false;
+	volatile bool joystickEvent = false;
+	uint32_t buttons = 0;
+	int16_t axis[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+};
+
+//--------------------------------------------------------------------------
 
 class MIDIDevice : public USBDriver {
 public:
@@ -802,6 +886,7 @@ private:
 	strbuf_t mystring_bufs[1];
 };
 
+//--------------------------------------------------------------------------
 
 class USBSerial: public USBDriver, public Stream {
 public:
@@ -860,8 +945,11 @@ private:
 	enum { CDCACM, FTDI, PL2303, CH341 } sertype;
 };
 
+//--------------------------------------------------------------------------
 
 class AntPlus: public USBDriver {
+// Please post any AntPlus feedback or contributions on this forum thread:
+// https://forum.pjrc.com/threads/43110-Ant-libarary-and-USB-driver-for-Teensy-3-5-6
 public:
 	AntPlus(USBHost &host) : /* txtimer(this),*/  updatetimer(this) { init(); }
 	void begin(const uint8_t key=0);
@@ -1076,84 +1164,6 @@ private:
 	} cad;
 	void payload_CADENCE(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength);
 	uint16_t wheelCircumference; // default is WHEEL_CIRCUMFERENCE (2122cm)
-};
-
-
-class MouseController : public USBHIDInput {
-public:
-	MouseController(USBHost &host) { USBHIDParser::driver_ready_for_hid_collection(this); }
-	bool	available() { return mouseEvent; }
-	void	mouseDataClear();
-	uint8_t getButtons() { return buttons; }
-	int     getMouseX() { return mouseX; }
-	int     getMouseY() { return mouseY; }
-	int     getWheel() { return wheel; }
-	int     getWheelH() { return wheelH; }
-protected:
-	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
-	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
-	virtual void hid_input_data(uint32_t usage, int32_t value);
-	virtual void hid_input_end();
-	virtual void disconnect_collection(Device_t *dev);
-private:
-	uint8_t collections_claimed = 0;
-	volatile bool mouseEvent = false;
-	volatile bool hid_input_begin_ = false;
-	uint8_t buttons = 0;
-	int     mouseX = 0;
-	int     mouseY = 0;
-	int     wheel = 0;
-	int     wheelH = 0;
-};
-
-
-class JoystickController : public USBHIDInput {
-public:
-	JoystickController(USBHost &host) { USBHIDParser::driver_ready_for_hid_collection(this); }
-	bool    available() { return joystickEvent; }
-	void    joystickDataClear();
-	uint32_t getButtons() { return buttons; }
-	int	getAxis(uint32_t index) { return (index < (sizeof(axis)/sizeof(axis[0]))) ? axis[index] : 0; }
-protected:
-	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
-	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
-	virtual void hid_input_data(uint32_t usage, int32_t value);
-	virtual void hid_input_end();
-	virtual void disconnect_collection(Device_t *dev);
-private:
-	uint8_t collections_claimed = 0;
-	bool anychange = false;
-	volatile bool joystickEvent = false;
-	uint32_t buttons = 0;
-	int16_t axis[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-};
-
-
-class KeyboardHIDExtrasController : public USBHIDInput {
-public:
-	KeyboardHIDExtrasController(USBHost &host) { USBHIDParser::driver_ready_for_hid_collection(this); }
-	void	clear() { event_ = false;}
-	bool	available() { return event_; }
-	void     attachPress(void (*f)(uint32_t top, uint16_t code)) { keyPressedFunction = f; }
-	void     attachRelease(void (*f)(uint32_t top, uint16_t code)) { keyReleasedFunction = f; }
-	enum {MAX_KEYS_DOWN=4};
-//	uint32_t buttons() { return buttons_; }
-protected:
-	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
-	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
-	virtual void hid_input_data(uint32_t usage, int32_t value);
-	virtual void hid_input_end();
-	virtual void disconnect_collection(Device_t *dev);
-private:
-	void (*keyPressedFunction)(uint32_t top, uint16_t code);
-	void (*keyReleasedFunction)(uint32_t top, uint16_t code);
-	uint32_t topusage_ = 0;					// What top report am I processing?
-	uint8_t collections_claimed_ = 0;
-	volatile bool event_ = false;
-	volatile bool hid_input_begin_ = false;
-	volatile bool hid_input_data_ = false; 	// did we receive any valid data with report? 
-	uint8_t count_keys_down_ = 0;
-	uint16_t keys_down[MAX_KEYS_DOWN];
 };
 
 
