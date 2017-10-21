@@ -1,10 +1,12 @@
 #ifndef _LIBANT_H_
 #define _LIBANT_H_
 
-#define ANTP_MSG_PROFILE_SELECT                                 1000
+#define WHEEL_CIRCUMFERENCE                     2122
+
+//#define ANTP_MSG_PROFILE_SELECT                                 1000
 #define ANTP_MSG_PROFILE_DATA                                   1010
-#define ANTP_MSG_CHANNELSTATUS                                  1011
-#define ANTP_MSG_DEVICEID                                               1012
+//#define ANTP_MSG_CHANNELSTATUS                                  1011
+//#define ANTP_MSG_DEVICEID                                               1012
 
 
 #define ANT_TRANSMISSION_SLAVE			0x00

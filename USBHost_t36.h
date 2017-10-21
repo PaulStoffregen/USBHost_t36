@@ -936,13 +936,12 @@ private:
 			uint8_t channelStatusOld;
 		} flags;
 	} TDCONFIG;
-	typedef struct {
+	struct {
 		uint8_t initOnce;
 		uint8_t key; // key index
 		int iDevice; // index to the antplus we're interested in, if > one found
 		TDCONFIG dcfg[PROFILE_TOTAL]; // channel config, we're using one channel per device
-	} TLIBANTPLUS;
-	TLIBANTPLUS ant;
+	} ant;
 	int (*callbackFunc)(uint32_t msg, intptr_t *value1, uint32_t value2);
 	void (*user_onStatusChange)(int channel, int status);
 	void (*user_onDeviceID)(int channel, int devId, int devType, int transType);
@@ -986,21 +985,105 @@ private:
 		const int devType, const int TranType, const uint8_t *data);
 	int SendExtBurstTransfer(const int channel, const int devNum, const int devType,
 		const int tranType, const uint8_t *data, const int nunPackets);
-
 	static void profileSetup_HRM(TDCONFIG *cfg, const uint32_t deviceId);
 	static void profileSetup_SPDCAD(TDCONFIG *cfg, const uint32_t deviceId);
 	static void profileSetup_POWER(TDCONFIG *cfg, const uint32_t deviceId);
 	static void profileSetup_STRIDE(TDCONFIG *cfg, const uint32_t deviceId);
 	static void profileSetup_SPEED(TDCONFIG *cfg, const uint32_t deviceId);
 	static void profileSetup_CADENCE(TDCONFIG *cfg, const uint32_t deviceId);
-
+	struct {
+		struct {
+			uint16_t time;
+			uint16_t interval;
+			uint8_t bpm; // heart rate in beats per minute
+			uint8_t sequence;
+		} current;
+		struct {
+			uint8_t bpm;
+			uint8_t sequence;
+			uint16_t time;
+			uint16_t interval;
+		} previous;
+	} hrm;
 	void payload_HRM(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength);
+	struct {
+		struct {
+			uint16_t cadenceTime;
+			uint16_t cadence;
+			uint16_t cadenceCt;
+			uint16_t speedTime;
+			uint16_t speed;
+			uint16_t speedCt;
+			uint32_t distance;
+		} current;
+		struct {
+			uint16_t cadenceTime;
+			uint16_t cadence;
+			uint16_t cadenceCt;
+			uint16_t speedTime;
+			uint16_t speed;
+			uint16_t speedCt;
+			uint32_t distance;
+		} previous;
+		uint16_t wheelCircumference; // default is WHEEL_CIRCUMFERENCE (2122cm)
+	} spdcad;
 	void payload_SPDCAD(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength);
+	/* struct {
+		struct {
+			uint8_t sequence;
+			uint16_t pedalPowerContribution;
+			uint8_t pedalPower;
+			uint8_t instantCadence;
+			uint16_t sumPower;
+			uint16_t instantPower;
+		} current;
+		struct {
+			uint16_t stub;
+		} previous;
+	} pwr; */
 	void payload_POWER(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength);
+	struct {
+		struct {
+			uint16_t speed;
+			uint16_t cadence;
+			uint8_t strides;
+		} current;
+		/* struct {
+			uint8_t strides;
+			uint16_t speed;
+			uint16_t cadence;
+		} previous; */
+	} stride;
 	void payload_STRIDE(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength);
+	struct {
+		struct {
+			uint16_t speedTime;
+			uint16_t speed;
+			uint16_t speedCt;
+			uint32_t distance;
+		} current;
+		struct {
+			uint16_t speedTime;
+			uint16_t speed;
+			uint16_t speedCt;
+			uint32_t distance;
+		} previous;
+		uint16_t wheelCircumference; // default is WHEEL_CIRCUMFERENCE (2122cm)
+	} spd;
 	void payload_SPEED(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength);
+	struct {
+		struct {
+			uint16_t cadenceTime;
+			uint16_t cadence;
+			uint16_t cadenceCt;
+		} current;
+		struct {
+			uint16_t cadenceTime;
+			uint16_t cadence;
+			uint16_t cadenceCt;
+		} previous;
+	} cad;
 	void payload_CADENCE(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength);
-
 };
 
 
