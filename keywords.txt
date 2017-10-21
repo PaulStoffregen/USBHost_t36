@@ -1,15 +1,81 @@
+# Objects
 USBHost	KEYWORD1
 USBHub	KEYWORD1
+USBHIDParser	KEYWORD1
 KeyboardController	KEYWORD1
 MouseController	KEYWORD1
 MIDIDevice	KEYWORD1
+USBSerial	KEYWORD1
+AntPlus	KEYWORD1
+JoystickController	KEYWORD1
+KeyboardHIDExtrasController	KEYWORD1
+
+# Common Functions
 Task	KEYWORD2
+idVendor	KEYWORD2
+idProduct	KEYWORD2
+manufacturer	KEYWORD2
+product	KEYWORD2
+serialNumber	KEYWORD2
+
+# KeyboardController
 getKey	KEYWORD2
 getModifiers	KEYWORD2
 getOemKey	KEYWORD2
 attachPress	KEYWORD2
 attachRelease	KEYWORD2
+LEDS	KEYWORD2
+updateLEDS	KEYWORD2
+numLock	KEYWORD2
+capsLock	KEYWORD2
+scrollLock
+
+# MIDIDevice
+getType	KEYWORD2
+getChannel	KEYWORD2
+getData1	KEYWORD2
+getData2	KEYWORD2
+setHandleNoteOff	KEYWORD2
+setHandleNoteOn	KEYWORD2
+setHandleVelocityChange	KEYWORD2
+setHandleControlChange	KEYWORD2
+setHandleProgramChange	KEYWORD2
+setHandleAfterTouch	KEYWORD2
+setHandlePitchChange	KEYWORD2
+setHandleSysEx	KEYWORD2
+setHandleRealTimeSystem	KEYWORD2
+setHandleTimeCodeQuarterFrame	KEYWORD2
+sendNoteOff	KEYWORD2
+sendNoteOn	KEYWORD2
+sendPolyPressure	KEYWORD2
+sendControlChange	KEYWORD2
+sendProgramChange	KEYWORD2
+sendAfterTouch	KEYWORD2
+sendPitchBend	KEYWORD2
+sendSysEx	KEYWORD2
+sendRealTime	KEYWORD2
+sendTimeCodeQuarterFrame	KEYWORD2
+sendTimeCodeQuarterFrame	KEYWORD2
+SYSEX_MAX_LEN	LITERAL1	KEYWORD2
+
+# AntPlus
+onStatusChange	KEYWORD2
+onDeviceID	KEYWORD2
+onHeartRateMonitor	KEYWORD2
+onSpeedCadence	KEYWORD2
+onSpeed	KEYWORD2
+onCadence	KEYWORD2
+setWheelCircumference	KEYWORD2
+
+# MouseController
+mouseDataClear	KEYWORD2
 getButtons	KEYWORD2
-getWheel	KEYWORD2
 getMouseX	KEYWORD2
 getMouseY	KEYWORD2
+getWheel	KEYWORD2
+getWheelH	KEYWORD2
+
+# JoystickController
+joystickDataClear	KEYWORD2
+getAxis	KEYWORD2
+
