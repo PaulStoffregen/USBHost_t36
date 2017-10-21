@@ -877,12 +877,18 @@ public:
 		user_onHeartRateMonitor = f;
 	}
 	void onSpeedCadence(void (*f)(float speed, float distance, float rpm), uint32_t devid=0) {
+		profileSetup_SPDCAD(&ant.dcfg[PROFILE_SPDCAD], devid);
+		memset(&spdcad, 0, sizeof(spdcad));
 		user_onSpeedCadence = f;
 	}
 	void onSpeed(void (*f)(float speed, float distance), uint32_t devid=0) {
+		profileSetup_SPEED(&ant.dcfg[PROFILE_SPEED], devid);
+		memset(&spd, 0, sizeof(spd));
 		user_onSpeed = f;
 	}
 	void onCadence(void (*f)(float rpm), uint32_t devid=0) {
+		profileSetup_CADENCE(&ant.dcfg[PROFILE_CADENCE], devid);
+		memset(&cad, 0, sizeof(cad));
 		user_onCadence = f;
 	}
 	void setWheelCircumference(float meters) {

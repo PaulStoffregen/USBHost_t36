@@ -1130,9 +1130,9 @@ void AntPlus::payload_SPDCAD(TDCONFIG *cfg, const uint8_t *data, const size_t da
 	uint16_t speedTime = data[5] | (data[6] << 8);
 	uint16_t speedCt = data[7] | (data[8] << 8);
 	if (cadenceTime == spdcad.previous.cadenceTime
-	  && cadenceCt != spdcad.previous.cadenceCt
-	  && speedTime != spdcad.previous.speedTime
-	  && speedCt != spdcad.previous.speedCt) {
+	  && cadenceCt == spdcad.previous.cadenceCt
+	  && speedTime == spdcad.previous.speedTime
+	  && speedCt == spdcad.previous.speedCt) {
 		return; // no change
 	}
 	uint16_t cadence = (60 * (cadenceCt - spdcad.previous.cadenceCt) * 1024) / (cadenceTime - spdcad.previous.cadenceTime);
