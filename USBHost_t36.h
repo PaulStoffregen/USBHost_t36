@@ -900,6 +900,7 @@ public:
 	virtual int read(void);
 	virtual int availableForWrite();
 	virtual size_t write(uint8_t c);
+
 	using Print::write;
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
@@ -941,6 +942,7 @@ private:
 	volatile uint8_t  rxstate;// bitmask: which receive packets are queued
 	volatile uint8_t  txstate;
 	uint8_t pending_control;
+	uint8_t interface;
 	bool control_queued;
 	enum { CDCACM, FTDI, PL2303, CH341 } sertype;
 };
