@@ -3,7 +3,7 @@
 // This example is in the public domain
 
 #include "USBHost_t36.h"
-
+#define USBBAUD 115200
 USBHost myusb;
 USBHub hub1(myusb);
 USBHub hub2(myusb);
@@ -60,7 +60,10 @@ void loop()
         // If this is a new Serial device.
         if (drivers[i] == &userial) {
           // Lets try first outputting something to our USerial to see if it will go out...
-          userial.begin(1000000);
+          userial.begin(USBBAUD);
+
+//          delay(5);
+//          userial.println("ver");
 #if 0
           userial.println("abcdefghijklmnopqrstuvwxyz");
           userial.println("ABCDEFGHIJKLMNOPQURSTUVWYZ");
@@ -79,14 +82,16 @@ void loop()
     }
   }
 
-  while (Serial.available()) {
+  if (Serial.available()) {
     Serial.println("Serial Available");
-    int ch = Serial.read();
-    if (ch == '$') {
-      BioloidTest();
-      while (Serial.read() != -1);
+    while (Serial.available()) {
+      int ch = Serial.read();
+      if (ch == '$') {
+        BioloidTest();
+        while (Serial.read() != -1);
+      }
+      else userial.write(ch);
     }
-    else userial.write(ch);
   }
 
   while (Serial1.available()) {

@@ -225,7 +225,8 @@ bool USBSerial::claim(Device_t *dev, int type, const uint8_t *descriptors, uint3
 			pending_control = 0x0;	// Maybe don't need to do...
 			return true;
 		}
-#if 0
+#if 1
+		// BUGBUG: Note: there are probably more vendor/product pairs.. Maybe should create table of them
 		if (dev->idVendor == 0x67B && dev->idProduct == 0x2303) {
 			// Prolific Technology, Inc. PL2303 Serial Port
 			println("len = ", len);
@@ -241,7 +242,7 @@ bool USBSerial::claim(Device_t *dev, int type, const uint8_t *descriptors, uint3
 			//09 04 00 00 03 FF 00 00 00 07 05 81 03 0A 00 01 07 05 02 02 40 00 00 07 05 83 02 40 00 00 
 			uint32_t rxep = 0;
 			uint32_t txep = 0;
-			uint16_t descriptor_index = 9; 
+			uint32_t descriptor_index = 9; 
 			while (count_end_points-- && ((rxep == 0) || txep == 0)) {
 				if (descriptors[descriptor_index] != 7) return false; // length 7
 				if (descriptors[descriptor_index+1] != 5) return false; // ep desc
@@ -254,7 +255,7 @@ bool USBSerial::claim(Device_t *dev, int type, const uint8_t *descriptors, uint3
 					} else {
 						txep = descriptors[descriptor_index+2]; 
 					}
-				} 
+				}
 				descriptor_index += 7;  // setup to look at next one...
 			}
 			// Try to verify the end points. 
@@ -269,6 +270,7 @@ bool USBSerial::claim(Device_t *dev, int type, const uint8_t *descriptors, uint3
 				// TODO: free rxpipe
 				return false;
 			}
+
 			sertype = PL2303;
 			rxpipe->callback_function = rx_callback;
 			queue_Data_Transfer(rxpipe, rx1, 64, this);
@@ -280,10 +282,15 @@ bool USBSerial::claim(Device_t *dev, int type, const uint8_t *descriptors, uint3
 			txstate = 0;
 			txpipe->callback_function = tx_callback;
 			baudrate = 115200;
-			pending_control = 0x0F;
-			mk_setup(setup, 0x40, 0, 0, 0, 0); // reset port
-			queue_Control_Transfer(dev, &setup, NULL, this);
+
+			// Lets see if it will handle the same CDCACM - messages? 
+			println("PL2303: readRegister(0x04)");
+			// Need to setup  the data the line coding data
+			mk_setup(setup, 0xC0, 0x1, 0x8484, 0, 1);  
+			queue_Control_Transfer(dev, &setup, setupdata, this); 
 			control_queued = true;
+			setup_state = 1; 	// We are at step one of setup... 
+			pending_control = 0x3f;	// Maybe don't need to do...
 			return true;
 		}
 #endif
@@ -417,24 +424,52 @@ void USBSerial::control(const Transfer_t *transfer)
 	println("control callback (serial) ", pending_control, HEX);
 	control_queued = false;
 
-	// set data format
-	if (pending_control & 1) {
-		pending_control &= ~1;
-		mk_setup(setup, 0x40, 4, 8, 0, 0); // data format 8N1
-		queue_Control_Transfer(device, &setup, NULL, this);
-		control_queued = true;
-		return;
-	}
-	// set baud rate
-	if (pending_control & 2) {
-		pending_control &= ~2;
-		if (sertype == FTDI) {
+	// We will split this up by Serial type, maybe different functions? 
+
+	//-------------------------------------------------------------------------
+	// First FTDI
+	if (sertype == FTDI) {
+		if (pending_control & 1) {
+			pending_control &= ~1;
+			// set data format
+			mk_setup(setup, 0x40, 4, 8, 0, 0); // data format 8N1
+			queue_Control_Transfer(device, &setup, NULL, this);
+			control_queued = true;
+			return;
+		}
+		// set baud rate
+		if (pending_control & 2) {
+			pending_control &= ~2;
 			uint32_t baudval = 3000000 / baudrate;
 			mk_setup(setup, 0x40, 3, baudval, 0, 0);
 			queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
+			return;
+		}
+		// configure flow control
+		if (pending_control & 4) {
+			pending_control &= ~4;
+			mk_setup(setup, 0x40, 2, 0, 1, 0);
+			queue_Control_Transfer(device, &setup, NULL, this);
+			control_queued = true; 
+			return;
+		}
+		// set DTR
+		if (pending_control & 8) {
+			pending_control &= ~8;
+			mk_setup(setup, 0x40, 1, 0x0101, 0, 0);
+			queue_Control_Transfer(device, &setup, NULL, this);
+			control_queued = true;
+			return;
+		}
 
-		} else if (sertype == CDCACM) {
+	}
+
+	//-------------------------------------------------------------------------
+	// Now CDCACM
+	if (sertype == CDCACM) {
+		if (pending_control & 2) {
+			pending_control &= ~2;
 			// Should probably use data structure, but that may depend on byte ordering...
 			setupdata[0] = (baudrate) & 0xff;  // Setup baud rate 115200 - 0x1C200
 			setupdata[1] = (baudrate >> 8) & 0xff;
@@ -448,34 +483,183 @@ void USBSerial::control(const Transfer_t *transfer)
 			mk_setup(setup, 0x21, 0x20, 0, 0, 7);
 			queue_Control_Transfer(device, &setup, setupdata, this);
 			control_queued = true;
+			return;
 		}
-		return;
-	}
-	// configure flow control
-	if (pending_control & 4) {
-		pending_control &= ~4;
-		if (sertype == FTDI) {
-			mk_setup(setup, 0x40, 2, 0, 1, 0);
-			queue_Control_Transfer(device, &setup, NULL, this);
-			control_queued = true; 
-		} else if (sertype == CDCACM) {
-			println("Control - CDCACM DTR...");
+		// configure flow control
+		if (pending_control & 4) {
+			pending_control &= ~4;
+			println("Control - 0x21,0x22, 0x3");
 			// Need to setup  the data the line coding data
-			mk_setup(setup, 0x21, 0x22, 1, interface, 0);
+			mk_setup(setup, 0x21, 0x22, 3, 0, 0);
 			queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			return;
 		}
-
-		return;
 	}
-	// set DTR
-	if (pending_control & 8) {
-		pending_control &= ~8;
-		mk_setup(setup, 0x40, 1, 0x0101, 0, 0);
-		queue_Control_Transfer(device, &setup, NULL, this);
-		control_queued = true;
-		return;
+
+	//-------------------------------------------------------------------------
+	// Now PL2303 - Which appears to be a little more complicated
+	if (sertype == PL2303) {
+		if (pending_control & 1) {
+			// Still in larger setup state mode
+			switch (setup_state) {
+				case 1:
+					println("PL2303: writeRegister(0x04, 0x00)");
+					mk_setup(setup, 0x40, 1, 0x0404, 0, 0); // 
+					queue_Control_Transfer(device, &setup, NULL, this);
+					setup_state = 2; 
+					control_queued = true;
+					return;
+				case 2:
+					println("PL2303: readRegister(0x04)");
+					mk_setup(setup, 0xC0, 0x1, 0x8484, 0, 1);  
+					queue_Control_Transfer(device, &setup, setupdata, this); 
+					control_queued = true;
+					setup_state = 3; 
+					return;
+				case 3:
+					println("PL2303: v1 = readRegister(0x03)");
+					mk_setup(setup, 0xC0, 0x1, 0x8383, 0, 1);  
+					queue_Control_Transfer(device, &setup, setupdata, this); 
+					control_queued = true;
+					setup_state = 4; 
+					return;
+				case 4:
+					println("PL2303: readRegister(0x04)");
+					// Do we need this value long term or we could just leave in setup data? 
+					pl2303_v1 = setupdata[0];	// save the first bye of version
+					mk_setup(setup, 0xC0, 0x1, 0x8484, 0, 1);  
+					queue_Control_Transfer(device, &setup, setupdata, this); 
+					control_queued = true;
+					setup_state = 5; 
+					return;
+				case 5:
+					println("PL2303: writeRegister(0x04, 0x01)");
+					mk_setup(setup, 0x40, 1, 0x0404, 1, 0); // 
+					queue_Control_Transfer(device, &setup, NULL, this);
+					setup_state = 6; 
+					control_queued = true;
+					return;
+				case 6:
+					println("PL2303: readRegister(0x04)");
+					mk_setup(setup, 0xC0, 0x1, 0x8484, 0, 1);  
+					queue_Control_Transfer(device, &setup, setupdata, this); 
+					control_queued = true;
+					setup_state = 7; 
+					return;
+				case 7:
+					println("PL2303: v2 = readRegister(0x03)");
+					mk_setup(setup, 0xC0, 0x1, 0x8383, 0, 1);  
+					queue_Control_Transfer(device, &setup, setupdata, this); 
+					control_queued = true;
+					setup_state = 8; 
+					return;
+				case 8:
+					pl2303_v2 = setupdata[0];	// save the first bye of version
+					print(" PL2303 Version ", pl2303_v1, HEX);
+					println(":", pl2303_v2, HEX);
+					println("PL2303: writeRegister(0, 1)");
+					mk_setup(setup, 0x40, 1, 0, 1, 0); // 
+					queue_Control_Transfer(device, &setup, NULL, this);
+					setup_state = 9; 
+					control_queued = true;
+					return;
+				case 9:
+					println("PL2303: writeRegister(1, 0)");
+					mk_setup(setup, 0x40, 1, 1, 0, 0); // 
+					queue_Control_Transfer(device, &setup, NULL, this);
+					setup_state = 10; 
+					control_queued = true;
+					return;
+				case 10:
+					println("PL2303: writeRegister(2, 44)");
+					mk_setup(setup, 0x40, 1, 2, 0x44, 0); // 
+					queue_Control_Transfer(device, &setup, NULL, this);
+					setup_state = 11; 
+					control_queued = true;
+					return;
+				case 11:
+					println("PL2303: writeRegister(8, 0)");
+					mk_setup(setup, 0x40, 1, 8, 0, 0); // 
+					queue_Control_Transfer(device, &setup, NULL, this);
+					setup_state = 12; 
+					control_queued = true;
+					return;
+				case 12:
+					println("PL2303: writeRegister(9, 0)");
+					mk_setup(setup, 0x40, 1, 9, 0, 0); // 
+					queue_Control_Transfer(device, &setup, NULL, this);
+					setup_state = 13; 
+					control_queued = true;
+					return;
+				case 13:
+					println("PL2303: Read current Baud/control");
+					mk_setup(setup, 0xA1, 0x21, 0, 0, 7);
+					queue_Control_Transfer(device, &setup, setupdata, this);
+					control_queued = true;
+					break;
+			}
+			pending_control &= ~1;  // We are finally going to leave this list and join the rest
+			if (control_queued) return;
+		}
+
+		// set baud rate
+		if (pending_control & 2) {
+			pending_control &= ~2;
+			// See what the read returned earlier
+			print("PL2303: Returned configuration data: ");
+			print_hexbytes(setupdata, 7);
+
+			// Should probably use data structure, but that may depend on byte ordering...
+			setupdata[0] = (baudrate) & 0xff;  // Setup baud rate 115200 - 0x1C200
+			setupdata[1] = (baudrate >> 8) & 0xff;
+			setupdata[2] = (baudrate >> 16) & 0xff;
+			setupdata[3] = (baudrate >> 24) & 0xff;
+	        setupdata[4] = 0; // 0 - 1 stop bit, 1 - 1.5 stop bits, 2 - 2 stop bits
+	        setupdata[5] = 0; // 0 - None, 1 - Odd, 2 - Even, 3 - Mark, 4 - Space
+	        setupdata[6] = 8; // Data bits (5, 6, 7, 8 or 16)
+	        print("PL2303: Set baud/control: ", baudrate, HEX);
+	        print(" = ");
+	        print_hexbytes(&setupdata, 7);
+			mk_setup(setup, 0x21, 0x20, 0, 0, 7);
+			queue_Control_Transfer(device, &setup, setupdata, this);
+			control_queued = true;
+			return;
+		}
+		if (pending_control & 4) {
+			pending_control &= ~4;
+			println("PL2303: writeRegister(0, 0)");
+			mk_setup(setup, 0x40, 1, 0, 0, 0); // 
+			queue_Control_Transfer(device, &setup, NULL, this);
+			control_queued = true;
+			return; 
+		}
+		if (pending_control & 8) {
+			pending_control &= ~8;
+			println("PL2303: Read current Baud/control");
+			memset(setupdata, 0, sizeof(setupdata));	// clear it to see if we read it...
+			mk_setup(setup, 0xA1, 0x21, 0, 0, 7);
+			queue_Control_Transfer(device, &setup, setupdata, this);
+			control_queued = true;
+		}
+		if (pending_control & 0x10) {
+			pending_control &= ~0x10;
+			print("PL2303: Returned configuration data: ");
+			print_hexbytes(setupdata, 7);
+
+			println("PL2303: 0x21, 0x22, 0x3");
+			mk_setup(setup, 0x21, 0x22, 3, 0, 0); // 
+			queue_Control_Transfer(device, &setup, NULL, this);
+			control_queued = true;
+			return;
+		}
+		if (pending_control & 0x30) {
+			pending_control &= ~0x30;
+			println("PL2303: 0x21, 0x22, 0x3");
+			mk_setup(setup, 0x21, 0x22, 3, 0, 0); // 
+			queue_Control_Transfer(device, &setup, NULL, this);
+			control_queued = true;
+		}
 	}
 }
 
@@ -495,6 +679,7 @@ void USBSerial::tx_callback(const Transfer_t *transfer)
 	if (!transfer->driver) return;
 	((USBSerial *)(transfer->driver))->tx_data(transfer);
 }
+
 
 void USBSerial::rx_data(const Transfer_t *transfer)
 {
@@ -634,6 +819,12 @@ void USBSerial::timer_event(USBDriverTimer *whichTimer)
 	uint32_t count;
 	uint32_t head = txhead;
 	uint32_t tail = txtail;
+	if (pending_control) {
+		// We are still doing setup postpone for awhile..
+		txtimer.start(1200);
+		println(" Postpone: setup pending_control");
+		return; // no outgoing buffers available, try again later
+	}
 	if (head == tail) {
 		println("  *** Empty ***");
 		return; // nothing to transmit

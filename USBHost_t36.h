@@ -942,6 +942,9 @@ private:
 	volatile uint8_t  rxstate;// bitmask: which receive packets are queued
 	volatile uint8_t  txstate;
 	uint8_t pending_control;
+	uint8_t setup_state;	// PL2303 - has several steps... Could use pending control?
+	uint8_t pl2303_v1;		// Which version do we have
+	uint8_t pl2303_v2;
 	uint8_t interface;
 	bool control_queued;
 	enum { CDCACM, FTDI, PL2303, CH341 } sertype;
