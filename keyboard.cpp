@@ -62,6 +62,7 @@ bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descripto
 	datapipe = new_Pipe(dev, 3, endpoint, 1, 8, 64);
 	datapipe->callback_function = callback;
 	queue_Data_Transfer(datapipe, report, 8, this);
+	keyboardConnected = true;
 	return true;
 }
 
