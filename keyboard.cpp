@@ -85,6 +85,7 @@ void KeyboardController::new_data(const Transfer_t *transfer)
 
 void KeyboardController::disconnect()
 {
+	keyboardConnected = false;
 	// TODO: free resources
 }
 
