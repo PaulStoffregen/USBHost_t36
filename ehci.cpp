@@ -54,7 +54,11 @@
 // slowest rate we can poll interrupt endpoints.  Each entry uses
 // 12 bytes (4 for a pointer, 8 for bandwidth management).
 // Supported values: 8, 16, 32, 64, 128, 256, 512, 1024
+#if defined(USBHS_PERIODIC_LIST_SIZE)
+#define PERIODIC_LIST_SIZE (USBHS_PERIODIC_LIST_SIZE)
+#else
 #define PERIODIC_LIST_SIZE  32
+#endif
 
 // The EHCI periodic schedule, used for interrupt pipes/endpoints
 static uint32_t periodictable[PERIODIC_LIST_SIZE] __attribute__ ((aligned(4096), used));
