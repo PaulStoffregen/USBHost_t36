@@ -305,7 +305,7 @@ protected:
 	virtual void disconnect();
 	bool keyboardConnected = false;
 	static void callback(const Transfer_t *transfer);
-	void new_data(const Transfer_t *transfer);	
+	void new_data(const Transfer_t *transfer);
 private:
 	void (*keyPressedFunction)();
 	void (*keyReleasedFunction)();
