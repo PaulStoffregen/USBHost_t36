@@ -225,8 +225,8 @@ bool USBSerial::claim(Device_t *dev, int type, const uint8_t *descriptors, uint3
 			pending_control = 0x0;	// Maybe don't need to do...
 			return true;
 		}
-#if 1
-		// BUGBUG: Note: there are probably more vendor/product pairs.. Maybe should create table of them
+
+		// TODO: Note: there are probably more vendor/product pairs.. Maybe should create table of them
 		if (dev->idVendor == 0x67B && dev->idProduct == 0x2303) {
 			// Prolific Technology, Inc. PL2303 Serial Port
 			println("len = ", len);
@@ -293,26 +293,21 @@ bool USBSerial::claim(Device_t *dev, int type, const uint8_t *descriptors, uint3
 			pending_control = 0x3f;	// Maybe don't need to do...
 			return true;
 		}
-#endif
 	} else if (type != 1) return false;
-#if 1
-	// Try some ttyACM types? 
-	// This code may be similar to MIDI code. 
-	// But first pass see if we can simply look at the interface...
-	// Lets walk through end points and see if we 
-	// can find an RX and TX bulk transfer end point.
-	// 0  1  2  3  4  5  6  7  8 *9 10  1  2  3 *4  5  6  7 *8  9 20  1  2 *3  4  5  6  7  8  9*30  1  2  3  4  5  6  7  8 *9 40  1  2  3  4  5 *6  7  8  9 50  1  2 
-	// USB2AX
-	//09 04 00 00 01 02 02 01 00 05 24 00 10 01 04 24 02 06 05 24 06 00 01 07 05 82 03 08 00 FF 
-	//09 04 01 00 02 0A 00 00 00 07 05 04 02 10 00 01 07 05 83 02 10 00 01 
-    // Teensy 3.6
-    //09 04 00 00 01 02 02 01 00 05 24 00 10 01 05 24 01 01 01 04 24 02 06 05 24 06 00 01 07 05 82 03 10 00 40 
-    //09 04 01 00 02 0A 00 00 00 07 05 03 02 40 00 00 07 05 84 02 40 00 00 
+	// TTYACM: <Composit device> 
+	// 
+	// We first tried to claim a simple ttyACM device like a teensy who is configured
+	// only as Serial at the device level like what was done for midi
+	//
+	// However some devices are a compisit of multiple Interfaces, so see if this Interface
+	// is of the CDC Interface class and 0 for SubClass and protocol
+	// Todo: some of this can maybe be combined with the Whole device code above. 
+	
 	if (descriptors[0] != 9 || descriptors[1] != 4) return false; // interface descriptor
 	if (descriptors[4] < 2) return false; 		// less than 2 end points
 	if (descriptors[5] != 0xA) return false; // bInterfaceClass, 0xa = CDC data
 	if (descriptors[6] != 0) return false; // bInterfaceSubClass
-	if (descriptors[7] != 0) return false; // bInterfaceProtocol, 1 = Keyboard
+	if (descriptors[7] != 0) return false; // bInterfaceProtocol
 
 	if (descriptors[9] != 7) return false; // length 7
 	if (descriptors[10] != 5) return false; // ep desc
@@ -368,9 +363,6 @@ bool USBSerial::claim(Device_t *dev, int type, const uint8_t *descriptors, uint3
 	pending_control = 0x04;	// Maybe don't need to do...
 	control_queued = true;
 	return true;
-#else
-	return false;
-#endif		
 }
 
 // check if two legal endpoints, 1 receive & 1 transmit
