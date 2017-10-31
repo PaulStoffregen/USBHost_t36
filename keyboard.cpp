@@ -125,10 +125,14 @@ bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descripto
 	if (descriptors[21] != 3) return false; // must be interrupt type
 	uint32_t size = descriptors[22] | (descriptors[23] << 8);
 	println("packet size = ", size);
-	if (size != 8) {
-		return false; // must be 8 bytes for Keyboard Boot Protocol
+	if ((size < 8) || (size > 64)) {
+		return false; // Keyboard Boot Protocol is 8 bytes, but maybe others have longer... 
 	}
+#ifdef USBHS_KEYBOARD_INTERVAL 
+	uint32_t interval = USBHS_KEYBOARD_INTERVAL;
+#else
 	uint32_t interval = descriptors[24];
+#endif
 	println("polling interval = ", interval);
 	datapipe = new_Pipe(dev, 3, endpoint, 1, 8, interval);
 	datapipe->callback_function = callback;
