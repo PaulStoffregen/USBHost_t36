@@ -28,14 +28,21 @@
 #define println USBHost::println_
 
 /************************************************************/
-//  Control Transfer For Configuration
+//  Define mapping VID/PID - to Serial Device type.
 /************************************************************/
-typedef struct {
-        uint32_t dwDTERate; // Data Terminal Rate in bits per second
-        uint8_t bCharFormat; // 0 - 1 stop bit, 1 - 1.5 stop bits, 2 - 2 stop bits
-        uint8_t bParityType; // 0 - None, 1 - Odd, 2 - Even, 3 - Mark, 4 - Space
-        uint8_t bDataBits; // Data bits (5, 6, 7, 8 or 16)
-} LINE_CODING;
+USBSerial::product_vendor_mapping_t USBSerial::pid_vid_mapping[] = {
+	// FTDI mappings. 
+	{0x0403, 0x6001, USBSerial::FTDI},
+
+	// PL2303
+	{0x67B,0x2303, USBSerial::PL2303}, 
+
+	// CH341
+	{0x4348, 0x5523, USBSerial::CH341 },
+	{0x1a86, 0x7523, USBSerial::CH341 },
+	{0x1a86, 0x5523, USBSerial::CH341 }
+};
+
 
 /************************************************************/
 //  Initialization and claiming of devices & interfaces
@@ -60,51 +67,9 @@ bool USBSerial::claim(Device_t *dev, int type, const uint8_t *descriptors, uint3
    	println(", bDeviceProtocol = ", dev->bDeviceProtocol);
 	print_hexbytes(descriptors, len);
 	if (type == 0) {
-		if (dev->idVendor == 0x0403 && dev->idProduct == 0x6001) {
-			// FTDI FT232
-			println("len = ", len);
-			if (len < 23) return false;
-			if (descriptors[0] != 9) return false; // length 9
-			if (descriptors[9] != 7) return false; // length 7
-			if (descriptors[10] != 5) return false; // ep desc
-			uint32_t rxep = descriptors[11];
-			if (descriptors[12] != 2) return false; // bulk type
-			if (descriptors[13] != 64) return false; // size 64
-			if (descriptors[14] != 0) return false;
-			if (descriptors[16] != 7) return false; // length 7
-			if (descriptors[17] != 5) return false; // ep desc
-			uint32_t txep = descriptors[18];
-			if (descriptors[19] != 2) return false; // bulk type
-			if (descriptors[20] != 64) return false; // size 64
-			if (descriptors[21] != 0) return false;
-			if (!check_rxtx_ep(rxep, txep)) return false;
-			print("FTDI, rxep=", rxep & 15);
-			println(", txep=", txep);
-			if (!init_buffers(64, 64)) return false;
-			rxpipe = new_Pipe(dev, 2, rxep & 15, 1, 64);
-			if (!rxpipe) return false;
-			txpipe = new_Pipe(dev, 2, txep, 0, 64);
-			if (!txpipe) {
-				// TODO: free rxpipe
-				return false;
-			}
-			sertype = FTDI;
-			rxpipe->callback_function = rx_callback;
-			queue_Data_Transfer(rxpipe, rx1, 64, this);
-			rxstate = 1;
-			if (rxsize > 128) {
-				queue_Data_Transfer(rxpipe, rx2, 64, this);
-				rxstate = 3;
-			}
-			txstate = 0;
-			txpipe->callback_function = tx_callback;
-			baudrate = 115200;
-			pending_control = 0x0F;
-			mk_setup(setup, 0x40, 0, 0, 0, 0); // reset port
-			queue_Control_Transfer(dev, &setup, NULL, this);
-			control_queued = true;
-			return true;
-		} else if ((dev->bDeviceClass == 2) && (dev->bDeviceSubClass == 0)) {
+		//---------------------------------------------------------------------
+		// CDCACM
+		if ((dev->bDeviceClass == 2) && (dev->bDeviceSubClass == 0)) {
 			// It is a communication device see if we can extract the data... 
 			// Try some ttyACM types? 
 			// This code may be similar to MIDI code. 
@@ -226,72 +191,198 @@ bool USBSerial::claim(Device_t *dev, int type, const uint8_t *descriptors, uint3
 			return true;
 		}
 
-		// TODO: Note: there are probably more vendor/product pairs.. Maybe should create table of them
-		if (dev->idVendor == 0x67B && dev->idProduct == 0x2303) {
-			// Prolific Technology, Inc. PL2303 Serial Port
-			println("len = ", len);
-			uint8_t count_end_points = descriptors[4];
-			if (count_end_points < 2) return false; // not enough end points
-			if (len < 23) return false;
-			if (descriptors[0] != 9) return false; // length 9
-
-			// Lets walk through end points and see if we 
-			// can find an RX and TX bulk transfer end point.
-			//vid=67B, pid=2303
-			// 0  1  2  3  4  5  6  7  8  9 10  1  2  3  4  5  6  7  8  9 20  1  2  3  4  5  6  7  8  9
-			//09 04 00 00 03 FF 00 00 00 07 05 81 03 0A 00 01 07 05 02 02 40 00 00 07 05 83 02 40 00 00 
-			uint32_t rxep = 0;
-			uint32_t txep = 0;
-			uint32_t descriptor_index = 9; 
-			while (count_end_points-- && ((rxep == 0) || txep == 0)) {
-				if (descriptors[descriptor_index] != 7) return false; // length 7
-				if (descriptors[descriptor_index+1] != 5) return false; // ep desc
-				if ((descriptors[descriptor_index+3] == 2) 
-					&& (descriptors[descriptor_index+4] == 64)
-					&& (descriptors[descriptor_index+5] == 0)) {
-					// have a bulk EP size 
-					if (descriptors[descriptor_index+2] & 0x80 ) {
-						rxep = descriptors[descriptor_index+2]; 
-					} else {
-						txep = descriptors[descriptor_index+2]; 
-					}
+		// See if the vendor_id:product_id is in our list of products.
+		sertype = UNKNOWN;
+		for (uint8_t i = 0; i < (sizeof(pid_vid_mapping)/sizeof(pid_vid_mapping[0])); i++) {
+			if ((dev->idVendor == pid_vid_mapping[i].idVendor) && (dev->idProduct == pid_vid_mapping[i].idProduct)) {
+				sertype = pid_vid_mapping[i].sertype;
+				break;
+			}
+		}  
+		switch (sertype) {
+		//---------------------------------------------------------------------
+		// FTDI
+		case FTDI:
+			{
+				// FTDI FT232
+				println("len = ", len);
+				if (len < 23) return false;
+				if (descriptors[0] != 9) return false; // length 9
+				if (descriptors[9] != 7) return false; // length 7
+				if (descriptors[10] != 5) return false; // ep desc
+				uint32_t rxep = descriptors[11];
+				if (descriptors[12] != 2) return false; // bulk type
+				if (descriptors[13] != 64) return false; // size 64
+				if (descriptors[14] != 0) return false;
+				if (descriptors[16] != 7) return false; // length 7
+				if (descriptors[17] != 5) return false; // ep desc
+				uint32_t txep = descriptors[18];
+				if (descriptors[19] != 2) return false; // bulk type
+				if (descriptors[20] != 64) return false; // size 64
+				if (descriptors[21] != 0) return false;
+				if (!check_rxtx_ep(rxep, txep)) return false;
+				print("FTDI, rxep=", rxep & 15);
+				println(", txep=", txep);
+				if (!init_buffers(64, 64)) return false;
+				rxpipe = new_Pipe(dev, 2, rxep & 15, 1, 64);
+				if (!rxpipe) return false;
+				txpipe = new_Pipe(dev, 2, txep, 0, 64);
+				if (!txpipe) {
+					// TODO: free rxpipe
+					return false;
 				}
-				descriptor_index += 7;  // setup to look at next one...
+				sertype = FTDI;
+				rxpipe->callback_function = rx_callback;
+				rxsize = 64;
+				queue_Data_Transfer(rxpipe, rx1, 64, this);
+				rxstate = 1;
+				txsize = 64;
+				txstate = 0;
+				txpipe->callback_function = tx_callback;
+				baudrate = 115200;
+				pending_control = 0x0F;
+				mk_setup(setup, 0x40, 0, 0, 0, 0); // reset port
+				queue_Control_Transfer(dev, &setup, NULL, this);
+				control_queued = true;
+				return true;
 			}
-			// Try to verify the end points. 
-			if (!check_rxtx_ep(rxep, txep)) return false;
-			print("FTDI, rxep=", rxep & 15);
-			println(", txep=", txep);
-			if (!init_buffers(64, 64)) return false;
-			rxpipe = new_Pipe(dev, 2, rxep & 15, 1, 64);
-			if (!rxpipe) return false;
-			txpipe = new_Pipe(dev, 2, txep, 0, 64);
-			if (!txpipe) {
-				// TODO: free rxpipe
-				return false;
-			}
+		//------------------------------------------------------------------------
+		// Prolific
+		// TODO: Note: there are probably more vendor/product pairs.. Maybe should create table of them
+		case PL2303: 
+			{
+				// Prolific Technology, Inc. PL2303 Serial Port
+				println("len = ", len);
+				uint8_t count_end_points = descriptors[4];
+				if (count_end_points < 2) return false; // not enough end points
+				if (len < 23) return false;
+				if (descriptors[0] != 9) return false; // length 9
 
-			sertype = PL2303;
-			rxpipe->callback_function = rx_callback;
-			queue_Data_Transfer(rxpipe, rx1, 64, this);
-			rxstate = 1;
-			if (rxsize > 128) {
-				queue_Data_Transfer(rxpipe, rx2, 64, this);
-				rxstate = 3;
-			}
-			txstate = 0;
-			txpipe->callback_function = tx_callback;
-			baudrate = 115200;
+				// Lets walk through end points and see if we 
+				// can find an RX and TX bulk transfer end point.
+				//vid=67B, pid=2303
+				// 0  1  2  3  4  5  6  7  8  9 10  1  2  3  4  5  6  7  8  9 20  1  2  3  4  5  6  7  8  9
+				//09 04 00 00 03 FF 00 00 00 07 05 81 03 0A 00 01 07 05 02 02 40 00 00 07 05 83 02 40 00 00 
+				uint32_t rxep = 0;
+				uint32_t txep = 0;
+				uint32_t descriptor_index = 9; 
+				while (count_end_points-- && ((rxep == 0) || txep == 0)) {
+					if (descriptors[descriptor_index] != 7) return false; // length 7
+					if (descriptors[descriptor_index+1] != 5) return false; // ep desc
+					if ((descriptors[descriptor_index+3] == 2) 
+						&& (descriptors[descriptor_index+4] == 64)
+						&& (descriptors[descriptor_index+5] == 0)) {
+						// have a bulk EP size 
+						if (descriptors[descriptor_index+2] & 0x80 ) {
+							rxep = descriptors[descriptor_index+2];
+							rxsize = descriptors[descriptor_index+4];
+						} else {
+							txep = descriptors[descriptor_index+2]; 
+							txsize = descriptors[descriptor_index+4];
+						}
+					}
+					descriptor_index += 7;  // setup to look at next one...
+				}
+				// Try to verify the end points. 
+				if (!check_rxtx_ep(rxep, txep)) return false;
+				print("PL2303, rxep=", rxep & 15);
+				println(", txep=", txep);
+				if (!init_buffers(64, 64)) return false;
+				rxpipe = new_Pipe(dev, 2, rxep & 15, 1, 64);
+				if (!rxpipe) return false;
+				txpipe = new_Pipe(dev, 2, txep, 0, 64);
+				if (!txpipe) {
+					// TODO: free rxpipe
+					return false;
+				}
 
-			// Lets see if it will handle the same CDCACM - messages? 
-			println("PL2303: readRegister(0x04)");
-			// Need to setup  the data the line coding data
-			mk_setup(setup, 0xC0, 0x1, 0x8484, 0, 1);  
-			queue_Control_Transfer(dev, &setup, setupdata, this); 
-			control_queued = true;
-			setup_state = 1; 	// We are at step one of setup... 
-			pending_control = 0x3f;	// Maybe don't need to do...
-			return true;
+				sertype = PL2303;
+				rxpipe->callback_function = rx_callback;
+				queue_Data_Transfer(rxpipe, rx1, 64, this);
+				rxstate = 1;
+				txstate = 0;
+				txpipe->callback_function = tx_callback;
+				baudrate = 115200;
+
+				// Lets see if it will handle the same CDCACM - messages? 
+				println("PL2303: readRegister(0x04)");
+				// Need to setup  the data the line coding data
+				mk_setup(setup, 0xC0, 0x1, 0x8484, 0, 1);  
+				queue_Control_Transfer(dev, &setup, setupdata, this); 
+				control_queued = true;
+				setup_state = 1; 	// We are at step one of setup... 
+				pending_control = 0x3f;
+				return true;
+			}
+		//------------------------------------------------------------------------
+		// CH341
+		case CH341:
+			{
+				println("len = ", len);
+				uint8_t count_end_points = descriptors[4];
+				if (count_end_points < 2) return false; // not enough end points
+				if (len < 23) return false;
+				if (descriptors[0] != 9) return false; // length 9
+
+				// Lets walk through end points and see if we 
+				// can find an RX and TX bulk transfer end point.
+				// vid=1A86, pid=7523, bDeviceClass = 255, bDeviceSubClass = 0, bDeviceProtocol = 0
+				// 0  1  2  3  4  5  6  7  8  9 10  1  2  3  4  5  6  7  8  9 20  1  2  3  4  5  6  7  8  9
+				//09 04 00 00 03 FF 01 02 00 07 05 82 02 20 00 00 07 05 02 02 20 00 00 07 05 81 03 08 00 01 
+				uint32_t rxep = 0;
+				uint32_t txep = 0;
+				uint32_t descriptor_index = 9; 
+				while (count_end_points-- && ((rxep == 0) || txep == 0)) {
+					if (descriptors[descriptor_index] != 7) return false; // length 7
+					if (descriptors[descriptor_index+1] != 5) return false; // ep desc
+					if ((descriptors[descriptor_index+3] == 2) 
+						&& (descriptors[descriptor_index+4] <= 64)
+						&& (descriptors[descriptor_index+5] == 0)) {
+						// have a bulk EP size 
+						if (descriptors[descriptor_index+2] & 0x80 ) {
+							rxep = descriptors[descriptor_index+2]; 
+							rxsize = descriptors[descriptor_index+4];
+						} else {
+							txep = descriptors[descriptor_index+2]; 
+							txsize = descriptors[descriptor_index+4];
+						}
+					}
+					descriptor_index += 7;  // setup to look at next one...
+				}
+				// Try to verify the end points. 
+				if (!check_rxtx_ep(rxep, txep)) return false;
+				print("ch341, rxep=", rxep & 15);
+				println(", txep=", txep);
+				if (!init_buffers(rxsize, txsize)) return false;
+				rxpipe = new_Pipe(dev, 2, rxep & 15, 1, rxsize);
+				if (!rxpipe) return false;
+				txpipe = new_Pipe(dev, 2, txep, 0, txsize);
+				if (!txpipe) {
+					// TODO: free rxpipe
+					return false;
+				}
+
+				rxpipe->callback_function = rx_callback;
+				queue_Data_Transfer(rxpipe, rx1, rxsize, this);
+				rxstate = 1;
+				txstate = 0;
+				txpipe->callback_function = tx_callback;
+				baudrate = 115200;
+
+				// Lets see if it will handle the same CDCACM - messages? 
+				println("CH341:  0xC0, 0x5f, 0, 0, 8");
+				// Need to setup  the data the line coding data
+				mk_setup(setup, 0xC0, 0x5f, 0, 0, sizeof(setupdata));  
+				queue_Control_Transfer(dev, &setup, setupdata, this); 
+				control_queued = true;
+				setup_state = 1; 	// We are at step one of setup... 
+				pending_control = 0x3f;	
+				return true;
+			}
+		//------------------------------------------------------------------------
+		// PID:VID - not in our product list. 
+		default:
+			return false;
 		}
 	} else if (type != 1) return false;
 	// TTYACM: <Composit device> 
@@ -653,6 +744,140 @@ void USBSerial::control(const Transfer_t *transfer)
 			control_queued = true;
 		}
 	}
+
+	if (sertype == CH341) {
+		print("  Transfer: ");
+		print_hexbytes(&transfer->setup, sizeof(setup_t));
+		if (transfer->length) {
+			print("  data: ");
+			print_hexbytes(transfer->buffer, transfer->length);
+		}
+		if (pending_control & 1) {
+			// Still in larger setup state mode
+			switch (setup_state) {
+				case 1:
+					print("  Returned: ");
+					print_hexbytes(transfer->buffer, transfer->length);
+					println("CH341: 40, a1, 0, 0, 0");
+					mk_setup(setup, 0x40, 0xa1, 0, 0, 0); // 
+					queue_Control_Transfer(device, &setup, NULL, this);
+					setup_state = 2; 
+					control_queued = true;
+					return;
+				case 2:
+					ch341_setBaud(0);	// send the first byte of the baud rate
+					control_queued = true;
+					setup_state = 3;
+					return;
+				case 3:
+					ch341_setBaud(1);	// send the second byte of the baud rate
+					control_queued = true;
+					setup_state = 4;
+					return;
+				case 4:
+					println("CH341: c0, 95, 2518, 0, 8");
+					mk_setup(setup, 0xc0, 0x95, 0x2518, 0, sizeof(setup)); // 
+					queue_Control_Transfer(device, &setup, setupdata, this);
+					setup_state = 5; 
+					control_queued = true;
+					return;
+				case 5:
+					print("  Returned: ");
+					print_hexbytes(transfer->buffer, transfer->length);
+					println("CH341: 40, 0x9a, 0x2518, 0x0050, 0");
+					mk_setup(setup, 0x40, 0x9a, 0x2518, 0x0050, 0); // 
+					queue_Control_Transfer(device, &setup, NULL, this);
+					setup_state = 6; 
+					control_queued = true;
+					return;
+				case 6:
+					println("CH341: c0, 95, 0x706, 0, 8 - get status");
+					mk_setup(setup, 0xc0, 0x95, 0x706, 0, sizeof(setup)); // 
+					queue_Control_Transfer(device, &setup, setupdata, this);
+					setup_state = 7; 
+					control_queued = true;
+					return;
+				case 7:
+					print("  Returned: ");
+					print_hexbytes(transfer->buffer, transfer->length);
+					println("CH341: 40, 0xa1, 0x501f, 0xd90a, 0");
+					mk_setup(setup, 0x40, 0xa1, 0x501f, 0xd90a, 0); // 
+					queue_Control_Transfer(device, &setup, NULL, this);
+					setup_state = 8; 
+					control_queued = true;
+					break;
+			}
+			pending_control &= ~1;  // We are finally going to leave this list and join the rest
+			if (control_queued) return;
+		}
+		// set baud rate
+		if (pending_control & 2) {
+			pending_control &= ~2;
+			ch341_setBaud(0);	// send the first byte of the baud rate
+			control_queued = true;
+			return;
+		}
+		if (pending_control & 4) {
+			pending_control &= ~4;
+			ch341_setBaud(1);	// send the first byte of the baud rate
+			control_queued = true;
+			return;
+		}
+		if (pending_control & 8) {
+			pending_control &= ~8;
+			// This is setting handshake need to figure out what...
+			println("CH341: 0x40, 0xa4, 0xff9f, 0, 0 - Handshake");
+			mk_setup(setup, 0x40, 0xa4, 0xff9f, 0, 0); // 
+			queue_Control_Transfer(device, &setup, NULL, this);
+			control_queued = true;
+			return;
+		}
+		if (pending_control & 0x10) {
+			pending_control &= ~0x10;
+			// This is setting handshake need to figure out what...
+			println("CH341: c0, 95, 0x706, 0, 8 - get status");
+			mk_setup(setup, 0xc0, 0x95, 0x706, 0, sizeof(setup)); // 
+			queue_Control_Transfer(device, &setup, setupdata, this);
+			control_queued = true;
+			return;
+		}
+		if (pending_control & 0x30) {
+			pending_control &= ~0x30;
+			print("  Returned: ");
+			print_hexbytes(transfer->buffer, transfer->length);
+			return;
+		}
+	}
+}
+
+#define CH341_BAUDBASE_FACTOR 1532620800
+#define CH341_BAUDBASE_DIVMAX 3
+void USBSerial::ch341_setBaud(uint8_t byte_index) {
+	uint16_t a, b;
+	uint32_t factor;
+	uint16_t divisor;
+
+	factor = (CH341_BAUDBASE_FACTOR / baudrate);
+	divisor = CH341_BAUDBASE_DIVMAX;
+
+	while ((factor > 0xfff0) && divisor) {
+		factor >>= 3;
+		divisor--;
+	}
+
+	factor = 0x10000 - factor;
+	a = (factor & 0xff00) | divisor;
+	b = factor & 0xff;
+
+	if (byte_index == 0) {
+		println("CH341: 40, 0x9a, 0x1312... (Baud byte 0):", a, HEX);
+		mk_setup(setup, 0x40, 0x9a, 0x1312, a, 0); // 
+	} else {
+		println("CH341: 40, 0x9a, 0x0f2c... (Baud byte 1):", b, HEX);
+		mk_setup(setup, 0x40, 0x9a, 0x0f2c, b, 0); // 
+	}
+	queue_Control_Transfer(device, &setup, setupdata, this);
+	control_queued = true;
 }
 
 

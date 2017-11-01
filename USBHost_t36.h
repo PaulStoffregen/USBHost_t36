@@ -56,7 +56,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-//#define USBHOST_PRINT_DEBUG
+#define USBHOST_PRINT_DEBUG
 
 /************************************************/
 /*  Data Types                                  */
@@ -889,7 +889,9 @@ private:
 //--------------------------------------------------------------------------
 
 class USBSerial: public USBDriver, public Stream {
-public:
+	public:
+
+
 	// FIXME: need different USBSerial, with bigger buffers for 480 Mbit & faster speed
 	enum { BUFFER_SIZE = 648 }; // must hold at least 6 max size packets, plus 2 extra bytes
 	USBSerial(USBHost &host) : txtimer(this) { init(); }
@@ -916,6 +918,7 @@ private:
 	void init();
 	static bool check_rxtx_ep(uint32_t &rxep, uint32_t &txep);
 	bool init_buffers(uint32_t rsize, uint32_t tsize);
+	void ch341_setBaud(uint8_t byte_index);
 private:
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
@@ -947,7 +950,16 @@ private:
 	uint8_t pl2303_v2;
 	uint8_t interface;
 	bool control_queued;
-	enum { CDCACM, FTDI, PL2303, CH341 } sertype;
+	typedef enum { UNKNOWN=0, CDCACM, FTDI, PL2303, CH341 } sertype_t;
+	sertype_t sertype;
+
+	typedef struct {
+		uint16_t 	idVendor;
+		uint16_t 	idProduct;
+		sertype_t 	sertype;
+	} product_vendor_mapping_t;
+	static product_vendor_mapping_t pid_vid_mapping[];
+
 };
 
 //--------------------------------------------------------------------------
