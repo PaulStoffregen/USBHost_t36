@@ -56,7 +56,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-//#define USBHOST_PRINT_DEBUG
+#define USBHOST_PRINT_DEBUG
 
 /************************************************/
 /*  Data Types                                  */
@@ -91,6 +91,7 @@ class USBDriverTimer;
 /************************************************/
 /*  Added Defines                               */
 /************************************************/
+// Keyboard special Keys
 #define KEYD_UP    		0xDA
 #define KEYD_DOWN    	0xD9
 #define KEYD_LEFT   	0xD8
@@ -113,6 +114,22 @@ class USBDriverTimer;
 #define KEYD_F10       	0xCB
 #define KEYD_F11       	0xCC
 #define KEYD_F12       	0xCD
+
+
+// USBSerial formats - Lets encode format into bits
+// Bits: 0-4 - Number of data bits 
+// Bits: 5-7 - Parity (0=none, 1=odd, 2 = even)
+// bits: 8-9 - Stop bits. 0=1, 1=2
+
+
+#define USBHOST_SERIAL_7E1 0x027
+#define USBHOST_SERIAL_7O1 0x047
+#define USBHOST_SERIAL_8N1 0x08
+#define USBHOST_SERIAL_8N2 0x108
+#define USBHOST_SERIAL_8E1 0x028
+#define USBHOST_SERIAL_8O1 0x048
+
+
 
 /************************************************/
 /*  Data Structure Definitions                  */
@@ -889,11 +906,13 @@ private:
 //--------------------------------------------------------------------------
 
 class USBSerial: public USBDriver, public Stream {
-public:
+	public:
+
+
 	// FIXME: need different USBSerial, with bigger buffers for 480 Mbit & faster speed
 	enum { BUFFER_SIZE = 648 }; // must hold at least 6 max size packets, plus 2 extra bytes
 	USBSerial(USBHost &host) : txtimer(this) { init(); }
-	void begin(uint32_t baud, uint32_t format=0);
+	void begin(uint32_t baud, uint32_t format=USBHOST_SERIAL_8N1);
 	void end(void);
 	virtual int available(void);
 	virtual int peek(void);
@@ -916,6 +935,7 @@ private:
 	void init();
 	static bool check_rxtx_ep(uint32_t &rxep, uint32_t &txep);
 	bool init_buffers(uint32_t rsize, uint32_t tsize);
+	void ch341_setBaud(uint8_t byte_index);
 private:
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
@@ -925,6 +945,7 @@ private:
 	setup_t setup;
 	uint8_t setupdata[8];
 	uint32_t baudrate;
+	uint32_t format_;
 	Pipe_t *rxpipe;
 	Pipe_t *txpipe;
 	uint8_t *rx1;	// location for first incoming packet
@@ -947,7 +968,16 @@ private:
 	uint8_t pl2303_v2;
 	uint8_t interface;
 	bool control_queued;
-	enum { CDCACM, FTDI, PL2303, CH341 } sertype;
+	typedef enum { UNKNOWN=0, CDCACM, FTDI, PL2303, CH341 } sertype_t;
+	sertype_t sertype;
+
+	typedef struct {
+		uint16_t 	idVendor;
+		uint16_t 	idProduct;
+		sertype_t 	sertype;
+	} product_vendor_mapping_t;
+	static product_vendor_mapping_t pid_vid_mapping[];
+
 };
 
 //--------------------------------------------------------------------------
