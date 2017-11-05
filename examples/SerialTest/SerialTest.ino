@@ -112,7 +112,7 @@ void loop()
           Serial.print("  New Baud: ");
           Serial.println(baud);
           Serial.print("  Format: ");
-          Serial.println(format);
+          Serial.println(format, HEX);
           digitalWriteFast(3, HIGH);
           userial.begin(baud, format);
           digitalWriteFast(3, LOW);

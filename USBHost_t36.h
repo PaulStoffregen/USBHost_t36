@@ -56,7 +56,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-#define USBHOST_PRINT_DEBUG
+//#define USBHOST_PRINT_DEBUG
 
 /************************************************/
 /*  Data Types                                  */
@@ -122,12 +122,12 @@ class USBDriverTimer;
 // bits: 8-9 - Stop bits. 0=1, 1=2
 
 
-#define USBHOST_SERIAL_7E1 0x027
-#define USBHOST_SERIAL_7O1 0x047
+#define USBHOST_SERIAL_7E1 0x047
+#define USBHOST_SERIAL_7O1 0x027
 #define USBHOST_SERIAL_8N1 0x08
 #define USBHOST_SERIAL_8N2 0x108
-#define USBHOST_SERIAL_8E1 0x028
-#define USBHOST_SERIAL_8O1 0x048
+#define USBHOST_SERIAL_8E1 0x048
+#define USBHOST_SERIAL_8O1 0x028
 
 
 
