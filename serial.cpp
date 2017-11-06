@@ -42,7 +42,10 @@ USBSerial::product_vendor_mapping_t USBSerial::pid_vid_mapping[] = {
 	// CH341
 	{0x4348, 0x5523, USBSerial::CH341 },
 	{0x1a86, 0x7523, USBSerial::CH341 },
-	{0x1a86, 0x5523, USBSerial::CH341 }
+	{0x1a86, 0x5523, USBSerial::CH341 },
+
+	// Silex CP210...
+	{0x10c4, 0xea60, USBSerial::CP210X }
 };
 
 
@@ -307,6 +310,7 @@ bool USBSerial::claim(Device_t *dev, int type, const uint8_t *descriptors, uint3
 				txpipe->callback_function = tx_callback;
 				baudrate = 115200;
 
+				//  First attempt keep it simple... 
 				println("PL2303: readRegister(0x04)");
 				// Need to setup  the data the line coding data
 				mk_setup(setup, 0xC0, 0x1, 0x8484, 0, 1);  
@@ -378,6 +382,71 @@ bool USBSerial::claim(Device_t *dev, int type, const uint8_t *descriptors, uint3
 				control_queued = true;
 				setup_state = 1; 	// We are at step one of setup... 
 				pending_control = 0x7f;	
+				return true;
+			}
+		//------------------------------------------------------------------------
+		// CP210X
+		case CP210X:
+			{
+				println("len = ", len);
+				uint8_t count_end_points = descriptors[4];
+				if (count_end_points < 2) return false; // not enough end points
+				if (len < 23) return false;
+				if (descriptors[0] != 9) return false; // length 9
+
+				// Lets walk through end points and see if we 
+				// can find an RX and TX bulk transfer end point.
+				// BUGBUG: should factor out this code as duplicated... 
+				// vid=10C4, pid=EA60, bDeviceClass = 0, bDeviceSubClass = 0, bDeviceProtocol = 0
+				// 0  1  2  3  4  5  6  7  8  9 10  1  2  3  4  5  6  7  8  9 20  1  2  3  4  5  6  7  8  9
+				//09 04 00 00 02 FF 00 00 02 07 05 81 02 40 00 00 07 05 01 02 40 00 00  
+				uint32_t rxep = 0;
+				uint32_t txep = 0;
+				uint32_t descriptor_index = 9; 
+				while (count_end_points-- && ((rxep == 0) || txep == 0)) {
+					if (descriptors[descriptor_index] != 7) return false; // length 7
+					if (descriptors[descriptor_index+1] != 5) return false; // ep desc
+					if ((descriptors[descriptor_index+3] == 2) 
+						&& (descriptors[descriptor_index+4] <= 64)
+						&& (descriptors[descriptor_index+5] == 0)) {
+						// have a bulk EP size 
+						if (descriptors[descriptor_index+2] & 0x80 ) {
+							rxep = descriptors[descriptor_index+2]; 
+							rxsize = descriptors[descriptor_index+4];
+						} else {
+							txep = descriptors[descriptor_index+2]; 
+							txsize = descriptors[descriptor_index+4];
+						}
+					}
+					descriptor_index += 7;  // setup to look at next one...
+				}
+				// Try to verify the end points. 
+				if (!check_rxtx_ep(rxep, txep)) return false;
+				print("CP210X, rxep=", rxep & 15);
+				println(", txep=", txep);
+				if (!init_buffers(rxsize, txsize)) return false;
+				rxpipe = new_Pipe(dev, 2, rxep & 15, 1, rxsize);
+				if (!rxpipe) return false;
+				txpipe = new_Pipe(dev, 2, txep, 0, txsize);
+				if (!txpipe) {
+					// TODO: free rxpipe
+					return false;
+				}
+
+				rxpipe->callback_function = rx_callback;
+				queue_Data_Transfer(rxpipe, rx1, rxsize, this);
+				rxstate = 1;
+				txstate = 0;
+				txpipe->callback_function = tx_callback;
+				baudrate = 115200;
+
+				println("CP210X:  0x41, 0x11, 0, 0, 0 - reset port");
+				// Need to setup  the data the line coding data
+				mk_setup(setup, 0x41, 0x11, 0, 0, 0);  
+				queue_Control_Transfer(dev, &setup, NULL, this); 
+				control_queued = true;
+				setup_state = 1; 	// We are at step one of setup... 
+				pending_control = 0xf;	
 				return true;
 			}
 		//------------------------------------------------------------------------
@@ -917,6 +986,66 @@ void USBSerial::control(const Transfer_t *transfer)
 			return;
 		}
 	}
+	//-------------------------------------------------------------------------
+	// First CP210X
+	if (sertype == CP210X) {
+		if (pending_control & 1) {
+			pending_control &= ~1;
+			// set data format
+			uint16_t cp210x_format = (format_ & 0xf) << 8;	// This should give us the number of bits.
+
+			// now lets extract the parity from our encoding bits 5-7 and in theres 4-7
+			cp210x_format |= (format_ & 0xe0) >> 1;	// they encode bits 9-11
+
+			// See if two stop bits
+			if (format_ & 0x100) cp210x_format |= 2;
+
+			mk_setup(setup, 0x41, 3, cp210x_format, 0, 0); // data format 8N1
+			queue_Control_Transfer(device, &setup, NULL, this);
+			control_queued = true;
+			return;
+		}
+		// set baud rate
+		if (pending_control & 2) {
+			pending_control &= ~2;
+			setupdata[0] = (baudrate) & 0xff;  // Setup baud rate 115200 - 0x1C200
+			setupdata[1] = (baudrate >> 8) & 0xff;
+			setupdata[2] = (baudrate >> 16) & 0xff;
+			setupdata[3] = (baudrate >> 24) & 0xff;
+			mk_setup(setup, 0x40, 0x1e, 0, 0, 4);
+			queue_Control_Transfer(device, &setup, setupdata, this);
+			control_queued = true;
+			return;
+		}
+		// configure flow control
+		if (pending_control & 4) {
+			pending_control &= ~4;
+			memset(setupdata, 0, sizeof(setupdata));	// clear out the data
+			setupdata[0] = 1; 	// Set dtr active? 
+			mk_setup(setup, 0x41, 13, 0, 0, 0x10);
+			queue_Control_Transfer(device, &setup, setupdata, this);
+			control_queued = true; 
+			return;
+		}
+		// set DTR
+		if (pending_control & 8) {
+			pending_control &= ~8;
+			mk_setup(setup, 0x41, 7, 0x0101, 0, 0);
+			queue_Control_Transfer(device, &setup, NULL, this);
+			control_queued = true;
+			return;
+		}
+		// clear DTR
+		if (pending_control & 0x80) {
+			pending_control &= ~0x80;
+			println("CP210x clear DTR");
+			mk_setup(setup, 0x40, 1, 0x0100, 0, 0);
+			queue_Control_Transfer(device, &setup, NULL, this);
+			control_queued = true;
+			return;
+		}
+
+	}
 }
 
 #define CH341_BAUDBASE_FACTOR 1532620800
@@ -1170,6 +1299,7 @@ void USBSerial::begin(uint32_t baud, uint32_t format)
 		case FTDI: pending_control |= (format_changed? 0xf : 0xe); break;	// Set BAUD, FLOW, DTR
 		case PL2303: pending_control |= 0x1e; break;  // set more stuff...
 		case CH341: pending_control |= 0x1e; break;
+		case CP210X: pending_control |= 0xf; break;
 	}
 	if (!control_queued) control(NULL);
 	NVIC_ENABLE_IRQ(IRQ_USBHS);

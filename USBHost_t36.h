@@ -943,7 +943,7 @@ private:
 	USBDriverTimer txtimer;
 	uint32_t bigbuffer[(BUFFER_SIZE+3)/4];
 	setup_t setup;
-	uint8_t setupdata[8];
+	uint8_t setupdata[16]; // 
 	uint32_t baudrate;
 	uint32_t format_;
 	Pipe_t *rxpipe;
@@ -968,7 +968,7 @@ private:
 	uint8_t pl2303_v2;
 	uint8_t interface;
 	bool control_queued;
-	typedef enum { UNKNOWN=0, CDCACM, FTDI, PL2303, CH341 } sertype_t;
+	typedef enum { UNKNOWN=0, CDCACM, FTDI, PL2303, CH341, CP210X } sertype_t;
 	sertype_t sertype;
 
 	typedef struct {
