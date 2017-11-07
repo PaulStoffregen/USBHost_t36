@@ -669,8 +669,6 @@ private:
 	uint8_t keyOEM;
 	uint8_t prev_report[8];
 	KBDLeds_t leds_ = {0};
-	bool update_leds_ = false;
-	bool processing_new_data_ = false;
 	Pipe_t mypipes[2] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
