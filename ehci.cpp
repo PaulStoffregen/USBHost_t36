@@ -1254,16 +1254,6 @@ void USBHost::delete_Pipe(Pipe_t *pipe)
 		// find & free all the transfers which completed
 		println("  Free transfers");
 		Transfer_t *t = async_followup_first;
-#if 0
-		if (t) {
-			println("  (Look at QH list first)");
-			Transfer_t *tr = (Transfer_t *)(pipe->qh.next);
-			while ((uint32_t)tr & 0xFFFFFFE0) {
-				println("    $ ", (uint32_t)tr);
-				tr  = (Transfer_t *)(tr->qtd.next);
-			}
-		}
-#endif		
 		while (t) {
 			print("    * ", (uint32_t)t);
 			Transfer_t *next = t->next_followup;
@@ -1312,12 +1302,28 @@ void USBHost::delete_Pipe(Pipe_t *pipe)
 		// TODO: subtract bandwidth from uframe_bandwidth array
 
 		// find & free all the transfers which completed
+		println("  Free transfers");
 		Transfer_t *t = periodic_followup_first;
 		while (t) {
+			print("    * ", (uint32_t)t);
 			Transfer_t *next = t->next_followup;
 			if (t->pipe == pipe) {
+				print(" * remove");
 				remove_from_periodic_followup_list(t);
-				free_Transfer(t);
+
+				// Only free if not in QH list
+				Transfer_t *tr = (Transfer_t *)(pipe->qh.next);
+				while (((uint32_t)tr & 0xFFFFFFE0) && (tr != t)){
+					tr  = (Transfer_t *)(tr->qtd.next);
+				}
+				if (tr == t) {
+					println(" * defer free until QH");
+				} else {
+					println(" * free");
+					free_Transfer(t);  // The later code should actually free it...
+				}
+			} else {
+				println("");
 			}
 			t = next;
 		}
