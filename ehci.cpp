@@ -1252,12 +1252,38 @@ void USBHost::delete_Pipe(Pipe_t *pipe)
 			// TODO: does this write interfere UPI & UAI (bits 18 & 19) ??
 		}
 		// find & free all the transfers which completed
+		println("  Free transfers");
 		Transfer_t *t = async_followup_first;
+#if 0
+		if (t) {
+			println("  (Look at QH list first)");
+			Transfer_t *tr = (Transfer_t *)(pipe->qh.next);
+			while ((uint32_t)tr & 0xFFFFFFE0) {
+				println("    $ ", (uint32_t)tr);
+				tr  = (Transfer_t *)(tr->qtd.next);
+			}
+		}
+#endif		
 		while (t) {
+			print("    * ", (uint32_t)t);
 			Transfer_t *next = t->next_followup;
 			if (t->pipe == pipe) {
+				print(" * remove");
 				remove_from_async_followup_list(t);
-				free_Transfer(t);
+
+				// Only free if not in QH list
+				Transfer_t *tr = (Transfer_t *)(pipe->qh.next);
+				while (((uint32_t)tr & 0xFFFFFFE0) && (tr != t)){
+					tr  = (Transfer_t *)(tr->qtd.next);
+				}
+				if (tr == t) {
+					println(" * defer free until QH");
+				} else {
+					println(" * free");
+					free_Transfer(t);  // The later code should actually free it...
+				}
+			} else {
+				println("");
 			}
 			t = next;
 		}
@@ -1300,14 +1326,17 @@ void USBHost::delete_Pipe(Pipe_t *pipe)
 	// TODO: do we need to look at pipe->qh.current ??
 	//
 	// free all the transfers still attached to the QH
+	println("  Free transfers attached to QH");
 	Transfer_t *tr = (Transfer_t *)(pipe->qh.next);
 	while ((uint32_t)tr & 0xFFFFFFE0) {
+		println("    * ", (uint32_t)tr);
 		Transfer_t *next = (Transfer_t *)(tr->qtd.next);
 		free_Transfer(tr);
 		tr = next;
 	}
 	// hopefully we found everything...
 	free_Pipe(pipe);
+	println("* Delete Pipe completed");
 }
 
 
