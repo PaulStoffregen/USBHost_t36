@@ -909,14 +909,18 @@ class USBSerial: public USBDriver, public Stream {
 
 	// FIXME: need different USBSerial, with bigger buffers for 480 Mbit & faster speed
 	enum { BUFFER_SIZE = 648 }; // must hold at least 6 max size packets, plus 2 extra bytes
+	enum { DEFAULT_WRITE_TIMEOUT = 3500};
 	USBSerial(USBHost &host) : txtimer(this) { init(); }
 	void begin(uint32_t baud, uint32_t format=USBHOST_SERIAL_8N1);
 	void end(void);
+	uint32_t writeTimeout() {return write_timeout_;}
+	void writeTimeOut(uint32_t write_timeout) {write_timeout_ = write_timeout;} // Will not impact current ones.
 	virtual int available(void);
 	virtual int peek(void);
 	virtual int read(void);
 	virtual int availableForWrite();
 	virtual size_t write(uint8_t c);
+	virtual void flush(void);
 
 	using Print::write;
 protected:
@@ -944,6 +948,7 @@ private:
 	uint8_t setupdata[16]; // 
 	uint32_t baudrate;
 	uint32_t format_;
+	uint32_t write_timeout_ = DEFAULT_WRITE_TIMEOUT;
 	Pipe_t *rxpipe;
 	Pipe_t *txpipe;
 	uint8_t *rx1;	// location for first incoming packet

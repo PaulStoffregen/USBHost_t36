@@ -289,7 +289,7 @@ int ax12ReadPacket(int length) {
     while ((ch = userial.read()) == -1) {
       if ((millis() - ulStart) > 10) {
         //if (!--ulCounter) {
- //       Serial.println("Timeout");
+        Serial.println("Timeout");
         return 0;   // Timeout
       }
     }
