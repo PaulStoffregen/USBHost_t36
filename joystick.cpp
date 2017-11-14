@@ -26,16 +26,16 @@
 
 
 
-bool JoystickController::claim_collection(Device_t *dev, uint32_t topusage)
+hidclaim_t JoystickController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
 {
 	// only claim Desktop/Joystick and Desktop/Gamepad
-	if (topusage != 0x10004 && topusage != 0x10005) return false;
+	if (topusage != 0x10004 && topusage != 0x10005) return CLAIM_NO;
 	// only claim from one physical device
-	if (mydevice != NULL && dev != mydevice) return false;
+	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
 	mydevice = dev;
 	collections_claimed++;
 	anychange = true; // always report values on first read
-	return true;
+	return CLAIM_REPORT;
 }
 
 void JoystickController::disconnect_collection(Device_t *dev)

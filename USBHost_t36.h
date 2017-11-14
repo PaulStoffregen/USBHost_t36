@@ -80,6 +80,7 @@ class USBHost;
 typedef struct Device_struct       Device_t;
 typedef struct Pipe_struct         Pipe_t;
 typedef struct Transfer_struct     Transfer_t;
+typedef enum { CLAIM_NO=0, CLAIM_REPORT, CLAIM_INTERFACE} hidclaim_t;
 
 // All USB device drivers inherit use these classes.
 // Drivers build user-visible functionality on top
@@ -269,11 +270,12 @@ protected:
 	static void disconnect_Device(Device_t *dev);
 	static void enumeration(const Transfer_t *transfer);
 	static void driver_ready_for_device(USBDriver *driver);
+	static volatile bool enumeration_busy;
+public: // Maybe others may want/need to contribute memory example HID devices may want to add transfers.
 	static void contribute_Devices(Device_t *devices, uint32_t num);
 	static void contribute_Pipes(Pipe_t *pipes, uint32_t num);
 	static void contribute_Transfers(Transfer_t *transfers, uint32_t num);
 	static void contribute_String_Buffers(strbuf_t *strbuf, uint32_t num);
-	static volatile bool enumeration_busy;
 private:
 	static void isr();
 	static void convertStringDescriptorToASCIIString(uint8_t string_index, Device_t *dev, const Transfer_t *transfer);
@@ -469,6 +471,8 @@ private:
 
 // Device drivers may inherit from this base class, if they wish to receive
 // HID input data fully decoded by the USBHIDParser driver
+class USBHIDParser;
+
 class USBHIDInput {
 public:
 	operator bool() { return (mydevice != nullptr); }
@@ -482,7 +486,9 @@ public:
 		{  return  ((mydevice == nullptr) || (mydevice->strbuf == nullptr)) ? nullptr : &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
 
 private:
-	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
+	virtual bool hid_process_in_data(const Transfer_t *transfer) {return false;}
+	virtual bool hid_process_out_data(const Transfer_t *transfer) {return false;}
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
@@ -576,10 +582,12 @@ private:
 
 //--------------------------------------------------------------------------
 
+
 class USBHIDParser : public USBDriver {
 public:
 	USBHIDParser(USBHost &host) { init(); }
 	static void driver_ready_for_hid_collection(USBHIDInput *driver);
+	bool sendPacket(const uint8_t *buffer);
 protected:
 	enum { TOPUSAGE_LIST_LEN = 4 };
 	enum { USAGE_LIST_LEN = 24 };
@@ -595,6 +603,14 @@ protected:
 	USBHIDInput * find_driver(uint32_t topusage);
 	void parse(uint16_t type_and_report_id, const uint8_t *data, uint32_t len);
 	void init();
+
+	// Atempt for RAWhid to take over processing of data 
+	// 
+	uint16_t inSize(void) {return in_size;}
+	uint16_t outSize(void) {return out_size;}
+
+	uint8_t activeSendMask(void) {return txstate;} 
+
 private:
 	Pipe_t *in_pipe;
 	Pipe_t *out_pipe;
@@ -611,6 +627,10 @@ private:
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
+	uint8_t txstate = 0;
+	uint8_t *tx1 = nullptr;
+	uint8_t *tx2 = nullptr;
+	bool hid_driver_claimed_control_ = false;
 };
 
 //--------------------------------------------------------------------------
@@ -686,7 +706,7 @@ public:
 	enum {MAX_KEYS_DOWN=4};
 //	uint32_t buttons() { return buttons_; }
 protected:
-	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
@@ -716,7 +736,7 @@ public:
 	int     getWheel() { return wheel; }
 	int     getWheelH() { return wheelH; }
 protected:
-	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
@@ -742,7 +762,7 @@ public:
 	uint32_t getButtons() { return buttons; }
 	int	getAxis(uint32_t index) { return (index < (sizeof(axis)/sizeof(axis[0]))) ? axis[index] : 0; }
 protected:
-	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
@@ -1204,5 +1224,35 @@ private:
 	uint16_t wheelCircumference; // default is WHEEL_CIRCUMFERENCE (2122cm)
 };
 
+//--------------------------------------------------------------------------
+
+class RawHIDController : public USBHIDInput {
+public:
+	RawHIDController(USBHost &host, uint32_t usage = 0) : fixed_usage_(usage) { init(); }
+	uint32_t usage(void) {return usage_;}
+	void attachReceive(bool (*f)(uint32_t usage, const uint8_t *data, uint32_t len)) {receiveCB = f;}
+	bool sendPacket(const uint8_t *buffer);
+protected:
+	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
+	virtual bool hid_process_in_data(const Transfer_t *transfer);
+	virtual bool hid_process_out_data(const Transfer_t *transfer);
+	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
+	virtual void hid_input_data(uint32_t usage, int32_t value);
+	virtual void hid_input_end();
+	virtual void disconnect_collection(Device_t *dev);
+private:
+	void init();
+	USBHIDParser *driver_;
+	enum { MAX_PACKET_SIZE = 64 };
+	bool (*receiveCB)(uint32_t usage, const uint8_t *data, uint32_t len) = nullptr;
+	uint8_t collections_claimed = 0;
+	//volatile bool hid_input_begin_ = false;
+	uint32_t fixed_usage_;
+	uint32_t usage_ = 0;
+
+	// See if we can contribute transfers
+	Transfer_t mytransfers[2] __attribute__ ((aligned(32)));
+
+};
 
 #endif

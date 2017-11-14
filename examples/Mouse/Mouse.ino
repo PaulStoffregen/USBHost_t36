@@ -19,6 +19,8 @@ USBHIDParser hid4(myusb);
 USBHIDParser hid5(myusb);
 MouseController mouse1(myusb);
 JoystickController joystick1(myusb);
+RawHIDController rawhid1(myusb);
+RawHIDController rawhid2(myusb, 0xffc90004);
 
 USBDriver *drivers[] = {&hub1, &hub2, &hub3, &hub4, &keyboard1, &keyboard2, &hid1, &hid2, &hid3, &hid4, &hid5};
 #define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[0]))
@@ -26,9 +28,9 @@ const char * driver_names[CNT_DEVICES] = {"Hub1","Hub2", "Hub3", "Hub4" "KB1", "
 bool driver_active[CNT_DEVICES] = {false, false, false, false};
 
 // Lets also look at HID Input devices
-USBHIDInput *hiddrivers[] = {&mouse1, &joystick1};
+USBHIDInput *hiddrivers[] = {&mouse1, &joystick1, &rawhid1, &rawhid2};
 #define CNT_HIDDEVICES (sizeof(hiddrivers)/sizeof(hiddrivers[0]))
-const char * hid_driver_names[CNT_DEVICES] = {"Mouse1","Joystick1"};
+const char * hid_driver_names[CNT_DEVICES] = {"Mouse1","Joystick1", "RawHid1", "RawHid2"};
 bool hid_driver_active[CNT_DEVICES] = {false, false};
 
 
@@ -42,6 +44,9 @@ void setup()
   keyboard2.attachPress(OnPress);
   hidextras.attachPress(OnHIDExtrasPress);
   hidextras.attachRelease(OnHIDExtrasRelease);
+
+  rawhid1.attachReceive(OnReceiveHidData);
+  rawhid2.attachReceive(OnReceiveHidData);
 }
 
 
@@ -122,6 +127,20 @@ void loop()
     Serial.print(joystick1.getAxis(9));
     Serial.println();
     joystick1.joystickDataClear();
+  }
+
+  // See if we have some RAW data
+  if (rawhid1) {
+    int ch;
+    uint8_t buffer[64];
+    uint8_t count_chars = 0; 
+    memset(buffer, 0, sizeof(buffer));
+    if (Serial.available()) {
+      while (((ch = Serial.read()) != -1) && (count_chars < sizeof(buffer))) {
+        buffer[count_chars++] = ch;
+      }
+      rawhid1.sendPacket(buffer);
+    }
   }
 }
 
@@ -420,4 +439,39 @@ void OnHIDExtrasRelease(uint32_t top, uint16_t key)
   Serial.print(top, HEX);
   Serial.print(") key release:");
   Serial.println(key, HEX);
+}
+
+bool OnReceiveHidData(uint32_t usage, const uint8_t *data, uint32_t len) {
+  // Called for maybe both HIDS for rawhid basic test.  One is for the Teensy
+  // to output to Serial. while still having Raw Hid... 
+  if (usage == 0xffc90004) {
+    // Lets trim off trailing null characters.
+    while ((len > 0) && (data[len-1] == 0)) {
+      len--;
+    }
+    if (len) {
+      Serial.print("RawHid Serial: ");
+      Serial.write(data, len);
+    }
+  } else {
+    Serial.print("RawHID data: ");
+    Serial.println(usage, HEX);
+    while (len) {
+      uint8_t cb = (len > 16)? 16 : len;
+      const uint8_t *p = data;
+      uint8_t i;
+      for (i = 0; i < cb; i++) {
+        Serial.printf("%02x ", *p++);
+      }
+      Serial.print(": ");
+      for (i = 0; i < cb; i++) {
+        Serial.write(((*data >= ' ')&&(*data <= '~'))? *data : '.');
+        data++;
+      }
+      len -= cb;
+      Serial.println();
+    }
+  }
+
+  return true;
 }
