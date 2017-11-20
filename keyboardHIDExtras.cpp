@@ -27,19 +27,19 @@
 #define TOPUSAGE_SYS_CONTROL 	0x10080
 #define TOPUSAGE_CONSUMER_CONTROL	0x0c0001
 
-bool KeyboardHIDExtrasController::claim_collection(Device_t *dev, uint32_t topusage)
+hidclaim_t KeyboardHIDExtrasController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
 {
 	// Lets try to claim a few specific Keyboard related collection/reports
 	//Serial.printf("KBH Claim %x\n", topusage);
 	if ((topusage != TOPUSAGE_SYS_CONTROL) 
 		&& (topusage != TOPUSAGE_CONSUMER_CONTROL)
-		) return false;
+		) return CLAIM_NO;
 	// only claim from one physical device
 	//Serial.println("KeyboardHIDExtrasController claim collection");
-	if (mydevice != NULL && dev != mydevice) return false;
+	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
 	mydevice = dev;
 	collections_claimed_++;
-	return true;
+	return CLAIM_REPORT;
 }
 
 void KeyboardHIDExtrasController::disconnect_collection(Device_t *dev)

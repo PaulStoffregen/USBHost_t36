@@ -179,7 +179,6 @@ static bool contains(uint8_t b, const uint8_t *data)
 
 void KeyboardController::new_data(const Transfer_t *transfer)
 {
-	processing_new_data_ = true;
 	println("KeyboardController Callback (member)");
 	print("  KB Data: ");
 	print_hexbytes(transfer->buffer, 8);
@@ -197,12 +196,6 @@ void KeyboardController::new_data(const Transfer_t *transfer)
 	}
 	memcpy(prev_report, report, 8);
 	queue_Data_Transfer(datapipe, report, 8, this);
-	processing_new_data_ = false;
-
-	// See if we have any outstanding leds to update
-	if (update_leds_) {
-		updateLEDS();
-	}
 }
 
 
@@ -328,22 +321,9 @@ void KeyboardController::LEDS(uint8_t leds) {
 }
 
 void KeyboardController::updateLEDS() {
-	println("KBD: Update LEDS", leds_.byte, HEX);
-	if (processing_new_data_) {
-		println("  Update defered");
-		update_leds_ = true;
-		return; 	// defer until later
-	}
-
 	// Now lets tell keyboard new state.
-	static uint8_t keyboard_keys_report[1] = {0};
-	setup_t keys_setup;
-	keyboard_keys_report[0] = leds_.byte;
-	queue_Data_Transfer(datapipe, report, 8, this);
-	mk_setup(keys_setup, 0x21, 9, 0x200, 0, sizeof(keyboard_keys_report)); // hopefully this sets leds
-	queue_Control_Transfer(device, &keys_setup, keyboard_keys_report, this);
-
-	update_leds_ = false;
+	mk_setup(setup, 0x21, 9, 0x200, 0, sizeof(leds_.byte)); // hopefully this sets leds
+	queue_Control_Transfer(device, &setup, &leds_.byte, this);
 }
 
 

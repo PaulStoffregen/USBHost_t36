@@ -4,6 +4,8 @@
 
 #include "USBHost_t36.h"
 #define USBBAUD 115200
+uint32_t baud = USBBAUD;
+uint32_t format = USBHOST_SERIAL_8N1;
 USBHost myusb;
 USBHub hub1(myusb);
 USBHub hub2(myusb);
@@ -60,23 +62,8 @@ void loop()
         // If this is a new Serial device.
         if (drivers[i] == &userial) {
           // Lets try first outputting something to our USerial to see if it will go out...
-          userial.begin(USBBAUD);
+          userial.begin(baud);
 
-//          delay(5);
-//          userial.println("ver");
-#if 0
-          userial.println("abcdefghijklmnopqrstuvwxyz");
-          userial.println("ABCDEFGHIJKLMNOPQURSTUVWYZ");
-          userial.flush();  // force it out now.
-          userial.println("0123456789");
-          userial.flush();
-          delay(2);
-          userial.println("abcdefghijklmnopqrstuvwxyz");
-          userial.println("ABCDEFGHIJKLMNOPQURSTUVWYZ");
-          delay(2);
-          userial.println("!@#$%^&*()");
-          userial.flush();
-#endif
         }
       }
     }
@@ -89,8 +76,55 @@ void loop()
       if (ch == '$') {
         BioloidTest();
         while (Serial.read() != -1);
+      } else if (ch == '#') {
+        // Lets see if we have a baud rate specified here... 
+        uint32_t new_baud = 0;
+        for(;;) {
+          ch = Serial.read(); 
+          if ((ch < '0') || (ch > '9')) 
+            break;
+          new_baud = new_baud*10 + ch - '0'; 
+        }
+        // See if the user is specifying a format: 8n1, 7e1, 7e2, 8n2 
+        // Note this is Quick and very dirty code... 
+        // 
+        if (ch == ',') {
+          char command_line[10];
+          ch = Serial.read();
+          while (ch == ' ') Serial.read();  // ignore any spaces.
+          uint8_t cb = 0;
+          while ((ch > ' ') && (cb < sizeof(command_line))) {
+            command_line[cb++] = ch;
+            ch = Serial.read();
+          }
+          command_line[cb] = '\0'; 
+          if (CompareStrings(command_line, "8N1")) format = USBHOST_SERIAL_8N1;
+          else if (CompareStrings(command_line, "8N2")) format = USBHOST_SERIAL_8N2;
+          else if (CompareStrings(command_line, "7E1")) format = USBHOST_SERIAL_7E1;
+          else if (CompareStrings(command_line, "7O1")) format = USBHOST_SERIAL_7O1;
+        }
+        Serial.println("\n*** Set new Baud command ***\n  do userial.end()");
+        digitalWriteFast(2, HIGH);
+        userial.end();  // Do the end statement;
+        digitalWriteFast(2, LOW);
+        if (new_baud) {
+          baud = new_baud;
+          Serial.print("  New Baud: ");
+          Serial.println(baud);
+          Serial.print("  Format: ");
+          Serial.println(format, HEX);
+          digitalWriteFast(3, HIGH);
+          userial.begin(baud, format);
+          digitalWriteFast(3, LOW);
+          Serial.println("  Completed ");
+        } else {
+          Serial.println("  New Baud 0 - leave disabled");
+        }
+
+        while (Serial.read() != -1);
+      } else { 
+        userial.write(ch);
       }
-      else userial.write(ch);
     }
   }
 
@@ -106,14 +140,25 @@ void loop()
   }
 }
 
+bool CompareStrings(const char *sz1, const char *sz2) {
+  while (*sz2 != 0) {
+    if (toupper(*sz1) != toupper(*sz2)) 
+      return false;
+    sz1++;
+    sz2++;
+  }
+  return true; // end of string so show as match
+
+
+}
+
 //#define ID_MASTER 200 
 #define ID_MASTER 0xfd
 // Extract stuff from Bioloid library..
 #define AX12_BUFFER_SIZE 128
 #define COUNTER_TIMEOUT 12000
 
-/** Instruction Set **/
-#define AX_PING                     1
+/** Instruction Set **/ #define AX_PING                     1
 #define AX_READ_DATA                2
 #define AX_WRITE_DATA               3
 #define AX_REG_WRITE                4
@@ -244,7 +289,7 @@ int ax12ReadPacket(int length) {
     while ((ch = userial.read()) == -1) {
       if ((millis() - ulStart) > 10) {
         //if (!--ulCounter) {
- //       Serial.println("Timeout");
+        Serial.println("Timeout");
         return 0;   // Timeout
       }
     }
