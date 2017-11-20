@@ -8,7 +8,6 @@ MIDIDevice	KEYWORD1
 USBSerial	KEYWORD1
 AntPlus	KEYWORD1
 JoystickController	KEYWORD1
-KeyboardHIDExtrasController	KEYWORD1
 RawHIDController	KEYWORD1
 
 # Common Functions
@@ -25,6 +24,8 @@ getModifiers	KEYWORD2
 getOemKey	KEYWORD2
 attachPress	KEYWORD2
 attachRelease	KEYWORD2
+attachExtrasPress	KEYWORD2
+attachExtrasRelease	KEYWORD2
 LEDS	KEYWORD2
 updateLEDS	KEYWORD2
 numLock	KEYWORD2
@@ -79,6 +80,7 @@ getWheelH	KEYWORD2
 # JoystickController
 joystickDataClear	KEYWORD2
 getAxis	KEYWORD2
+axisMask	KEYWORD2
 
 # USBSerial
 USBHOST_SERIAL_7E1	LITERAL1
