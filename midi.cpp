@@ -202,7 +202,7 @@ void MIDIDevice::rx_data(const Transfer_t *transfer)
 	print_hexbytes(transfer->buffer, rx_size);
 	uint32_t head = rx_head;
 	uint32_t tail = rx_tail;
-	uint32_t len = rx_size >> 2; // TODO: use actual received length
+	uint32_t len = (transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF)) >> 2;
 	for (uint32_t i=0; i < len; i++) {
 		uint32_t msg = rx_buffer[i];
 		if (msg) {
