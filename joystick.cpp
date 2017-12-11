@@ -155,7 +155,7 @@ void JoystickController::joystickDataClear() {
 //*****************************************************************************
 // Note: currently just XBOX one. 
 JoystickController::product_vendor_mapping_t JoystickController::pid_vid_mapping[] = {
-	{0x045e, 0x02ea} };
+	{ 0x045e, 0x02ea },{ 0x045e, 0x02dd } };
 
 static  uint8_t start_input[] = {0x05, 0x20, 0x00, 0x01, 0x00};
 
