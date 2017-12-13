@@ -98,6 +98,7 @@ void KeyboardController::init()
 	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
 	driver_ready_for_device(this);
+	USBHIDParser::driver_ready_for_hid_collection(this);
 }
 
 bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
@@ -179,7 +180,6 @@ static bool contains(uint8_t b, const uint8_t *data)
 
 void KeyboardController::new_data(const Transfer_t *transfer)
 {
-	processing_new_data_ = true;
 	println("KeyboardController Callback (member)");
 	print("  KB Data: ");
 	print_hexbytes(transfer->buffer, 8);
@@ -197,12 +197,6 @@ void KeyboardController::new_data(const Transfer_t *transfer)
 	}
 	memcpy(prev_report, report, 8);
 	queue_Data_Transfer(datapipe, report, 8, this);
-	processing_new_data_ = false;
-
-	// See if we have any outstanding leds to update
-	if (update_leds_) {
-		updateLEDS();
-	}
 }
 
 
@@ -328,31 +322,107 @@ void KeyboardController::LEDS(uint8_t leds) {
 }
 
 void KeyboardController::updateLEDS() {
-	println("KBD: Update LEDS", leds_.byte, HEX);
-	if (processing_new_data_) {
-		println("  Update defered");
-		update_leds_ = true;
-		return; 	// defer until later
-	}
-
 	// Now lets tell keyboard new state.
-	static uint8_t keyboard_keys_report[1] = {0};
-	setup_t keys_setup;
-	keyboard_keys_report[0] = leds_.byte;
-	queue_Data_Transfer(datapipe, report, 8, this);
-	mk_setup(keys_setup, 0x21, 9, 0x200, 0, sizeof(keyboard_keys_report)); // hopefully this sets leds
-	queue_Control_Transfer(device, &keys_setup, keyboard_keys_report, this);
-
-	update_leds_ = false;
+	mk_setup(setup, 0x21, 9, 0x200, 0, sizeof(leds_.byte)); // hopefully this sets leds
+	queue_Control_Transfer(device, &setup, &leds_.byte, this);
 }
 
+//=============================================================================
+// Keyboard Extras - Combined from other object
+//=============================================================================
 
+#define TOPUSAGE_SYS_CONTROL 	0x10080
+#define TOPUSAGE_CONSUMER_CONTROL	0x0c0001
 
+hidclaim_t KeyboardController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
+{
+	// Lets try to claim a few specific Keyboard related collection/reports
+	//Serial.printf("KBH Claim %x\n", topusage);
+	if ((topusage != TOPUSAGE_SYS_CONTROL) 
+		&& (topusage != TOPUSAGE_CONSUMER_CONTROL)
+		) return CLAIM_NO;
+	// only claim from one physical device
+	//Serial.println("KeyboardController claim collection");
+	// Lets only claim if this is the same device as claimed Keyboard... 
+	if (dev != device) return CLAIM_NO;
+	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
+	mydevice = dev;
+	collections_claimed_++;
+	return CLAIM_REPORT;
+}
 
+void KeyboardController::disconnect_collection(Device_t *dev)
+{
+	if (--collections_claimed_ == 0) {
+		mydevice = NULL;
+	}
+}
 
+void KeyboardController::hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax)
+{
+	//Serial.printf("KPC:hid_input_begin TUSE: %x TYPE: %x Range:%x %x\n", topusage, type, lgmin, lgmax);
+	topusage_ = topusage;	// remember which report we are processing. 
+	hid_input_begin_ = true;
+	hid_input_data_ = false;
+}
 
+void KeyboardController::hid_input_data(uint32_t usage, int32_t value)
+{
+	// Hack ignore 0xff00 high words as these are user values... 
+	if ((usage & 0xffff0000) == 0xff000000) return; 
+	//Serial.printf("KeyboardController: topusage= %x usage=%X, value=%d\n", topusage_, usage, value);
 
+	// See if the value is in our keys_down list
+	usage &= 0xffff;		// only keep the actual key
+	if (usage == 0) return;	// lets not process 0, if only 0 happens, we will handle it on the end to remove existing pressed items.
 
+	// Remember if we have received any logical key up events.  Some keyboard appear to send them
+	// others do no...
+	hid_input_data_ = true;
 
+	uint8_t key_index;
+	for (key_index = 0; key_index < count_keys_down_; key_index++) {
+		if (keys_down[key_index] == usage) {
+			if (value) return;		// still down
 
+			if (extrasKeyReleasedFunction) {
+				extrasKeyReleasedFunction(topusage_, usage);
+			}
 
+			// Remove from list
+			count_keys_down_--;
+			for (;key_index < count_keys_down_; key_index++) {
+				keys_down[key_index] = keys_down[key_index+1];
+			}
+			return;
+		}
+	}
+	// Was not in list
+	if (!value) return;	// still 0
+	if (extrasKeyPressedFunction) {
+		extrasKeyPressedFunction(topusage_, usage);
+	}
+	if (count_keys_down_ < MAX_KEYS_DOWN) {
+		keys_down[count_keys_down_++] = usage;
+	}
+}
+
+void KeyboardController::hid_input_end()
+{
+	//Serial.println("KPC:hid_input_end");
+	if (hid_input_begin_) {
+
+		// See if we received any data from parser if not, assume all keys released... 
+		if (!hid_input_data_ ) {
+			if (extrasKeyReleasedFunction) {
+				while (count_keys_down_) {
+					count_keys_down_--;
+					extrasKeyReleasedFunction(topusage_, keys_down[count_keys_down_]);
+				}
+			}
+			count_keys_down_ = 0;
+		}
+
+		hid_input_begin_ = false;
+	}		
+}

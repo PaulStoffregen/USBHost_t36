@@ -56,7 +56,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-//#define USBHOST_PRINT_DEBUG
+#define USBHOST_PRINT_DEBUG
 
 /************************************************/
 /*  Data Types                                  */
@@ -80,6 +80,7 @@ class USBHost;
 typedef struct Device_struct       Device_t;
 typedef struct Pipe_struct         Pipe_t;
 typedef struct Transfer_struct     Transfer_t;
+typedef enum { CLAIM_NO=0, CLAIM_REPORT, CLAIM_INTERFACE} hidclaim_t;
 
 // All USB device drivers inherit use these classes.
 // Drivers build user-visible functionality on top
@@ -91,6 +92,7 @@ class USBDriverTimer;
 /************************************************/
 /*  Added Defines                               */
 /************************************************/
+// Keyboard special Keys
 #define KEYD_UP    		0xDA
 #define KEYD_DOWN    	0xD9
 #define KEYD_LEFT   	0xD8
@@ -113,6 +115,22 @@ class USBDriverTimer;
 #define KEYD_F10       	0xCB
 #define KEYD_F11       	0xCC
 #define KEYD_F12       	0xCD
+
+
+// USBSerial formats - Lets encode format into bits
+// Bits: 0-4 - Number of data bits 
+// Bits: 5-7 - Parity (0=none, 1=odd, 2 = even)
+// bits: 8-9 - Stop bits. 0=1, 1=2
+
+
+#define USBHOST_SERIAL_7E1 0x047
+#define USBHOST_SERIAL_7O1 0x027
+#define USBHOST_SERIAL_8N1 0x08
+#define USBHOST_SERIAL_8N2 0x108
+#define USBHOST_SERIAL_8E1 0x048
+#define USBHOST_SERIAL_8O1 0x028
+
+
 
 /************************************************/
 /*  Data Structure Definitions                  */
@@ -252,11 +270,12 @@ protected:
 	static void disconnect_Device(Device_t *dev);
 	static void enumeration(const Transfer_t *transfer);
 	static void driver_ready_for_device(USBDriver *driver);
+	static volatile bool enumeration_busy;
+public: // Maybe others may want/need to contribute memory example HID devices may want to add transfers.
 	static void contribute_Devices(Device_t *devices, uint32_t num);
 	static void contribute_Pipes(Pipe_t *pipes, uint32_t num);
 	static void contribute_Transfers(Transfer_t *transfers, uint32_t num);
 	static void contribute_String_Buffers(strbuf_t *strbuf, uint32_t num);
-	static volatile bool enumeration_busy;
 private:
 	static void isr();
 	static void convertStringDescriptorToASCIIString(uint8_t string_index, Device_t *dev, const Transfer_t *transfer);
@@ -452,6 +471,8 @@ private:
 
 // Device drivers may inherit from this base class, if they wish to receive
 // HID input data fully decoded by the USBHIDParser driver
+class USBHIDParser;
+
 class USBHIDInput {
 public:
 	operator bool() { return (mydevice != nullptr); }
@@ -465,7 +486,9 @@ public:
 		{  return  ((mydevice == nullptr) || (mydevice->strbuf == nullptr)) ? nullptr : &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
 
 private:
-	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
+	virtual bool hid_process_in_data(const Transfer_t *transfer) {return false;}
+	virtual bool hid_process_out_data(const Transfer_t *transfer) {return false;}
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
@@ -559,10 +582,12 @@ private:
 
 //--------------------------------------------------------------------------
 
+
 class USBHIDParser : public USBDriver {
 public:
 	USBHIDParser(USBHost &host) { init(); }
 	static void driver_ready_for_hid_collection(USBHIDInput *driver);
+	bool sendPacket(const uint8_t *buffer);
 protected:
 	enum { TOPUSAGE_LIST_LEN = 4 };
 	enum { USAGE_LIST_LEN = 24 };
@@ -578,6 +603,14 @@ protected:
 	USBHIDInput * find_driver(uint32_t topusage);
 	void parse(uint16_t type_and_report_id, const uint8_t *data, uint32_t len);
 	void init();
+
+	// Atempt for RAWhid to take over processing of data 
+	// 
+	uint16_t inSize(void) {return in_size;}
+	uint16_t outSize(void) {return out_size;}
+
+	uint8_t activeSendMask(void) {return txstate;} 
+
 private:
 	Pipe_t *in_pipe;
 	Pipe_t *out_pipe;
@@ -594,11 +627,15 @@ private:
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
+	uint8_t txstate = 0;
+	uint8_t *tx1 = nullptr;
+	uint8_t *tx2 = nullptr;
+	bool hid_driver_claimed_control_ = false;
 };
 
 //--------------------------------------------------------------------------
 
-class KeyboardController : public USBDriver /* , public USBHIDInput */ {
+class KeyboardController : public USBDriver , public USBHIDInput  {
 public:
 typedef union {
    struct {
@@ -614,8 +651,10 @@ typedef union {
 public:
 	KeyboardController(USBHost &host) { init(); }
 	KeyboardController(USBHost *host) { init(); }
-	int      available();
-	int      read();
+
+	// Some methods are in both public classes so we need to figure out which one to use
+	operator bool() { return (device != nullptr); }
+	// Main boot keyboard functions. 
 	uint16_t getKey() { return keyCode; }
 	uint8_t  getModifiers() { return modifiers; }
 	uint8_t  getOemKey() { return keyOEM; }
@@ -630,6 +669,13 @@ public:
 	void	 numLock(bool f);
 	void     capsLock(bool f);
 	void	 scrollLock(bool f);
+
+	// Added for extras information.
+	void     attachExtrasPress(void (*f)(uint32_t top, uint16_t code)) { extrasKeyPressedFunction = f; }
+	void     attachExtrasRelease(void (*f)(uint32_t top, uint16_t code)) { extrasKeyReleasedFunction = f; }
+	enum {MAX_KEYS_DOWN=4};
+
+
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
@@ -637,6 +683,14 @@ protected:
 	static void callback(const Transfer_t *transfer);
 	void new_data(const Transfer_t *transfer);
 	void init();
+
+protected:	// HID functions for extra keyboard data. 
+	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
+	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
+	virtual void hid_input_data(uint32_t usage, int32_t value);
+	virtual void hid_input_end();
+	virtual void disconnect_collection(Device_t *dev);
+
 private:
 	void update();
 	uint16_t convert_to_unicode(uint32_t mod, uint32_t key);
@@ -652,43 +706,22 @@ private:
 	uint8_t keyOEM;
 	uint8_t prev_report[8];
 	KBDLeds_t leds_ = {0};
-	bool update_leds_ = false;
-	bool processing_new_data_ = false;
 	Pipe_t mypipes[2] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
-};
 
-//--------------------------------------------------------------------------
-
-class KeyboardHIDExtrasController : public USBHIDInput {
-public:
-	KeyboardHIDExtrasController(USBHost &host) { USBHIDParser::driver_ready_for_hid_collection(this); }
-	void	clear() { event_ = false;}
-	bool	available() { return event_; }
-	void     attachPress(void (*f)(uint32_t top, uint16_t code)) { keyPressedFunction = f; }
-	void     attachRelease(void (*f)(uint32_t top, uint16_t code)) { keyReleasedFunction = f; }
-	enum {MAX_KEYS_DOWN=4};
-//	uint32_t buttons() { return buttons_; }
-protected:
-	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
-	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
-	virtual void hid_input_data(uint32_t usage, int32_t value);
-	virtual void hid_input_end();
-	virtual void disconnect_collection(Device_t *dev);
-private:
-	void (*keyPressedFunction)(uint32_t top, uint16_t code);
-	void (*keyReleasedFunction)(uint32_t top, uint16_t code);
+	// Added to process secondary HID data. 
+	void (*extrasKeyPressedFunction)(uint32_t top, uint16_t code);
+	void (*extrasKeyReleasedFunction)(uint32_t top, uint16_t code);
 	uint32_t topusage_ = 0;					// What top report am I processing?
 	uint8_t collections_claimed_ = 0;
-	volatile bool event_ = false;
 	volatile bool hid_input_begin_ = false;
 	volatile bool hid_input_data_ = false; 	// did we receive any valid data with report?
 	uint8_t count_keys_down_ = 0;
 	uint16_t keys_down[MAX_KEYS_DOWN];
+
 };
 
-//--------------------------------------------------------------------------
 
 class MouseController : public USBHIDInput {
 public:
@@ -701,7 +734,7 @@ public:
 	int     getWheel() { return wheel; }
 	int     getWheelH() { return wheelH; }
 protected:
-	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
@@ -719,26 +752,75 @@ private:
 
 //--------------------------------------------------------------------------
 
-class JoystickController : public USBHIDInput {
+class JoystickController : public USBDriver, public USBHIDInput {
 public:
-	JoystickController(USBHost &host) { USBHIDParser::driver_ready_for_hid_collection(this); }
+	JoystickController(USBHost &host) { init(); }
+
+	uint16_t idVendor();
+	uint16_t idProduct();
+
+	const uint8_t *manufacturer();
+	const uint8_t *product();
+	const uint8_t *serialNumber();
+	operator bool() { return ((device != nullptr) || (mydevice != nullptr)); }	// override as in both USBDriver and in USBHIDInput
+
 	bool    available() { return joystickEvent; }
 	void    joystickDataClear();
 	uint32_t getButtons() { return buttons; }
 	int	getAxis(uint32_t index) { return (index < (sizeof(axis)/sizeof(axis[0]))) ? axis[index] : 0; }
+	uint32_t axisMask() {return axis_mask_;}
+	enum { AXIS_COUNT = 10 };
 protected:
-	virtual bool claim_collection(Device_t *dev, uint32_t topusage);
+	// From USBDriver
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
+	virtual void control(const Transfer_t *transfer);
+	virtual void disconnect();
+
+	// From USBHIDInput
+	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 private:
-	uint8_t collections_claimed = 0;
+
+	// Class specific
+	void init();
+
 	bool anychange = false;
 	volatile bool joystickEvent = false;
 	uint32_t buttons = 0;
-	int16_t axis[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+	int axis[AXIS_COUNT] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+	uint32_t axis_mask_ = 0;	// which axis have valid data
+
+	// Used by HID code
+	uint8_t collections_claimed = 0;
+
+	// Used by USBDriver code
+	static void rx_callback(const Transfer_t *transfer);
+	static void tx_callback(const Transfer_t *transfer);
+	void rx_data(const Transfer_t *transfer);
+	void tx_data(const Transfer_t *transfer);
+
+	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
+	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
+	strbuf_t mystring_bufs[1];
+
+	uint16_t 		rx_size_ = 0;
+	uint16_t 		tx_size_ = 0;
+	Pipe_t 			*rxpipe_;
+	Pipe_t 			*txpipe_;
+	uint8_t 		rxbuf_[64];	// receive circular buffer
+
+	// Mapping table to say which devices we handle
+	typedef struct {
+		uint16_t 	idVendor;
+		uint16_t 	idProduct;
+	} product_vendor_mapping_t;
+	static product_vendor_mapping_t pid_vid_mapping[];
+
 };
+
 
 //--------------------------------------------------------------------------
 
@@ -889,17 +971,23 @@ private:
 //--------------------------------------------------------------------------
 
 class USBSerial: public USBDriver, public Stream {
-public:
+	public:
+
+
 	// FIXME: need different USBSerial, with bigger buffers for 480 Mbit & faster speed
 	enum { BUFFER_SIZE = 648 }; // must hold at least 6 max size packets, plus 2 extra bytes
+	enum { DEFAULT_WRITE_TIMEOUT = 3500};
 	USBSerial(USBHost &host) : txtimer(this) { init(); }
-	void begin(uint32_t baud, uint32_t format=0);
+	void begin(uint32_t baud, uint32_t format=USBHOST_SERIAL_8N1);
 	void end(void);
+	uint32_t writeTimeout() {return write_timeout_;}
+	void writeTimeOut(uint32_t write_timeout) {write_timeout_ = write_timeout;} // Will not impact current ones.
 	virtual int available(void);
 	virtual int peek(void);
 	virtual int read(void);
 	virtual int availableForWrite();
 	virtual size_t write(uint8_t c);
+	virtual void flush(void);
 
 	using Print::write;
 protected:
@@ -916,6 +1004,7 @@ private:
 	void init();
 	static bool check_rxtx_ep(uint32_t &rxep, uint32_t &txep);
 	bool init_buffers(uint32_t rsize, uint32_t tsize);
+	void ch341_setBaud(uint8_t byte_index);
 private:
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
@@ -923,8 +1012,10 @@ private:
 	USBDriverTimer txtimer;
 	uint32_t bigbuffer[(BUFFER_SIZE+3)/4];
 	setup_t setup;
-	uint8_t setupdata[8];
+	uint8_t setupdata[16]; // 
 	uint32_t baudrate;
+	uint32_t format_;
+	uint32_t write_timeout_ = DEFAULT_WRITE_TIMEOUT;
 	Pipe_t *rxpipe;
 	Pipe_t *txpipe;
 	uint8_t *rx1;	// location for first incoming packet
@@ -947,7 +1038,16 @@ private:
 	uint8_t pl2303_v2;
 	uint8_t interface;
 	bool control_queued;
-	enum { CDCACM, FTDI, PL2303, CH341 } sertype;
+	typedef enum { UNKNOWN=0, CDCACM, FTDI, PL2303, CH341, CP210X } sertype_t;
+	sertype_t sertype;
+
+	typedef struct {
+		uint16_t 	idVendor;
+		uint16_t 	idProduct;
+		sertype_t 	sertype;
+	} product_vendor_mapping_t;
+	static product_vendor_mapping_t pid_vid_mapping[];
+
 };
 
 //--------------------------------------------------------------------------
@@ -1171,5 +1271,35 @@ private:
 	uint16_t wheelCircumference; // default is WHEEL_CIRCUMFERENCE (2122cm)
 };
 
+//--------------------------------------------------------------------------
+
+class RawHIDController : public USBHIDInput {
+public:
+	RawHIDController(USBHost &host, uint32_t usage = 0) : fixed_usage_(usage) { init(); }
+	uint32_t usage(void) {return usage_;}
+	void attachReceive(bool (*f)(uint32_t usage, const uint8_t *data, uint32_t len)) {receiveCB = f;}
+	bool sendPacket(const uint8_t *buffer);
+protected:
+	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
+	virtual bool hid_process_in_data(const Transfer_t *transfer);
+	virtual bool hid_process_out_data(const Transfer_t *transfer);
+	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
+	virtual void hid_input_data(uint32_t usage, int32_t value);
+	virtual void hid_input_end();
+	virtual void disconnect_collection(Device_t *dev);
+private:
+	void init();
+	USBHIDParser *driver_;
+	enum { MAX_PACKET_SIZE = 64 };
+	bool (*receiveCB)(uint32_t usage, const uint8_t *data, uint32_t len) = nullptr;
+	uint8_t collections_claimed = 0;
+	//volatile bool hid_input_begin_ = false;
+	uint32_t fixed_usage_;
+	uint32_t usage_ = 0;
+
+	// See if we can contribute transfers
+	Transfer_t mytransfers[2] __attribute__ ((aligned(32)));
+
+};
 
 #endif
