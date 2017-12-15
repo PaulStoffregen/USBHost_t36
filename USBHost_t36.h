@@ -381,18 +381,17 @@ protected:
 // All USB device drivers inherit from this base class.
 class USBDriver : public USBHost {
 public:
-	//operator bool() { return (*(Device_t * volatile *)&device != nullptr); }
 	operator bool() {
 		Device_t *dev = *(Device_t * volatile *)&device;
 		return dev != nullptr;
 	}
 	uint16_t idVendor() {
 		Device_t *dev = *(Device_t * volatile *)&device;
-		return (device != nullptr) ? device->idVendor : 0;
+		return (dev != nullptr) ? dev->idVendor : 0;
 	}
 	uint16_t idProduct() {
 		Device_t *dev = *(Device_t * volatile *)&device;
-		return (device != nullptr) ? device->idProduct : 0;
+		return (dev != nullptr) ? dev->idProduct : 0;
 	}
 	const uint8_t *manufacturer() {
 		Device_t *dev = *(Device_t * volatile *)&device;
