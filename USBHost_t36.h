@@ -381,21 +381,34 @@ protected:
 // All USB device drivers inherit from this base class.
 class USBDriver : public USBHost {
 public:
-	operator bool() { return (device != nullptr); }
-	uint16_t idVendor() { return (device != nullptr) ? device->idVendor : 0; }
-	uint16_t idProduct() { return (device != nullptr) ? device->idProduct : 0; }
-
-	const uint8_t *manufacturer()
-		{  return  ((device == nullptr) || (device->strbuf == nullptr)) ? nullptr : &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; }
-	const uint8_t *product()
-		{  return  ((device == nullptr) || (device->strbuf == nullptr)) ? nullptr : &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; }
-	const uint8_t *serialNumber()
-		{  return  ((device == nullptr) || (device->strbuf == nullptr)) ? nullptr : &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
-
-	// TODO: user-level functions
-	// check if device is bound/active/online
-	// query vid, pid
-	// query string: manufacturer, product, serial number
+	//operator bool() { return (*(Device_t * volatile *)&device != nullptr); }
+	operator bool() {
+		Device_t *dev = *(Device_t * volatile *)&device;
+		return dev != nullptr;
+	}
+	uint16_t idVendor() {
+		Device_t *dev = *(Device_t * volatile *)&device;
+		return (device != nullptr) ? device->idVendor : 0;
+	}
+	uint16_t idProduct() {
+		Device_t *dev = *(Device_t * volatile *)&device;
+		return (device != nullptr) ? device->idProduct : 0;
+	}
+	const uint8_t *manufacturer() {
+		Device_t *dev = *(Device_t * volatile *)&device;
+		if (dev == nullptr || dev->strbuf == nullptr) return nullptr;
+		return &dev->strbuf->buffer[dev->strbuf->iStrings[strbuf_t::STR_ID_MAN]];
+	}
+	const uint8_t *product() {
+		Device_t *dev = *(Device_t * volatile *)&device;
+		if (dev == nullptr || dev->strbuf == nullptr) return nullptr;
+		return &dev->strbuf->buffer[dev->strbuf->iStrings[strbuf_t::STR_ID_PROD]];
+	}
+	const uint8_t *serialNumber() {
+		Device_t *dev = *(Device_t * volatile *)&device;
+		if (dev == nullptr || dev->strbuf == nullptr) return nullptr;
+		return &dev->strbuf->buffer[dev->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]];
+	}
 protected:
 	USBDriver() : next(NULL), device(NULL) {}
 	// Check if a driver wishes to claim a device or interface or group
