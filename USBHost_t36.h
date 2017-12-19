@@ -211,13 +211,16 @@ struct Pipe_struct {
 	void     (*callback_function)(const Transfer_t *);
 	uint16_t periodic_interval;
 	uint16_t periodic_offset;
+	uint16_t bandwidth_interval;
+	uint16_t bandwidth_offset;
+	uint16_t bandwidth_shift;
+	uint8_t  bandwidth_stime;
+	uint8_t  bandwidth_ctime;
 	uint32_t unused1;
 	uint32_t unused2;
 	uint32_t unused3;
 	uint32_t unused4;
 	uint32_t unused5;
-	uint32_t unused6;
-	uint32_t unused7;
 };
 
 // Transfer_t represents a single transaction on the USB bus.
@@ -259,6 +262,7 @@ class USBHost {
 public:
 	static void begin();
 	static void Task();
+	static void countFree(uint32_t &devices, uint32_t &pipes, uint32_t &trans, uint32_t &strs);
 protected:
 	static Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 		uint32_t direction, uint32_t maxlen, uint32_t interval=0);

@@ -159,4 +159,34 @@ void USBHost::contribute_String_Buffers(strbuf_t *strbufs, uint32_t num)
 	}
 }
 
-
+// for debugging, hopefully never needed...
+void USBHost::countFree(uint32_t &devices, uint32_t &pipes, uint32_t &transfers, uint32_t &strs)
+{
+	uint32_t ndev=0, npipe=0, ntransfer=0, nstr=0;
+	__disable_irq();
+	Device_t *dev = free_Device_list;
+	while (dev) {
+		ndev++;
+		dev = *(Device_t **)dev;
+	}
+	Pipe_t *pipe = free_Pipe_list;
+	while (pipe) {
+		npipe++;
+		pipe = *(Pipe_t **)pipe;
+	}
+	Transfer_t *transfer = free_Transfer_list;
+	while (transfer) {
+		ntransfer++;
+		transfer = *(Transfer_t **)transfer;
+	}
+	strbuf_t *str = free_strbuf_list;
+	while (str) {
+		nstr++;
+		str = *(strbuf_t **)str;
+	}
+	__enable_irq();
+	devices = ndev;
+	pipes = npipe;
+	transfers = ntransfer;
+	strs = nstr;
+}

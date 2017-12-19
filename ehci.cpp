@@ -1045,6 +1045,10 @@ bool USBHost::allocate_interrupt_pipe_bandwidth(Pipe_t *pipe, uint32_t maxlen, u
 		// a 125 us micro frame can fit 7500 bytes, or 234 of our 32-byte units
 		// fail if the best found needs more than 80% (234 * 0.8) in any uframe
 		if (best_bandwidth > 187) return false;
+		// save essential bandwidth specs, for cleanup in delete_Pipe
+		pipe->bandwidth_interval = interval;
+		pipe->bandwidth_offset = best_offset;
+		pipe->bandwidth_stime = stime;
 		for (uint32_t i=best_offset; i < PERIODIC_LIST_SIZE*8; i += interval) {
 			uframe_bandwidth[i] += stime;
 		}
@@ -1113,6 +1117,12 @@ bool USBHost::allocate_interrupt_pipe_bandwidth(Pipe_t *pipe, uint32_t maxlen, u
 		// a 125 us micro frame can fit 7500 bytes, or 234 of our 32-byte units
 		// fail if the best found needs more than 80% (234 * 0.8) in any uframe
 		if (best_bandwidth > 187) return false;
+		// save essential bandwidth specs, for cleanup in delete_Pipe
+		pipe->bandwidth_interval = interval;
+		pipe->bandwidth_offset = best_offset;
+		pipe->bandwidth_shift = best_shift;
+		pipe->bandwidth_stime = stime;
+		pipe->bandwidth_ctime = ctime;
 		for (uint32_t i=best_offset; i < PERIODIC_LIST_SIZE; i += interval) {
 			uint32_t n = (i << 3) + best_shift;
 			uframe_bandwidth[n+0] += stime;
@@ -1299,7 +1309,28 @@ void USBHost::delete_Pipe(Pipe_t *pipe)
 				prev = node;
 			}
 		}
-		// TODO: subtract bandwidth from uframe_bandwidth array
+		// subtract bandwidth from uframe_bandwidth array
+		if (pipe->device->speed == 2) {
+			uint32_t interval = pipe->bandwidth_interval;
+			uint32_t offset = pipe->bandwidth_offset;
+			uint32_t stime = pipe->bandwidth_stime;
+			for (uint32_t i=offset; i < PERIODIC_LIST_SIZE*8; i += interval) {
+				uframe_bandwidth[i] -= stime;
+			}
+		} else {
+			uint32_t interval = pipe->bandwidth_interval;
+			uint32_t offset = pipe->bandwidth_offset;
+			uint32_t shift = pipe->bandwidth_shift;
+			uint32_t stime = pipe->bandwidth_stime;
+			uint32_t ctime = pipe->bandwidth_ctime;
+			for (uint32_t i=offset; i < PERIODIC_LIST_SIZE; i += interval) {
+				uint32_t n = (i << 3) + shift;
+				uframe_bandwidth[n+0] -= stime;
+				uframe_bandwidth[n+2] -= ctime;
+				uframe_bandwidth[n+3] -= ctime;
+				uframe_bandwidth[n+4] -= ctime;
+			}
+		}
 
 		// find & free all the transfers which completed
 		println("  Free transfers");
