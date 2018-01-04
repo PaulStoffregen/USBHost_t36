@@ -954,13 +954,16 @@ private:
 	enum { MAX_PACKET_SIZE = 64 };
 	enum { RX_QUEUE_SIZE = 80 }; // must be more than MAX_PACKET_SIZE/4
 	uint32_t rx_buffer[MAX_PACKET_SIZE/4];
-	uint32_t tx_buffer[MAX_PACKET_SIZE/4];
+	uint32_t tx_buffer1[MAX_PACKET_SIZE/4];
+	uint32_t tx_buffer2[MAX_PACKET_SIZE/4];
 	uint16_t rx_size;
 	uint16_t tx_size;
 	uint32_t rx_queue[RX_QUEUE_SIZE];
 	bool rx_packet_queued;
 	uint16_t rx_head;
 	uint16_t rx_tail;
+	volatile uint8_t tx1_count;
+	volatile uint8_t tx2_count;
 	uint8_t rx_ep;
 	uint8_t tx_ep;
 	uint8_t msg_channel;

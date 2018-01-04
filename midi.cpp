@@ -44,6 +44,8 @@ void MIDIDevice::init()
 	handleTimeCodeQuarterFrame = NULL;
 	rx_head = 0;
 	rx_tail = 0;
+	rxpipe = NULL;
+	txpipe = NULL;
 	driver_ready_for_device(this);
 }
 
@@ -166,6 +168,8 @@ bool MIDIDevice::claim(Device_t *dev, int type, const uint8_t *descriptors, uint
 		txpipe = new_Pipe(dev, 2, tx_ep, 0, tx_size);
 		if (txpipe) {
 			txpipe->callback_function = tx_callback;
+			tx1_count = 0;
+			tx2_count = 0;
 		}
 	} else {
 		txpipe = NULL;
@@ -233,7 +237,11 @@ void MIDIDevice::tx_data(const Transfer_t *transfer)
 	println("MIDIDevice transmit complete");
 	print("  MIDI Data: ");
 	print_hexbytes(transfer->buffer, tx_size);
-	// TODO: return the buffer to the pool...
+	if (transfer->buffer == tx_buffer1) {
+		tx1_count = 0;
+	} else if (transfer->buffer == tx_buffer2) {
+		tx2_count = 0;
+	}
 }
 
 
@@ -247,6 +255,43 @@ void MIDIDevice::disconnect()
 }
 
 
+void MIDIDevice::write_packed(uint32_t data)
+{
+	if (!txpipe) return;
+	uint32_t tx_max = tx_size / 4;
+	while (1) {
+		uint32_t tx1 = tx1_count;
+		uint32_t tx2 = tx2_count;
+		if (tx1 < tx_max && (tx2 == 0 || tx2 >= tx_max)) {
+			// use tx_buffer1
+			tx_buffer1[tx1++] = data;
+			tx1_count = tx1;
+			if (tx1 >= tx_max) {
+				queue_Data_Transfer(txpipe, tx_buffer1, tx_max*4, this);
+			} else {
+				// TODO: start a timer, rather than sending the buffer
+				// before it's full, to make best use of bandwidth
+				tx1_count = tx_max;
+				queue_Data_Transfer(txpipe, tx_buffer1, tx_max*4, this);
+			}
+			return;
+		}
+		if (tx2 < tx_max) {
+			// use tx_buffer2
+			tx_buffer2[tx2++] = data;
+			tx2_count = tx2;
+			if (tx2 >= tx_max) {
+				queue_Data_Transfer(txpipe, tx_buffer2, tx_max*4, this);
+			} else {
+				// TODO: start a timer, rather than sending the buffer
+				// before it's full, to make best use of bandwidth
+				tx2_count = tx_max;
+				queue_Data_Transfer(txpipe, tx_buffer2, tx_max*4, this);
+			}
+			return;
+		}
+	}
+}
 
 
 bool MIDIDevice::read(uint8_t channel, uint8_t cable)
