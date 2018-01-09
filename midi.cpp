@@ -356,7 +356,7 @@ void MIDIDevice::send_sysex_add_term_bytes(const uint8_t *data, uint32_t length,
 
 bool MIDIDevice::read(uint8_t channel)
 {
-	uint32_t n, head, tail, avail, ch, type1, type2;
+	uint32_t n, head, tail, avail, ch, type1, type2, b1;
 
 	head = rx_head;
 	tail = rx_tail;
@@ -376,7 +376,8 @@ bool MIDIDevice::read(uint8_t channel)
 
 	type1 = n & 15;
 	type2 = (n >> 12) & 15;
-	ch = ((n >> 8) & 15) + 1;
+	b1 = (n >> 8) & 0xFF;
+	ch = (b1 & 15) + 1;
 	msg_cable = (n >> 4) & 15;
 	if (type1 >= 0x08 && type1 <= 0x0E) {
 		if (channel && channel != ch) {
@@ -440,12 +441,10 @@ bool MIDIDevice::read(uint8_t channel)
 		msg_data2 = (n >> 24);
 		return true;
 	}
-	if (type1 == 0x02 || type1 == 0x03 || (type1 == 0x05 && type2 == 0x0F)) {
+	if (type1 == 0x02 || type1 == 0x03 || (type1 == 0x05 && b1 >= 0xF1 && b1 != 0xF7)) {
 		// system common or system realtime message
-		uint8_t type;
 		system_common_or_realtime:
-		type = n >> 8;
-		switch (type) {
+		switch (b1) {
 		case 0xF1: // usbMIDI.TimeCodeQuarterFrame
 			if (handleTimeCodeQuarterFrame) {
 				(*handleTimeCodeQuarterFrame)(n >> 16);
@@ -511,7 +510,7 @@ bool MIDIDevice::read(uint8_t channel)
 		default:
 			return false; // unknown message, ignore it
 		}
-		msg_type = type;
+		msg_type = b1;
 		goto return_message;
 	}
 	if (type1 == 0x04) {
@@ -521,7 +520,10 @@ bool MIDIDevice::read(uint8_t channel)
 		return false;
 	}
 	if (type1 >= 0x05 && type1 <= 0x07) {
-		sysex_byte(n >> 8);
+		sysex_byte(b1);
+		// allow for buggy devices which use code 5 to transmit 1 byte at a time
+		// https://forum.pjrc.com/threads/43450?p=164596&viewfull=1#post164596
+		if (type1 == 0x05 && b1 != 0xF7) return false;
 		if (type1 >= 0x06) sysex_byte(n >> 16);
 		if (type1 == 0x07) sysex_byte(n >> 24);
 		uint16_t len = msg_sysex_len;
@@ -537,13 +539,12 @@ bool MIDIDevice::read(uint8_t channel)
 		return true;
 	}
 	if (type1 == 0x0F) {
-		uint8_t b = n >> 8;
-		if (b >= 0xF8) {
+		if (b1 >= 0xF8) {
 			goto system_common_or_realtime;
 		}
-		if (msg_sysex_len > 0) {
+		if (b1 == 0xF0 || msg_sysex_len > 0) {
 			// Is this really needed?  Mac OS-X does this, but do any devices?
-			sysex_byte(n >> 8);
+			sysex_byte(b1);
 		}
 	}
 	return false;
