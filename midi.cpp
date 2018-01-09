@@ -108,7 +108,8 @@ bool MIDIDevice::claim(Device_t *dev, int type, const uint8_t *descriptors, uint
 		if (len < 4) return false; // all audio desc are at least 4 bytes
 		if (p + len > end) return false; // reject if beyond end of data
 		uint32_t type = p[1];
-		//println("type: ", type);
+		print("type: ", type);
+		println(", len: ", len);
 		if (type == 4 || type == 11) break; // interface or IAD, not for us
 		if (type == 0x24) {  // 0x24 = Audio CS_INTERFACE, audio 1.0, page 99
 			uint32_t subtype = p[2];
@@ -131,13 +132,14 @@ bool MIDIDevice::claim(Device_t *dev, int type, const uint8_t *descriptors, uint
 		} else if (type == 5) {
 			// endpoint descriptor
 			if (p[0] < 7) return false; // at least 7 bytes
-			if (p[3] != 2) return false; // must be bulk type
+			if (p[3] != 2 && p[3] != 3) return false; // must be bulk or interrupt type
 			println("    MIDI Endpoint: ", p[2], HEX);
 			switch (p[2] & 0xF0) {
 			case 0x80:
 				// IN endpoint
 				if (rx_ep == 0) {
 					rx_ep = p[2] & 0x0F;
+					rx_ep_type = p[3];
 					rx_size = p[4] | (p[5] << 8);
 					println("      rx_size = ", rx_size);
 				}
@@ -146,6 +148,7 @@ bool MIDIDevice::claim(Device_t *dev, int type, const uint8_t *descriptors, uint
 				// OUT endpoint
 				if (tx_ep == 0) {
 					tx_ep = p[2];
+					tx_ep_type = p[3];
 					tx_size = p[4] | (p[5] << 8);
 					println("      tx_size = ", tx_size);
 				}
@@ -163,7 +166,7 @@ bool MIDIDevice::claim(Device_t *dev, int type, const uint8_t *descriptors, uint
 	}
 	// if an IN endpoint was found, create its pipe
 	if (rx_ep && rx_size <= MAX_PACKET_SIZE) {
-		rxpipe = new_Pipe(dev, 2, rx_ep, 1, rx_size);
+		rxpipe = new_Pipe(dev, rx_ep_type, rx_ep, 1, rx_size);
 		if (rxpipe) {
 			rxpipe->callback_function = rx_callback;
 			queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
@@ -174,7 +177,7 @@ bool MIDIDevice::claim(Device_t *dev, int type, const uint8_t *descriptors, uint
 	}
 	// if an OUT endpoint was found, create its pipe
 	if (tx_ep && tx_size <= MAX_PACKET_SIZE) {
-		txpipe = new_Pipe(dev, 2, tx_ep, 0, tx_size);
+		txpipe = new_Pipe(dev, tx_ep_type, tx_ep, 0, tx_size);
 		if (txpipe) {
 			txpipe->callback_function = tx_callback;
 			tx1_count = 0;

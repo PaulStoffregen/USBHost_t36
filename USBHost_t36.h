@@ -1134,6 +1134,8 @@ private:
 	volatile uint8_t tx2_count;
 	uint8_t rx_ep;
 	uint8_t tx_ep;
+	uint8_t rx_ep_type;
+	uint8_t tx_ep_type;
 	uint8_t msg_cable;
 	uint8_t msg_channel;
 	uint8_t msg_type;
