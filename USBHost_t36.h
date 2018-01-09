@@ -878,7 +878,7 @@ public:
 	void sendPolyPressure(uint8_t note, uint8_t pressure, uint8_t channel, uint8_t cable=0) {
 		send(0xA0, note, pressure, channel, cable);
 	}
-	void sendAfterTouch(uint8_t note, uint8_t pressure, uint8_t channel, uint8_t cable=0) {
+	void sendAfterTouchPoly(uint8_t note, uint8_t pressure, uint8_t channel, uint8_t cable=0) {
 		send(0xA0, note, pressure, channel, cable);
 	}
 	void sendControlChange(uint8_t control, uint8_t value, uint8_t channel, uint8_t cable=0) {
@@ -937,10 +937,6 @@ public:
 		sendControlChange(6, value >> 7, channel, cable);
 		sendControlChange(38, value, channel, cable);
 	}
-	void sendRpnValue(uint8_t msb, uint8_t lsb, uint8_t channel, uint8_t cable=0) {
-		sendControlChange(6, msb, channel, cable);
-		sendControlChange(38, lsb, channel, cable);
-	}
 	void sendRpnIncrement(uint8_t amount, uint8_t channel, uint8_t cable=0) {
 		sendControlChange(96, amount, channel, cable);
 	}
@@ -958,10 +954,6 @@ public:
 	void sendNrpnValue(uint16_t value, uint8_t channel, uint8_t cable=0) {
 		sendControlChange(6, value >> 7, channel, cable);
 		sendControlChange(38, value, channel, cable);
-	}
-	void sendNrpnValue(uint8_t msb, uint8_t lsb, uint8_t channel, uint8_t cable=0) {
-		sendControlChange(6, msb, channel, cable);
-		sendControlChange(38, lsb, channel, cable);
 	}
 	void sendNrpnIncrement(uint8_t amount, uint8_t channel, uint8_t cable=0) {
 		sendControlChange(96, amount, channel, cable);
