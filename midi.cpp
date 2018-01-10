@@ -392,12 +392,12 @@ bool MIDIDevice::read(uint8_t channel)
 		} else
 		if (type1 == 0x09 && type2 == 0x09) {
 			if ((n >> 24) > 0) {
-				msg_type = 0x9;		// 0x9 = Note on
+				msg_type = 0x90;	// 0x90 = Note on
 				if (handleNoteOn) {
 					(*handleNoteOn)(ch, (n >> 16), (n >> 24));
 				}
 			} else {
-				msg_type = 0x8;		// 0x8 = Note off
+				msg_type = 0x80;	// 0x80 = Note off
 				if (handleNoteOff) {
 					(*handleNoteOff)(ch, (n >> 16), (n >> 24));
 				}
