@@ -890,9 +890,13 @@ public:
 	void sendAfterTouch(uint8_t pressure, uint8_t channel, uint8_t cable=0) {
 		send(0xD0, pressure, 0, channel, cable);
 	}
-	void sendPitchBend(uint16_t value, uint8_t channel, uint8_t cable=0) {
-		// MIDI 4.3 takes -8192 to +8191.  We take 0 to 16383
-		// MIDI 4.3 also has version that takes float -1.0 to +1.0
+	void sendPitchBend(int value, uint8_t channel, uint8_t cable=0) {
+		if (value < -8192) {
+			value = -8192;
+		} else if (value > 8191) {
+			value = 8191;
+		}
+		value += 8192;
 		send(0xE0, value, value >> 7, channel, cable);
 	}
 	void sendSysEx(uint32_t length, const uint8_t *data, bool hasTerm=false, uint8_t cable=0) {

@@ -430,7 +430,9 @@ bool MIDIDevice::read(uint8_t channel)
 		if (type1 == 0x0E && type2 == 0x0E) {
 			msg_type = 0xE0;		// 0xE0 = Pitch Bend
 			if (handlePitchChange) {
-				(*handlePitchChange)(ch, ((n >> 16) & 0x7F) | ((n >> 17) & 0x3F80));
+				int value = ((n >> 16) & 0x7F) | ((n >> 17) & 0x3F80);
+				value -= 8192; // 0 to 16383 --> -8192 to +8191
+				(*handlePitchChange)(ch, value);
 			}
 		} else {
 			return false;
