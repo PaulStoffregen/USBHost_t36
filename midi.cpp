@@ -215,10 +215,10 @@ void MIDIDevice::rx_data(const Transfer_t *transfer)
 {
 	println("MIDIDevice Receive");
 	print("  MIDI Data: ");
-	print_hexbytes(transfer->buffer, rx_size);
+	uint32_t len = (transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF)) >> 2;
+	print_hexbytes(transfer->buffer, len * 4);
 	uint32_t head = rx_head;
 	uint32_t tail = rx_tail;
-	uint32_t len = (transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF)) >> 2;
 	for (uint32_t i=0; i < len; i++) {
 		uint32_t msg = rx_buffer[i];
 		if (msg) {
@@ -229,7 +229,7 @@ void MIDIDevice::rx_data(const Transfer_t *transfer)
 	rx_head = head;
 	rx_tail = tail;
 	uint32_t avail = (head < tail) ? tail - head - 1 : RX_QUEUE_SIZE - 1 - head + tail;
-	println("rx_size = ", rx_size);
+	//println("rx_size = ", rx_size);
 	println("avail = ", avail);
 	if (avail >= (uint32_t)(rx_size>>2)) {
 		// enough space to accept another full packet
