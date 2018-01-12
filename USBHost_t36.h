@@ -969,7 +969,7 @@ public:
 		sendControlChange(99, 0x7F, channel, cable);
 		sendControlChange(98, 0x7F, channel, cable);
 	}
-	void send(uint8_t type, uint8_t data1, uint8_t data2, uint8_t channel, uint8_t cable) {
+	void send(uint8_t type, uint8_t data1, uint8_t data2, uint8_t channel, uint8_t cable=0) {
 		//if (cable >= MIDI_NUM_CABLES) return;
 		if (type < 0xF0) {
 			if (type < 0x80) return;
