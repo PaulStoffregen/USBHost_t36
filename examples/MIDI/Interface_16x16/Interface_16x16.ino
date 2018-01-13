@@ -110,6 +110,7 @@ void loop() {
       uint8_t channel =    midilist[port]->getChannel();
       const uint8_t *sys = midilist[port]->getSysExArray();
       sendToComputer(type, data1, data2, channel, sys, 6 + port);
+      activity = true;
     }
   }
 
