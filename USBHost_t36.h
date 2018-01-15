@@ -1042,6 +1042,9 @@ public:
 	uint8_t * getSysExArray(void) {
 		return msg_sysex;
 	}
+	uint16_t getSysExArrayLength(void) {
+		return msg_data2 << 8 | msg_data1;
+	}
 	void setHandleNoteOff(void (*fptr)(uint8_t channel, uint8_t note, uint8_t velocity)) {
 		// type: 0x80  NoteOff
 		handleNoteOff = fptr;
@@ -1172,7 +1175,7 @@ private:
 	uint8_t msg_data1;
 	uint8_t msg_data2;
 	uint8_t msg_sysex[SYSEX_MAX_LEN];
-	uint8_t msg_sysex_len;
+	uint16_t msg_sysex_len;
 	void (*handleNoteOff)(uint8_t ch, uint8_t note, uint8_t vel);
 	void (*handleNoteOn)(uint8_t ch, uint8_t note, uint8_t vel);
 	void (*handleVelocityChange)(uint8_t ch, uint8_t note, uint8_t vel);
