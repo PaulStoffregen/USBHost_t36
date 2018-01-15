@@ -27,6 +27,18 @@
 #define print   USBHost::print_
 #define println USBHost::println_
 
+// PID/VID to joystick mapping - Only the XBOXOne is used to claim the USB interface directly, 
+// The others are used after claim-hid code to know which one we have and to use it for 
+// doing other features.  
+JoystickController::product_vendor_mapping_t JoystickController::pid_vid_mapping[] = {
+	{ 0x045e, 0x02ea, XBOXONE, false },{ 0x045e, 0x02dd, XBOXONE, false },
+	{ 0x054C, 0x0268, PS3, true}, 
+	{ 0x054C, 0x05C4, PS4, true}, {0x054C, 0x09CC, PS4, true }
+};
+
+
+
+//-----------------------------------------------------------------------------
 void JoystickController::init()
 {
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
@@ -34,6 +46,19 @@ void JoystickController::init()
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
 	driver_ready_for_device(this);
 	USBHIDParser::driver_ready_for_hid_collection(this);
+}
+
+//-----------------------------------------------------------------------------
+JoystickController::joytype_t JoystickController::mapVIDPIDtoJoystickType(uint16_t idVendor, uint16_t idProduct, bool exclude_hid_devices)
+{
+	for (uint8_t i = 0; i < (sizeof(pid_vid_mapping)/sizeof(pid_vid_mapping[0])); i++) {
+		if ((idVendor == pid_vid_mapping[i].idVendor) && (idProduct == pid_vid_mapping[i].idProduct)) {
+			println("Match PID/VID: ", i, DEC);
+			if (exclude_hid_devices && pid_vid_mapping[i].hidDevice) return UNKNOWN;
+			return pid_vid_mapping[i].joyType;
+		}
+	}  
+	return UNKNOWN; 	// Not in our list
 }
 
 //*****************************************************************************
@@ -76,9 +101,109 @@ const uint8_t *JoystickController::serialNumber()
 }
 
 
+bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeout)
+{
+	// Need to know which joystick we are on.  Start off with XBox support - maybe need to add some enum value for the known
+	// joystick types. 
+	rumble_lValue_ = lValue; 
+	rumble_rValue_ = rValue;
+	rumble_timeout_ = timeout;
+
+	switch (joystickType) {
+		default:
+			break;
+		case PS3:
+			return transmitPS3UserFeedbackMsg();
+		case PS4:
+			return transmitPS4UserFeedbackMsg();
+		case XBOXONE:
+			// Lets try sending a request to the XBox 1.
+			txbuf_[0] = 0x9;
+			txbuf_[1] = 0x8;
+			txbuf_[2] = 0x0;
+			txbuf_[3] = 0x08; // Substructure (what substructure rest of this packet has)
+			txbuf_[4] = 0x00; // Mode
+			txbuf_[5] = 0x0f; // Rumble mask (what motors are activated) (0000 lT rT L R)
+			txbuf_[6] = 0x0; // lT force
+			txbuf_[7] = 0x0; // rT force
+			txbuf_[8] = lValue; // L force
+			txbuf_[9] = rValue; // R force
+			txbuf_[10] = 0x80; // Length of pulse
+			txbuf_[11] = 0x00; // Period between pulses			
+			if (!queue_Data_Transfer(txpipe_, txbuf_, 12, this)) {
+				println("XBoxOne rumble transfer fail");
+			}
+			return true;	// 
+	} 
+	return false;
+}
+
+bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
+{
+	// Need to know which joystick we are on.  Start off with XBox support - maybe need to add some enum value for the known
+	// joystick types. 
+	if ((leds_[0] != lr) || (leds_[1] != lg) || (leds_[2] != lb)) {
+		leds_[0] = lr;
+		leds_[1] = lg;
+		leds_[2] = lb;
+
+		switch (joystickType) {
+			case PS3:
+				return transmitPS3UserFeedbackMsg();
+			case PS4:
+				return transmitPS4UserFeedbackMsg();
+			default:
+				return false;
+		} 
+	}
+	return false;
+}
+
+bool JoystickController::transmitPS4UserFeedbackMsg() {
+if (!driver_) return false;
+	uint8_t packet[32];
+    memset(packet, 0, sizeof(packet));
+
+    packet[0] = 0x05; // Report ID
+    packet[1]= 0xFF;
+
+    packet[4] = rumble_lValue_; // Small Rumble
+    packet[5] = rumble_rValue_; // Big rumble
+    packet[6] = leds_[0]; // RGB value 
+    packet[7] = leds_[1]; 
+    packet[8] = leds_[2];
+    // 9, 10 flash ON, OFF times in 100ths of sedond?  2.5 seconds = 255
+    Serial.printf("Joystick update Rumble/LEDs");
+	return driver_->sendPacket(packet, 32);
+}
+
+static const uint8_t PS3_USER_FEEDBACK_INIT[] = {
+        0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+        0xff, 0x27, 0x10, 0x00, 0x32,
+        0xff, 0x27, 0x10, 0x00, 0x32,
+        0xff, 0x27, 0x10, 0x00, 0x32,
+        0xff, 0x27, 0x10, 0x00, 0x32,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00 };
+
+bool JoystickController::transmitPS3UserFeedbackMsg() {
+if (!driver_) return false;
+    memcpy(txbuf_, PS3_USER_FEEDBACK_INIT, 48);
+
+    txbuf_[1] = rumble_lValue_? rumble_timeout_ : 0;
+    txbuf_[2] = rumble_lValue_; // Small Rumble
+    txbuf_[3] = rumble_rValue_? rumble_timeout_ : 0; 
+    txbuf_[4] = rumble_rValue_; // Big rumble
+    txbuf_[9] = leds_[0] << 1; // RGB value 
+    //Serial.printf("\nJoystick update Rumble/LEDs %d %d %d %d %d\n",  txbuf_[1], txbuf_[2],  txbuf_[3],  txbuf_[4],  txbuf_[9]);
+	return driver_->sendControlPacket(0x21, 9, 0x201, 0, 48, txbuf_); 
+}
 
 //*****************************************************************************
-// Support for Joysticks that USe HID data. 
+// Support for Joysticks that Use HID data. 
 //*****************************************************************************
 
 hidclaim_t JoystickController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
@@ -90,6 +215,31 @@ hidclaim_t JoystickController::claim_collection(USBHIDParser *driver, Device_t *
 	mydevice = dev;
 	collections_claimed++;
 	anychange = true; // always report values on first read
+	driver_ = driver;	// remember the driver. 
+	driver_->setTXBuffers(txbuf_, nullptr, sizeof(txbuf_));
+
+	// Lets see if we know what type of joystick this is. That is, is it a PS3 or PS4 or ...
+	joystickType = mapVIDPIDtoJoystickType(mydevice->idVendor, mydevice->idProduct, false);
+	switch (joystickType) {
+		case PS3:
+			additional_axis_usage_page_ = 0x1;
+			additional_axis_usage_start_ = 0x100;
+			additional_axis_usage_count_ = 39;
+			axis_change_notify_mask_ = (uint64_t)-1;	// Start off assume all bits 
+			break;
+		case PS4:
+			additional_axis_usage_page_ = 0xFF00;
+			additional_axis_usage_start_ = 0x21;
+			additional_axis_usage_count_ = 54;
+			axis_change_notify_mask_ = (uint64_t)0xfffffffffffff3ffl;	// Start off assume all bits - 10 and 11
+			break;
+		default: 
+			additional_axis_usage_page_ = 0;
+			additional_axis_usage_start_ = 0;
+			additional_axis_usage_count_ = 0;
+			axis_change_notify_mask_ = 0x3ff;	// Start off assume only the 10 bits...
+	}
+	Serial.printf("Claim Additional axis: %x %x %d\n", additional_axis_usage_page_, additional_axis_usage_start_, additional_axis_usage_count_);
 	return CLAIM_REPORT;
 }
 
@@ -97,7 +247,9 @@ void JoystickController::disconnect_collection(Device_t *dev)
 {
 	if (--collections_claimed == 0) {
 		mydevice = NULL;
+		driver_ = nullptr;
 		axis_mask_ = 0;	
+		axis_changed_mask_ = 0;
 	}
 }
 
@@ -131,8 +283,32 @@ void JoystickController::hid_input_data(uint32_t usage, int32_t value)
 		axis_mask_ |= (1 << i);		// Keep record of which axis we have data on.
 		if (axis[i] != value) {
 			axis[i] = value;
-			anychange = true;
+			axis_changed_mask_ |= (1 << i);
+			if (axis_changed_mask_ & axis_change_notify_mask_)
+				anychange = true;
 		}
+	} else if (usage_page == additional_axis_usage_page_) {
+		// see if the usage is witin range.
+		//Serial.printf("UP: usage_page=%x usage=%x User: %x %d\n", usage_page, usage, user_buttons_usage_start, user_buttons_count_);
+		if ((usage >= additional_axis_usage_start_) && (usage < (additional_axis_usage_start_ + additional_axis_usage_count_))) {
+			// We are in the user range. 
+			uint16_t usage_index = usage - additional_axis_usage_start_ + STANDARD_AXIS_COUNT;
+			if (usage_index < (sizeof(axis)/sizeof(axis[0]))) {
+				if (axis[usage_index] != value) {
+					axis[usage_index] = value;
+					if (usage_index > 63) usage_index = 63;	// don't overflow our mask
+					axis_changed_mask_ |= ((uint64_t)1 << usage_index);		// Keep track of which ones changed.
+					if (axis_changed_mask_ & axis_change_notify_mask_)
+						anychange = true;	// We have changes... 
+				}
+				axis_mask_ |= ((uint64_t)1 << usage_index);		// Keep record of which axis we have data on.
+			}
+			//Serial.printf("UB: index=%x value=%x\n", usage_index, value);
+		}
+
+	} else {
+		Serial.printf("UP: usage_page=%x usage=%x add: %x %x %d\n", usage_page, usage, additional_axis_usage_page_, additional_axis_usage_start_, additional_axis_usage_count_);
+
 	}
 	// TODO: hat switch?
 }
@@ -144,18 +320,23 @@ void JoystickController::hid_input_end()
 	}
 }
 
+bool JoystickController::hid_process_out_data(const Transfer_t *transfer) 
+{
+	Serial.printf("JoystickController::hid_process_out_data\n");
+	return true;
+}
+
 void JoystickController::joystickDataClear() {
 	joystickEvent = false;
 	anychange = false;
+	axis_changed_mask_ = 0;
+	axis_mask_ = 0;
 }
 
 //*****************************************************************************
 // Support for Joysticks that are class specific and do not use HID
 // Example: XBox One controller. 
 //*****************************************************************************
-// Note: currently just XBOX one. 
-JoystickController::product_vendor_mapping_t JoystickController::pid_vid_mapping[] = {
-	{ 0x045e, 0x02ea },{ 0x045e, 0x02dd } };
 
 static  uint8_t start_input[] = {0x05, 0x20, 0x00, 0x01, 0x00};
 
@@ -167,15 +348,12 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 	if (type != 0) return false;
 	print_hexbytes(descriptors, len);
 
-	uint8_t i = 0;
-	for (; i < (sizeof(pid_vid_mapping)/sizeof(pid_vid_mapping[0])); i++) {
-		if ((dev->idVendor == pid_vid_mapping[i].idVendor) && (dev->idProduct == pid_vid_mapping[i].idProduct)) {
-			break;
-		}
-	}  
-	if (i == (sizeof(pid_vid_mapping)/sizeof(pid_vid_mapping[0]))) return false; 	// Not in our list
+	JoystickController::joytype_t jtype = mapVIDPIDtoJoystickType(dev->idVendor, dev->idProduct, true);
+	println("Jtype=", (uint8_t)jtype, DEC);
+	if (jtype == UNKNOWN)
+		return false; 
 
-	//  0  1  2  3  4  5  6  7  8 *9 10  1  2  3  4  5 *6  7  8  9 20  1  2  3  4  5  6  7  8  9 30  1... 
+		//  0  1  2  3  4  5  6  7  8 *9 10  1  2  3  4  5 *6  7  8  9 20  1  2  3  4  5  6  7  8  9 30  1... 
 	// 09 04 00 00 02 FF 47 D0 00 07 05 02 03 40 00 04 07 05 82 03 40 00 04 09 04 01 00 00 FF 47 D0 00 
 	// Lets do some verifications to make sure. 
 
@@ -226,6 +404,7 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 
 	queue_Data_Transfer(txpipe_, start_input, sizeof(start_input), this);
 	memset(axis, 0, sizeof(axis));	// clear out any data. 
+	joystickType = jtype;		// remember we are an XBox One. 
 	return true;
 }
 
@@ -280,6 +459,7 @@ void JoystickController::rx_data(const Transfer_t *transfer)
 //	print("JoystickController::rx_data: ");
 //	print_hexbytes((uint8_t*)transfer->buffer, transfer->length);
 	axis_mask_ = 0x3f;	
+	axis_changed_mask_ = 0;	// assume none for now
 	xbox1data20_t *xb1d = (xbox1data20_t *)transfer->buffer;
 	if ((xb1d->type == 0x20) && (transfer->length >= sizeof (xbox1data20_t))) {
 		// We have a data transfer.  Lets see what is new...
@@ -309,6 +489,7 @@ void JoystickController::tx_data(const Transfer_t *transfer)
 void JoystickController::disconnect()
 {
 	axis_mask_ = 0;	
+	axis_changed_mask_ = 0;
 	// TODO: free resources
 }
 

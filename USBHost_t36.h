@@ -603,7 +603,11 @@ class USBHIDParser : public USBDriver {
 public:
 	USBHIDParser(USBHost &host) { init(); }
 	static void driver_ready_for_hid_collection(USBHIDInput *driver);
-	bool sendPacket(const uint8_t *buffer);
+	bool sendPacket(const uint8_t *buffer, int cb=-1);
+	void setTXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb);
+
+	bool sendControlPacket(uint32_t bmRequestType, uint32_t bRequest,
+			uint32_t wValue, uint32_t wIndex, uint32_t wLength, void *buf);
 protected:
 	enum { TOPUSAGE_LIST_LEN = 4 };
 	enum { USAGE_LIST_LEN = 24 };
@@ -783,9 +787,19 @@ public:
 	bool    available() { return joystickEvent; }
 	void    joystickDataClear();
 	uint32_t getButtons() { return buttons; }
-	int	getAxis(uint32_t index) { return (index < (sizeof(axis)/sizeof(axis[0]))) ? axis[index] : 0; }
-	uint32_t axisMask() {return axis_mask_;}
-	enum { AXIS_COUNT = 10 };
+	int		getAxis(uint32_t index) { return (index < (sizeof(axis)/sizeof(axis[0]))) ? axis[index] : 0; }
+	uint64_t axisMask() {return axis_mask_;}
+	uint64_t axisChangedMask() { return axis_changed_mask_;}
+	uint64_t axisChangeNotifyMask() {return axis_change_notify_mask_;}
+	void 	 axisChangeNotifyMask(uint64_t notify_mask) {axis_change_notify_mask_ = notify_mask;}
+
+	// set functions functionality depends on underlying joystick. 
+    bool setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeout=0xff);
+    // setLEDs on PS4(RGB), PS3 simple LED setting (only uses lr)
+    bool setLEDs(uint8_t lr, uint8_t lg=0, uint8_t lb=0);  // sets Leds, 
+	enum { STANDARD_AXIS_COUNT = 10, ADDITIONAL_AXIS_COUNT = 54, TOTAL_AXIS_COUNT = (STANDARD_AXIS_COUNT+ADDITIONAL_AXIS_COUNT) };
+	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE} joytype_t;
+	joytype_t joystickType = UNKNOWN;
 protected:
 	// From USBDriver
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
@@ -798,16 +812,34 @@ protected:
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
+	virtual bool hid_process_out_data(const Transfer_t *transfer);
 private:
 
 	// Class specific
 	void init();
+	USBHIDParser *driver_ = nullptr;
+	joytype_t mapVIDPIDtoJoystickType(uint16_t idVendor, uint16_t idProduct, bool exclude_hid_devices);
+	bool transmitPS4UserFeedbackMsg();
+	bool transmitPS3UserFeedbackMsg();
 
 	bool anychange = false;
 	volatile bool joystickEvent = false;
 	uint32_t buttons = 0;
-	int axis[AXIS_COUNT] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-	uint32_t axis_mask_ = 0;	// which axis have valid data
+	int axis[TOTAL_AXIS_COUNT] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+	uint64_t axis_mask_ = 0;	// which axis have valid data
+	uint64_t axis_changed_mask_ = 0;
+	uint64_t axis_change_notify_mask_ = 0x3ff;	// assume the low 10 values only. 
+
+	uint16_t additional_axis_usage_page_ = 0;
+	uint16_t additional_axis_usage_start_ = 0;
+	uint16_t additional_axis_usage_count_ = 0;
+
+	// State values to output to Joystick.
+	uint8_t rumble_lValue_ = 0; 
+	uint8_t rumble_rValue_ = 0;
+	uint8_t rumble_timeout_ = 0;
+	uint8_t leds_[3] = {0,0,0};
+
 
 	// Used by HID code
 	uint8_t collections_claimed = 0;
@@ -827,11 +859,13 @@ private:
 	Pipe_t 			*rxpipe_;
 	Pipe_t 			*txpipe_;
 	uint8_t 		rxbuf_[64];	// receive circular buffer
-
+	uint8_t			txbuf_[64];		// buffer to use to send commands to joystick 
 	// Mapping table to say which devices we handle
 	typedef struct {
 		uint16_t 	idVendor;
 		uint16_t 	idProduct;
+		joytype_t	joyType;
+		bool 		hidDevice;
 	} product_vendor_mapping_t;
 	static product_vendor_mapping_t pid_vid_mapping[];
 

@@ -9,7 +9,6 @@ USBHub hub1(myusb);
 USBHub hub2(myusb);
 KeyboardController keyboard1(myusb);
 KeyboardController keyboard2(myusb);
-//KeyboardHIDExtrasController hidextras(myusb);
 USBHIDParser hid1(myusb);
 USBHIDParser hid2(myusb);
 USBHIDParser hid3(myusb);
@@ -17,6 +16,8 @@ USBHIDParser hid4(myusb);
 USBHIDParser hid5(myusb);
 MouseController mouse1(myusb);
 JoystickController joystick1(myusb);
+int user_axis[64];
+uint32_t buttons_prev = 0;
 RawHIDController rawhid1(myusb);
 RawHIDController rawhid2(myusb, 0xffc90004);
 
@@ -30,7 +31,11 @@ USBHIDInput *hiddrivers[] = {&mouse1, &joystick1, &rawhid1, &rawhid2};
 #define CNT_HIDDEVICES (sizeof(hiddrivers)/sizeof(hiddrivers[0]))
 const char * hid_driver_names[CNT_DEVICES] = {"Mouse1","Joystick1", "RawHid1", "RawHid2"};
 bool hid_driver_active[CNT_DEVICES] = {false, false};
+bool show_changed_only = false; 
 
+uint8_t joystick_left_trigger_value = 0;
+uint8_t joystick_right_trigger_value = 0;
+uint64_t joystick_full_notify_mask = (uint64_t)-1;
 
 void setup()
 {
@@ -53,6 +58,27 @@ void setup()
 void loop()
 {
   myusb.Task();
+
+  if (Serial.available()) {
+    int ch = Serial.read(); // get the first char. 
+    while (Serial.read() != -1) ; 
+    if ((ch == 'b') || (ch == 'B')) {
+      Serial.println("Only notify on Basic Axis changes");
+      joystick1.axisChangeNotifyMask(0x3ff);
+    } else if ((ch == 'f') || (ch == 'F')) {
+      Serial.println("Only notify on Full Axis changes");
+      joystick1.axisChangeNotifyMask(joystick_full_notify_mask);
+
+    } else {
+      if (show_changed_only) {
+        show_changed_only = false;
+        Serial.println("\n*** Show All fields mode ***");
+      } else {
+        show_changed_only = true;
+        Serial.println("\n*** Show only changed fields mode ***");
+      }
+    }
+ }
 
   for (uint8_t i = 0; i < CNT_DEVICES; i++) {
     if (*drivers[i] != driver_active[i]) {
@@ -109,14 +135,75 @@ void loop()
     mouse1.mouseDataClear();
   }
   if (joystick1.available()) {
-    uint32_t axis_mask = joystick1.axisMask();
+    uint64_t axis_mask = joystick1.axisMask();
+    uint64_t axis_changed_mask = joystick1.axisChangedMask();
     Serial.print("Joystick: buttons = ");
-    Serial.print(joystick1.getButtons(), HEX);
-    for (uint8_t i = 0; axis_mask != 0; i++, axis_mask >>= 1) {
-      if (axis_mask & 1) {
-        Serial.printf(" %d:%d", i, joystick1.getAxis(i));
+    uint32_t buttons = joystick1.getButtons();
+    Serial.print(buttons, HEX);
+    //Serial.printf(" AMasks: %x %x:%x", axis_mask, (uint32_t)(user_axis_mask >> 32), (uint32_t)(user_axis_mask & 0xffffffff));
+    //Serial.printf(" M: %lx %lx", axis_mask, joystick1.axisChangedMask());
+    if (show_changed_only) {
+      for (uint8_t i = 0; axis_changed_mask != 0; i++, axis_changed_mask >>= 1) {
+        if (axis_changed_mask & 1) {
+          Serial.printf(" %d:%d", i, joystick1.getAxis(i));
+        }
+      }
+
+    } else {
+      for (uint8_t i = 0; axis_mask != 0; i++, axis_mask >>= 1) {
+        if (axis_mask & 1) {
+          Serial.printf(" %d:%d", i, joystick1.getAxis(i));
+        }
       }
     }
+    uint8_t ltv;
+    uint8_t rtv;
+    switch (joystick1.joystickType) {
+      default:
+        break;
+      case JoystickController::PS4:
+        ltv = joystick1.getAxis(3);
+        rtv = joystick1.getAxis(4);
+        if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
+          joystick_left_trigger_value = ltv;
+          joystick_right_trigger_value = rtv;
+          joystick1.setRumble(ltv, rtv);
+        } 
+        break;
+
+      case JoystickController::PS3:
+        ltv = joystick1.getAxis(18);
+        rtv = joystick1.getAxis(19);
+        if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
+          joystick_left_trigger_value = ltv;
+          joystick_right_trigger_value = rtv;
+          joystick1.setRumble(ltv, rtv, 50);
+        } 
+        break;
+
+      case JoystickController::XBOXONE:   
+        ltv = joystick1.getAxis(4);
+        rtv = joystick1.getAxis(5);
+        if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
+          joystick_left_trigger_value = ltv;
+          joystick_right_trigger_value = rtv;
+          joystick1.setRumble(ltv, rtv);
+          Serial.printf(" Set Rumble %d %d", ltv, rtv);
+        } 
+        break;
+    }
+    if (buttons != buttons_prev) {
+      if (joystick1.joystickType == JoystickController::PS3) {
+        joystick1.setLEDs((buttons>>12) & 0xf); //  try to get to TRI/CIR/X/SQuare
+      } else {
+        uint8_t lr = (buttons & 1)? 0xff : 0;
+        uint8_t lg = (buttons & 2)? 0xff : 0;
+        uint8_t lb = (buttons & 4)? 0xff : 0;
+        joystick1.setLEDs(lr, lg, lb);
+      }
+      buttons_prev = buttons;
+    }
+
     Serial.println();
     joystick1.joystickDataClear();
   }
