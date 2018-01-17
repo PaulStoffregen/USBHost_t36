@@ -119,18 +119,19 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
 		case XBOXONE:
 			// Lets try sending a request to the XBox 1.
 			txbuf_[0] = 0x9;
-			txbuf_[1] = 0x8;
+			txbuf_[1] = 0x0;
 			txbuf_[2] = 0x0;
-			txbuf_[3] = 0x08; // Substructure (what substructure rest of this packet has)
+			txbuf_[3] = 0x09; // Substructure (what substructure rest of this packet has)
 			txbuf_[4] = 0x00; // Mode
 			txbuf_[5] = 0x0f; // Rumble mask (what motors are activated) (0000 lT rT L R)
 			txbuf_[6] = 0x0; // lT force
 			txbuf_[7] = 0x0; // rT force
 			txbuf_[8] = lValue; // L force
 			txbuf_[9] = rValue; // R force
-			txbuf_[10] = 0x80; // Length of pulse
+			txbuf_[10] = 0xff; // Length of pulse
 			txbuf_[11] = 0x00; // Period between pulses			
-			if (!queue_Data_Transfer(txpipe_, txbuf_, 12, this)) {
+			txbuf_[12] = 0x00; // Repeat			
+			if (!queue_Data_Transfer(txpipe_, txbuf_, 13, this)) {
 				println("XBoxOne rumble transfer fail");
 			}
 			return true;	// 
