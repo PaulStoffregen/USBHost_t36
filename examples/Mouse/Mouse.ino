@@ -182,6 +182,7 @@ void loop()
         break;
 
       case JoystickController::XBOXONE:   
+      case JoystickController::XBOX360:   
         ltv = joystick1.getAxis(4);
         rtv = joystick1.getAxis(5);
         if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
