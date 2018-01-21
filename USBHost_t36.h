@@ -855,6 +855,7 @@ private:
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
 
+	uint8_t			rx_ep_ = 0;	// remember which end point this object is...
 	uint16_t 		rx_size_ = 0;
 	uint16_t 		tx_size_ = 0;
 	Pipe_t 			*rxpipe_;

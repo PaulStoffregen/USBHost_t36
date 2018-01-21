@@ -367,7 +367,7 @@ void JoystickController::hid_input_end()
 
 bool JoystickController::hid_process_out_data(const Transfer_t *transfer) 
 {
-	Serial.printf("JoystickController::hid_process_out_data\n");
+	//Serial.printf("JoystickController::hid_process_out_data\n");
 	return true;
 }
 
@@ -393,8 +393,9 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 	// Don't try to claim if it is used as USB device or HID device
 	if (mydevice != NULL) return false;
 	if (device != nullptr) return false;
-	// only claim at device level
-	if (type != 0) return false;
+
+	// Try claiming at the interface level.
+	if (type != 1) return false;
 	print_hexbytes(descriptors, len);
 
 	JoystickController::joytype_t jtype = mapVIDPIDtoJoystickType(dev->idVendor, dev->idProduct, true);
@@ -422,15 +423,18 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 	uint32_t count_end_points = descriptors[4];
 	if (count_end_points < 2) return false;
 	if (descriptors[5] != 0xff) return false; // bInterfaceClass, 3 = HID
-	uint32_t rxep = 0;
+	uint32_t rx_ep_ = 0;
 	uint32_t txep = 0;
 	uint8_t rx_interval = 0;
 	uint8_t tx_interval = 0;
 	rx_size_ = 0;
 	tx_size_ = 0;
 	uint32_t descriptor_index = 9; 
-	if (descriptors[descriptor_index+1] == 0x22) descriptor_index += descriptors[descriptor_index]; // XBox360w ignore this unknown setup...
-	while (count_end_points-- && ((rxep == 0) || txep == 0)) {
+	if (descriptors[descriptor_index+1] == 0x22)  {
+		if (descriptors[descriptor_index] != 0x14) return false; // only support specific versions...
+		descriptor_index += descriptors[descriptor_index]; // XBox360w ignore this unknown setup...
+	}	
+	while (count_end_points-- && ((rx_ep_ == 0) || txep == 0)) {
 		if (descriptors[descriptor_index] != 7) return false; // length 7
 		if (descriptors[descriptor_index+1] != 5) return false; // ep desc
 		if ((descriptors[descriptor_index+3] == 3) 				// Type 3...
@@ -438,7 +442,7 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 			&& (descriptors[descriptor_index+5] == 0)) {
 			// have a bulk EP size 
 			if (descriptors[descriptor_index+2] & 0x80 ) {
-				rxep = descriptors[descriptor_index+2];
+				rx_ep_ = descriptors[descriptor_index+2];
 				rx_size_ = descriptors[descriptor_index+4];
 				rx_interval = descriptors[descriptor_index+6];
 			} else {
@@ -449,13 +453,13 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 		}
 		descriptor_index += 7;  // setup to look at next one...
 	}
-	if ((rxep == 0) || (txep == 0)) return false; // did not find two end points.
-	print("JoystickController, rxep=", rxep & 15);
+	if ((rx_ep_ == 0) || (txep == 0)) return false; // did not find two end points.
+	print("JoystickController, rx_ep_=", rx_ep_ & 15);
 	print("(", rx_size_);
 	print("), txep=", txep);
 	print("(", tx_size_);
 	println(")");
-	rxpipe_ = new_Pipe(dev, 3, rxep & 15, 1, rx_size_, rx_interval);
+	rxpipe_ = new_Pipe(dev, 3, rx_ep_ & 15, 1, rx_size_, rx_interval);
 	if (!rxpipe_) return false;
 	txpipe_ = new_Pipe(dev, 3, txep, 0, tx_size_, tx_interval);
 	if (!txpipe_) {
@@ -573,14 +577,14 @@ void JoystickController::rx_data(const Transfer_t *transfer)
 
 	} else if (joystickType == XBOX360) {
 		// First byte appears to status - if the byte is 0x8 it is a connect or disconnect of the controller. 
-		const uint8_t *pbuffer = (uint8_t*)transfer->buffer;
 		xbox360data_t  *xb360d = (xbox360data_t *)transfer->buffer;
 		if (xb360d->state == 0x08) {
 			if (xb360d->id_or_type != connected_) {
 				connected_ = xb360d->id_or_type;	// remember it... 
 				if (connected_) {
 					println("XBox360w - Connected type:", connected_, HEX);
-					setLEDs(2);	// Right now hard coded to first joystick...
+					// rx_ep_ should be 1, 3, 5, 7 for the wireless convert to 2-5 on led
+					setLEDs(2+rx_ep_/2);	// Right now hard coded to first joystick...
 
 				} else {
 					println("XBox360w - disconnected");
@@ -590,6 +594,7 @@ void JoystickController::rx_data(const Transfer_t *transfer)
 			  // Controller status report - Maybe we should save away and allow the user access?
 	            println("XBox360w - controllerStatus: ", xb360d->controller_status, HEX);
         } else if(xb360d->id_or_type == 0x01) { // Lets only process report 1.
+			//const uint8_t *pbuffer = (uint8_t*)transfer->buffer;
         	//for (uint8_t i = 0; i < transfer->length; i++) Serial.printf("%02x ", pbuffer[i]);
         	//Serial.printf("\n");
 	        
