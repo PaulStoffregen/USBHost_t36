@@ -32,6 +32,7 @@
 // doing other features.  
 JoystickController::product_vendor_mapping_t JoystickController::pid_vid_mapping[] = {
 	{ 0x045e, 0x02ea, XBOXONE, false },{ 0x045e, 0x02dd, XBOXONE, false },
+	{ 0x045e, 0x0719, XBOX360, false},
 	{ 0x054C, 0x0268, PS3, true}, 
 	{ 0x054C, 0x05C4, PS4, true}, {0x054C, 0x09CC, PS4, true }
 };
@@ -135,6 +136,23 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
 				println("XBoxOne rumble transfer fail");
 			}
 			return true;	// 
+		case XBOX360:
+			txbuf_[0] = 0x00;
+			txbuf_[1] = 0x01;
+			txbuf_[2] = 0x0F;
+			txbuf_[3] = 0xC0;
+			txbuf_[4] = 0x00;
+			txbuf_[5] = lValue;
+			txbuf_[6] = rValue;
+			txbuf_[7] = 0x00;
+			txbuf_[8] = 0x00;
+			txbuf_[9] = 0x00;
+			txbuf_[10] = 0x00;
+			txbuf_[11] = 0x00;
+			if (!queue_Data_Transfer(txpipe_, txbuf_, 12, this)) {
+				println("XBox360 rumble transfer fail");
+			}
+			return true;
 	} 
 	return false;
 }
@@ -153,6 +171,27 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
 				return transmitPS3UserFeedbackMsg();
 			case PS4:
 				return transmitPS4UserFeedbackMsg();
+			case XBOX360:
+				// 0: off, 1: all blink then return to before
+				// 2-5(TL, TR, BL, BR) - blink on then stay on
+				// 6-9() - On 
+			    // ...
+				txbuf_[1] = 0x00;
+				txbuf_[2] = 0x08;
+				txbuf_[3] = 0x40 + lr;
+				txbuf_[4] = 0x00;
+				txbuf_[5] = 0x00;
+				txbuf_[6] = 0x00;
+				txbuf_[7] = 0x00;
+				txbuf_[8] = 0x00;
+				txbuf_[9] = 0x00;
+				txbuf_[10] = 0x00;
+				txbuf_[11] = 0x00;
+				if (!queue_Data_Transfer(txpipe_, txbuf_, 12, this)) {
+					println("XBox360 set leds fail");
+				}
+				return true;
+			case XBOXONE:
 			default:
 				return false;
 		} 
@@ -213,11 +252,16 @@ hidclaim_t JoystickController::claim_collection(USBHIDParser *driver, Device_t *
 	if (topusage != 0x10004 && topusage != 0x10005) return CLAIM_NO;
 	// only claim from one physical device
 	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
+
+	// Also don't allow us to claim if it is used as a standard usb object (XBox...)
+	if (device != nullptr) return CLAIM_NO;
+
 	mydevice = dev;
 	collections_claimed++;
 	anychange = true; // always report values on first read
 	driver_ = driver;	// remember the driver. 
 	driver_->setTXBuffers(txbuf_, nullptr, sizeof(txbuf_));
+	connected_ = true;		// remember that hardware is actually connected...
 
 	// Lets see if we know what type of joystick this is. That is, is it a PS3 or PS4 or ...
 	joystickType = mapVIDPIDtoJoystickType(mydevice->idVendor, mydevice->idProduct, false);
@@ -339,12 +383,16 @@ void JoystickController::joystickDataClear() {
 // Example: XBox One controller. 
 //*****************************************************************************
 
-static  uint8_t start_input[] = {0x05, 0x20, 0x00, 0x01, 0x00};
+static  uint8_t xboxone_start_input[] = {0x05, 0x20, 0x00, 0x01, 0x00};
+static  uint8_t xbox360w_inquire_present[] = {0x08, 0x00, 0x0F, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
 {
 	println("JoystickController claim this=", (uint32_t)this, HEX);
 
+	// Don't try to claim if it is used as USB device or HID device
+	if (mydevice != NULL) return false;
+	if (device != nullptr) return false;
 	// only claim at device level
 	if (type != 0) return false;
 	print_hexbytes(descriptors, len);
@@ -354,20 +402,34 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 	if (jtype == UNKNOWN)
 		return false; 
 
-		//  0  1  2  3  4  5  6  7  8 *9 10  1  2  3  4  5 *6  7  8  9 20  1  2  3  4  5  6  7  8  9 30  1... 
+	// XBOX One
+	//  0  1  2  3  4  5  6  7  8 *9 10  1  2  3  4  5 *6  7  8  9 20  1  2  3  4  5  6  7  8  9 30  1... 
 	// 09 04 00 00 02 FF 47 D0 00 07 05 02 03 40 00 04 07 05 82 03 40 00 04 09 04 01 00 00 FF 47 D0 00 
 	// Lets do some verifications to make sure. 
 
+	// XBOX 360 wireless... Has 8 interfaces.  4 joysticks (1, 3, 5, 7) and 4 headphones assume 2,4,6, 8... 
+	// Shows data for #1 only... 
+	// Also they have some unknown data type we need to ignore between interface and end points.
+	//  0  1  2  3  4  5  6  7  8 *9 10  1  2  3  4  5 *6  7  8  9 20  1  2  3  4  5  6  7  8 
+	// 09 04 00 00 02 FF 5D 81 00 14 22 00 01 13 81 1D 00 17 01 02 08 13 01 0C 00 0C 01 02 08 
+
+  	// 29 30  1  2  3  4  5  6  7  8  9 40 41 42
+	// 07 05 81 03 20 00 01 07 05 01 03 20 00 08 
+
 	if (len < 9+7+7) return false;
 
+	// Some common stuff for both XBoxs
 	uint32_t count_end_points = descriptors[4];
 	if (count_end_points < 2) return false;
 	if (descriptors[5] != 0xff) return false; // bInterfaceClass, 3 = HID
 	uint32_t rxep = 0;
 	uint32_t txep = 0;
+	uint8_t rx_interval = 0;
+	uint8_t tx_interval = 0;
 	rx_size_ = 0;
 	tx_size_ = 0;
 	uint32_t descriptor_index = 9; 
+	if (descriptors[descriptor_index+1] == 0x22) descriptor_index += descriptors[descriptor_index]; // XBox360w ignore this unknown setup...
 	while (count_end_points-- && ((rxep == 0) || txep == 0)) {
 		if (descriptors[descriptor_index] != 7) return false; // length 7
 		if (descriptors[descriptor_index+1] != 5) return false; // ep desc
@@ -378,9 +440,11 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 			if (descriptors[descriptor_index+2] & 0x80 ) {
 				rxep = descriptors[descriptor_index+2];
 				rx_size_ = descriptors[descriptor_index+4];
+				rx_interval = descriptors[descriptor_index+6];
 			} else {
 				txep = descriptors[descriptor_index+2]; 
 				tx_size_ = descriptors[descriptor_index+4];
+				tx_interval = descriptors[descriptor_index+6];
 			}
 		}
 		descriptor_index += 7;  // setup to look at next one...
@@ -391,9 +455,9 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 	print("), txep=", txep);
 	print("(", tx_size_);
 	println(")");
-	rxpipe_ = new_Pipe(dev, 2, rxep & 15, 1, rx_size_);
+	rxpipe_ = new_Pipe(dev, 3, rxep & 15, 1, rx_size_, rx_interval);
 	if (!rxpipe_) return false;
-	txpipe_ = new_Pipe(dev, 2, txep, 0, tx_size_);
+	txpipe_ = new_Pipe(dev, 3, txep, 0, tx_size_, tx_interval);
 	if (!txpipe_) {
 		//free_Pipe(rxpipe_);
 		return false;
@@ -403,7 +467,13 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 
 	txpipe_->callback_function = tx_callback;
 
-	queue_Data_Transfer(txpipe_, start_input, sizeof(start_input), this);
+	if (jtype == XBOXONE) {
+		queue_Data_Transfer(txpipe_, xboxone_start_input, sizeof(xboxone_start_input), this);
+		connected_ = true;		// remember that hardware is actually connected...
+	} else if (jtype == XBOX360) {
+		queue_Data_Transfer(txpipe_, xbox360w_inquire_present, sizeof(xbox360w_inquire_present), this);
+		connected_ = 0;		// remember that hardware is actually connected...
+	}
 	memset(axis, 0, sizeof(axis));	// clear out any data. 
 	joystickType = jtype;		// remember we are an XBox One. 
 	return true;
@@ -447,38 +517,112 @@ typedef struct {
 	//     dpad up, down left, right
 	//	   lb, rb, left stick, right stick
 	// Axis: 
-	//     lt, rt, lx, xy, rx, ry
+	//     lt, rt, lx, ly, rx, ry
 	//     
 	uint16_t buttons; 
 	int16_t	axis[6];
 } xbox1data20_t;
 
+typedef struct {
+	uint8_t state;
+	uint8_t id_or_type;
+	uint16_t controller_status;
+	uint16_t unknown;
+	// From online references button order: 
+	//     sync, dummy, start, back, a, b, x, y
+	//     dpad up, down left, right
+	//	   lb, rb, left stick, right stick
+	// Axis: 
+	//     lt, rt, lx, ly, rx, ry
+	//
+	uint16_t buttons; 
+	uint8_t lt;
+	uint8_t rt;
+	int16_t	axis[4];
+} xbox360data_t;
+
 static const uint8_t xbox_axis_order_mapping[] = {4, 5, 0, 1, 2, 3};
 
 void JoystickController::rx_data(const Transfer_t *transfer)
 {
-//	print("JoystickController::rx_data: ");
-//	print_hexbytes((uint8_t*)transfer->buffer, transfer->length);
-	axis_mask_ = 0x3f;	
-	axis_changed_mask_ = 0;	// assume none for now
-	xbox1data20_t *xb1d = (xbox1data20_t *)transfer->buffer;
-	if ((xb1d->type == 0x20) && (transfer->length >= sizeof (xbox1data20_t))) {
-		// We have a data transfer.  Lets see what is new...
-		if (xb1d->buttons != buttons) {
-			buttons = xb1d->buttons;
-			anychange = true;
-		}
-		for (uint8_t i = 0; i < sizeof (xbox_axis_order_mapping); i++) {
-			// The first two values were unsigned. 
-			int axis_value = (i < 2)? (int)(uint16_t)xb1d->axis[i] : xb1d->axis[i];
-			if (axis_value != axis[xbox_axis_order_mapping[i]]) {
-				axis[xbox_axis_order_mapping[i]] = axis_value;
+	print("JoystickController::rx_data: ");
+	print_hexbytes((uint8_t*)transfer->buffer, transfer->length);
+
+	if (joystickType == XBOXONE) {
+		// Process XBOX One data
+		axis_mask_ = 0x3f;	
+		axis_changed_mask_ = 0;	// assume none for now
+		xbox1data20_t *xb1d = (xbox1data20_t *)transfer->buffer;
+		if ((xb1d->type == 0x20) && (transfer->length >= sizeof (xbox1data20_t))) {
+			// We have a data transfer.  Lets see what is new...
+			if (xb1d->buttons != buttons) {
+				buttons = xb1d->buttons;
 				anychange = true;
 			}
+			for (uint8_t i = 0; i < sizeof (xbox_axis_order_mapping); i++) {
+				// The first two values were unsigned. 
+				int axis_value = (i < 2)? (int)(uint16_t)xb1d->axis[i] : xb1d->axis[i];
+				if (axis_value != axis[xbox_axis_order_mapping[i]]) {
+					axis[xbox_axis_order_mapping[i]] = axis_value;
+					axis_changed_mask_ |= (1 << xbox_axis_order_mapping[i]);
+					anychange = true;
+				}
+			}
+			joystickEvent = true;
 		}
-		joystickEvent = true;
-	}
 
+	} else if (joystickType == XBOX360) {
+		// First byte appears to status - if the byte is 0x8 it is a connect or disconnect of the controller. 
+		const uint8_t *pbuffer = (uint8_t*)transfer->buffer;
+		xbox360data_t  *xb360d = (xbox360data_t *)transfer->buffer;
+		if (xb360d->state == 0x08) {
+			if (xb360d->id_or_type != connected_) {
+				connected_ = xb360d->id_or_type;	// remember it... 
+				if (connected_) {
+					println("XBox360w - Connected type:", connected_, HEX);
+					setLEDs(2);	// Right now hard coded to first joystick...
+
+				} else {
+					println("XBox360w - disconnected");
+				}
+			}
+		} else if((xb360d->id_or_type == 0x00) && (xb360d->controller_status & 0x1300)) {
+			  // Controller status report - Maybe we should save away and allow the user access?
+	            println("XBox360w - controllerStatus: ", xb360d->controller_status, HEX);
+        } else if(xb360d->id_or_type == 0x01) { // Lets only process report 1.
+        	//for (uint8_t i = 0; i < transfer->length; i++) Serial.printf("%02x ", pbuffer[i]);
+        	//Serial.printf("\n");
+	        
+	        if (buttons != xb360d->buttons) {
+	        	buttons = xb360d->buttons;
+	        	anychange = true;
+	        }
+			axis_mask_ = 0x3f;	
+			axis_changed_mask_ = 0;	// assume none for now
+
+			for (uint8_t i = 0; i < 4; i++) {
+				if (axis[i] != xb360d->axis[i]) {
+					axis[i] = xb360d->axis[i];
+					axis_changed_mask_ |= (1 << i);
+					anychange = true;
+				}
+			}
+			// the two triggers show up as 4 and 5
+			if (axis[4] != xb360d->lt) {
+				axis[4] = xb360d->lt;
+				axis_changed_mask_ |= (1 << 4);
+				anychange = true;
+			}
+
+			if (axis[5] != xb360d->rt) {
+				axis[5] = xb360d->rt;
+				axis_changed_mask_ |= (1 << 5);
+				anychange = true;
+			}
+
+			if (anychange) joystickEvent = true;
+		}
+	}
 
 	queue_Data_Transfer(rxpipe_, rxbuf_, rx_size_, this);
 }

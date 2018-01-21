@@ -16,6 +16,7 @@ USBHIDParser hid4(myusb);
 USBHIDParser hid5(myusb);
 MouseController mouse1(myusb);
 JoystickController joystick1(myusb);
+BluetoothController bluet(myusb);
 int user_axis[64];
 uint32_t buttons_prev = 0;
 RawHIDController rawhid1(myusb);
@@ -182,6 +183,7 @@ void loop()
         break;
 
       case JoystickController::XBOXONE:   
+      case JoystickController::XBOX360:   
         ltv = joystick1.getAxis(4);
         rtv = joystick1.getAxis(5);
         if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
