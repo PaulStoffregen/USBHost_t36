@@ -1543,6 +1543,13 @@ class BluetoothController: public USBDriver {
 public:
 	BluetoothController(USBHost &host) { init(); }
 	enum {MAX_ENDPOINTS=4, NUM_SERVICES=4};  // Max number of Bluetooth services - if you need more than 4 simply increase this number
+	/* HCI Events  */
+	enum {EV_INQUIRY_COMPLETE= 0x01,EV_INQUIRY_RESULT= 0x02,EV_CONNECT_COMPLETE= 0x03,EV_INCOMING_CONNECT= 0x04,EV_DISCONNECT_COMPLETE= 0x05
+		,EV_AUTHENTICATION_COMPLETE= 0x06,EV_REMOTE_NAME_COMPLETE= 0x07,EV_ENCRYPTION_CHANGE= 0x08,EV_CHANGE_CONNECTION_LINK= 0x09,EV_ROLE_CHANGED= 0x12
+		,EV_NUM_COMPLETE_PKT= 0x13,EV_PIN_CODE_REQUEST= 0x16,EV_LINK_KEY_REQUEST= 0x17,EV_LINK_KEY_NOTIFICATION= 0x18,EV_DATA_BUFFER_OVERFLOW= 0x1A
+		,EV_MAX_SLOTS_CHANGE= 0x1B,EV_READ_REMOTE_VERSION_INFORMATION_COMPLETE= 0x0C,EV_QOS_SETUP_COMPLETE= 0x0D,EV_COMMAND_COMPLETE= 0x0E,EV_COMMAND_STATUS= 0x0F
+		,EV_LOOPBACK_COMMAND= 0x19,EV_PAGE_SCAN_REP_MODE= 0x20 };
+
 
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
@@ -1557,9 +1564,38 @@ private:
 
 	void init();
 
-	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
+	// HCI support functions...
+	void inline sendHCICommand(uint8_t* data, uint16_t nbytes);
+    void sendResetHCI();
+	void sendHCIReadBDAddr();
+	void sendHCIReadLocalVersionInfo();
+	void sendHCIReadBufferSize();
+	void sendHCIReadClassOfDevice();
+	void sendHCIReadLocalName();
+	void sendHCIReadVoiceSettings();
+	void SendHCICommandReadNumberSupportedIAC();
+	void SendHCICommandReadCurrentIACLAP();
+	void sendHCIClearAllEventFilters();
+	void sendHCIWriteConnectionAcceptTimeout();
+
+	setup_t setup;
+	Pipe_t mypipes[4] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
+	uint16_t 		pending_control_ = 0;
+	uint16_t 		rx_size_ = 0;
+	uint16_t 		rx2_size_ = 0;
+	uint16_t 		tx_size_ = 0;
+	Pipe_t 			*rxpipe_;
+	Pipe_t 			*rx2pipe_;
+	Pipe_t 			*txpipe_;
+	uint8_t 		rxbuf_[64];		// receive circular buffer
+	uint8_t 		rx_packet_data_remaining=0; // how much data remaining
+	uint8_t 		rx2buf_[64];	// receive circular buffer
+	uint8_t			txbuf_[64];		// buffer to use to send commands to joystick 
+	uint8_t			hciVersion;		// what version of HCI do we have?
+
+    uint8_t 		my_bdaddr[6];	// The bluetooth dongles Bluetooth address.
 
 };
 
