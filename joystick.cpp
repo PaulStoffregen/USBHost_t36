@@ -423,7 +423,7 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 	uint32_t count_end_points = descriptors[4];
 	if (count_end_points < 2) return false;
 	if (descriptors[5] != 0xff) return false; // bInterfaceClass, 3 = HID
-	uint32_t rx_ep_ = 0;
+	rx_ep_ = 0;
 	uint32_t txep = 0;
 	uint8_t rx_interval = 0;
 	uint8_t tx_interval = 0;
