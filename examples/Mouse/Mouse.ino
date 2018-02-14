@@ -22,9 +22,9 @@ uint32_t buttons_prev = 0;
 RawHIDController rawhid1(myusb);
 RawHIDController rawhid2(myusb, 0xffc90004);
 
-USBDriver *drivers[] = {&hub1, &hub2,&keyboard1, &keyboard2, &joystick1, &hid1, &hid2, &hid3, &hid4, &hid5};
+USBDriver *drivers[] = {&hub1, &hub2,&keyboard1, &keyboard2, &joystick1, &bluet, &hid1, &hid2, &hid3, &hid4, &hid5};
 #define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[0]))
-const char * driver_names[CNT_DEVICES] = {"Hub1","Hub2", "KB1", "KB2", "JOY1D", "HID1", "HID2", "HID3", "HID4", "HID5"};
+const char * driver_names[CNT_DEVICES] = {"Hub1","Hub2", "KB1", "KB2", "JOY1D", "Bluet", "HID1" , "HID2", "HID3", "HID4", "HID5"};
 bool driver_active[CNT_DEVICES] = {false, false, false, false};
 
 // Lets also look at HID Input devices

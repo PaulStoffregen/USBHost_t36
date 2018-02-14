@@ -1542,7 +1542,8 @@ private:
 class BluetoothController: public USBDriver {
 public:
 	BluetoothController(USBHost &host) { init(); }
-	enum {MAX_ENDPOINTS=4, NUM_SERVICES=4};  // Max number of Bluetooth services - if you need more than 4 simply increase this number
+	enum {MAX_ENDPOINTS=4, NUM_SERVICES=4, };  // Max number of Bluetooth services - if you need more than 4 simply increase this number
+	enum {BT_CLASS_DEVICE= 0x0804}; // Toy - Robot
 	/* HCI Events  */
 	enum {EV_INQUIRY_COMPLETE= 0x01,EV_INQUIRY_RESULT= 0x02,EV_CONNECT_COMPLETE= 0x03,EV_INCOMING_CONNECT= 0x04,EV_DISCONNECT_COMPLETE= 0x05
 		,EV_AUTHENTICATION_COMPLETE= 0x06,EV_REMOTE_NAME_COMPLETE= 0x07,EV_ENCRYPTION_CHANGE= 0x08,EV_CHANGE_CONNECTION_LINK= 0x09,EV_ROLE_CHANGED= 0x12
@@ -1558,45 +1559,116 @@ protected:
 	//virtual void timer_event(USBDriverTimer *whichTimer);
 private:
 	static void rx_callback(const Transfer_t *transfer);
+	static void rx2_callback(const Transfer_t *transfer);
 	static void tx_callback(const Transfer_t *transfer);
 	void rx_data(const Transfer_t *transfer);
+	void rx2_data(const Transfer_t *transfer);
 	void tx_data(const Transfer_t *transfer);
 
 	void init();
 
 	// HCI support functions...
-	void inline sendHCICommand(uint8_t* data, uint16_t nbytes);
-    void sendResetHCI();
-	void sendHCIReadBDAddr();
-	void sendHCIReadLocalVersionInfo();
-	void sendHCIReadBufferSize();
-	void sendHCIReadClassOfDevice();
-	void sendHCIReadLocalName();
-	void sendHCIReadVoiceSettings();
-	void SendHCICommandReadNumberSupportedIAC();
-	void SendHCICommandReadCurrentIACLAP();
-	void sendHCIClearAllEventFilters();
-	void sendHCIWriteConnectionAcceptTimeout();
+	void sendHCICommand(uint16_t hciCommand, uint16_t cParams, const uint8_t* data);
+	void sendHCIReadLocalSupportedFeatures();
+	void inline sendHCI_INQUIRY();
+	void inline sendHCIInquiryCancel();
+	void inline sendHCICreateConnection();
+	void inline sendHCIAuthenticationRequested();
+	void inline sendHCILinkKeyNegativeReply();
+	void inline sendHCIPinCodeReply();
+    void inline sendResetHCI();
+    void inline sendHDCWriteClassOfDev();
+	void inline sendHCIReadBDAddr();
+	void inline sendHCIReadLocalVersionInfo();
+	void inline sendHCIReadBufferSize();
+	void inline sendHCIReadClassOfDevice();
+	void inline sendHCIReadLocalSupportedCommands();
+	void inline sendHCIReadLocalName();
+	void inline sendHCIReadVoiceSettings();
+	void inline sendHCICommandReadNumberSupportedIAC();
+	void inline sendHCICommandReadCurrentIACLAP();
+	void inline sendHCIClearAllEventFilters();
+	void inline sendHCIWriteConnectionAcceptTimeout();
+	void inline sendHCILEReadBufferSize();
+	void inline sendHCILEReadLocalSupportedFeatures();
+	void inline sendHCILEReadSupportedStates();
+	void inline sendHCIWriteInquiryMode();
+	void inline sendHCIReadInquiryResponseTransmitPowerLevel();
+	void inline sendHCIReadLocalExtendedFeatures(uint8_t page);
+	void inline sendHCISetEventMask();
+	void inline sendHCIReadStoredLinkKey();
+	void inline sendHCIWriteDefaultLinkPolicySettings();
+	void inline sendHCIReadPageScanActivity();
+	void inline sendHCIReadPageScanType();
+	void inline sendHCILESetEventMask();
+	void inline sendHCILEReadADVTXPower();
+	void inline sendHCIEReadWhiteListSize();
+	void inline sendHCILEClearWhiteList();
+	void inline sendHCIDeleteStoredLinkKey();
+	void inline sendHCIWriteLocalName();
+	void inline sendHCIWriteScanEnable(uint8_t scan_op);
+	void inline sendHCIWriteSSPMode(uint8_t ssp_mode);
+	void inline sendHCIWriteEIR();
+	void inline sendHCIWriteLEHostSupported();
+	void inline sendHCILESetAdvData () ;
+	void inline sendHCILESetScanRSPData();
+
+	void handle_hci_command_complete();
+	void handle_hci_command_status();
+	void handle_hci_inquiry_result();
+	void handle_hci_inquiry_complete();
+	void handle_hci_incoming_connect();
+	void handle_hci_connection_complete();
+	void handle_hci_disconnect_complete();
+	void handle_hci_authentication_complete();
+	void handle_hci_pin_code_request();
+	void handle_hci_link_key_notification();
+	void handle_hci_link_key_request();
+	void queue_next_hci_command();
+
+	void sendl2cap_ConnectionRequest(uint16_t handle, uint8_t rxid, uint16_t scid, uint16_t psm);
+	void sendl2cap_ConfigRequest(uint16_t handle, uint8_t rxid, uint16_t dcid);
+	void sendl2cap_ConfigResponse(uint16_t handle, uint8_t rxid, uint16_t scid);
+    void sendL2CapCommand(uint16_t handle, uint8_t* data, uint8_t nbytes, uint8_t channelLow = 0x01, uint8_t channelHigh = 0x00);
+
+	void process_l2cap_connection_response(uint8_t *data);
+	void process_l2cap_config_reequest(uint8_t *data);
+	void process_l2cap_config_response(uint8_t *data);
+
+	void setHIDProtocol(uint8_t protocol);
+	void handleHIDTHDRData(uint8_t *buffer);	// Pass the whole buffer...
+
 
 	setup_t setup;
 	Pipe_t mypipes[4] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
 	uint16_t 		pending_control_ = 0;
+	uint16_t		pending_control_tx_ = 0;
 	uint16_t 		rx_size_ = 0;
 	uint16_t 		rx2_size_ = 0;
 	uint16_t 		tx_size_ = 0;
 	Pipe_t 			*rxpipe_;
 	Pipe_t 			*rx2pipe_;
 	Pipe_t 			*txpipe_;
-	uint8_t 		rxbuf_[64];		// receive circular buffer
+	uint8_t 		rxbuf_[256];	// used to receive data from RX, which may come with several packets...
 	uint8_t 		rx_packet_data_remaining=0; // how much data remaining
-	uint8_t 		rx2buf_[64];	// receive circular buffer
-	uint8_t			txbuf_[64];		// buffer to use to send commands to joystick 
+	uint8_t 		rx2buf_[64];	// receive buffer from Bulk end point
+	uint8_t			txbuf_[256];	// buffer to use to send commands to bluetooth 
 	uint8_t			hciVersion;		// what version of HCI do we have?
 
     uint8_t 		my_bdaddr[6];	// The bluetooth dongles Bluetooth address.
-
+    uint8_t			features[8];	// remember our local features.
+    uint8_t			device_bdaddr_[6];// remember devices address
+    uint8_t			device_ps_repetion_mode_ ; // mode
+    uint8_t			device_clock_offset_[2];
+    uint32_t		device_class_;	// class of device. 
+    uint16_t		device_connection_handle_;	// handle to connection 
+    uint16_t		connection_rxid_ = 0;
+    uint16_t		control_dcid_ = 0x70;
+    uint16_t		interrupt_dcid_ = 0x71;
+    uint16_t		interrupt_scid_;
+    uint16_t		control_scid_;
 };
 
 #endif
