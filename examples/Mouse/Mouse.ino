@@ -16,7 +16,8 @@ USBHIDParser hid4(myusb);
 USBHIDParser hid5(myusb);
 MouseController mouse1(myusb);
 JoystickController joystick1(myusb);
-BluetoothController bluet(myusb);
+//BluetoothController bluet(myusb, true, "0000");   // Version does pairing to device
+BluetoothController bluet(myusb);   // version assumes it already was paired
 int user_axis[64];
 uint32_t buttons_prev = 0;
 RawHIDController rawhid1(myusb);

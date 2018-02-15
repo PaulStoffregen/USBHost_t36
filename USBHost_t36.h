@@ -1541,16 +1541,11 @@ private:
 
 class BluetoothController: public USBDriver {
 public:
-	BluetoothController(USBHost &host) { init(); }
+	BluetoothController(USBHost &host, bool pair = false, const char *pin = "0000") : do_pair_device_(pair), pair_pincode_(pin) 
+			 { init(); }
+
 	enum {MAX_ENDPOINTS=4, NUM_SERVICES=4, };  // Max number of Bluetooth services - if you need more than 4 simply increase this number
 	enum {BT_CLASS_DEVICE= 0x0804}; // Toy - Robot
-	/* HCI Events  */
-	enum {EV_INQUIRY_COMPLETE= 0x01,EV_INQUIRY_RESULT= 0x02,EV_CONNECT_COMPLETE= 0x03,EV_INCOMING_CONNECT= 0x04,EV_DISCONNECT_COMPLETE= 0x05
-		,EV_AUTHENTICATION_COMPLETE= 0x06,EV_REMOTE_NAME_COMPLETE= 0x07,EV_ENCRYPTION_CHANGE= 0x08,EV_CHANGE_CONNECTION_LINK= 0x09,EV_ROLE_CHANGED= 0x12
-		,EV_NUM_COMPLETE_PKT= 0x13,EV_PIN_CODE_REQUEST= 0x16,EV_LINK_KEY_REQUEST= 0x17,EV_LINK_KEY_NOTIFICATION= 0x18,EV_DATA_BUFFER_OVERFLOW= 0x1A
-		,EV_MAX_SLOTS_CHANGE= 0x1B,EV_READ_REMOTE_VERSION_INFORMATION_COMPLETE= 0x0C,EV_QOS_SETUP_COMPLETE= 0x0D,EV_COMMAND_COMPLETE= 0x0E,EV_COMMAND_STATUS= 0x0F
-		,EV_LOOPBACK_COMMAND= 0x19,EV_PAGE_SCAN_REP_MODE= 0x20 };
-
 
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
@@ -1569,49 +1564,53 @@ private:
 
 	// HCI support functions...
 	void sendHCICommand(uint16_t hciCommand, uint16_t cParams, const uint8_t* data);
-	void sendHCIReadLocalSupportedFeatures();
+	//void sendHCIReadLocalSupportedFeatures();
 	void inline sendHCI_INQUIRY();
 	void inline sendHCIInquiryCancel();
 	void inline sendHCICreateConnection();
 	void inline sendHCIAuthenticationRequested();
+	void inline sendHCIAcceptConnectionRequest();
 	void inline sendHCILinkKeyNegativeReply();
 	void inline sendHCIPinCodeReply();
     void inline sendResetHCI();
     void inline sendHDCWriteClassOfDev();
 	void inline sendHCIReadBDAddr();
 	void inline sendHCIReadLocalVersionInfo();
-	void inline sendHCIReadBufferSize();
-	void inline sendHCIReadClassOfDevice();
-	void inline sendHCIReadLocalSupportedCommands();
-	void inline sendHCIReadLocalName();
-	void inline sendHCIReadVoiceSettings();
-	void inline sendHCICommandReadNumberSupportedIAC();
-	void inline sendHCICommandReadCurrentIACLAP();
-	void inline sendHCIClearAllEventFilters();
-	void inline sendHCIWriteConnectionAcceptTimeout();
-	void inline sendHCILEReadBufferSize();
-	void inline sendHCILEReadLocalSupportedFeatures();
-	void inline sendHCILEReadSupportedStates();
-	void inline sendHCIWriteInquiryMode();
-	void inline sendHCIReadInquiryResponseTransmitPowerLevel();
-	void inline sendHCIReadLocalExtendedFeatures(uint8_t page);
-	void inline sendHCISetEventMask();
-	void inline sendHCIReadStoredLinkKey();
-	void inline sendHCIWriteDefaultLinkPolicySettings();
-	void inline sendHCIReadPageScanActivity();
-	void inline sendHCIReadPageScanType();
-	void inline sendHCILESetEventMask();
-	void inline sendHCILEReadADVTXPower();
-	void inline sendHCIEReadWhiteListSize();
-	void inline sendHCILEClearWhiteList();
-	void inline sendHCIDeleteStoredLinkKey();
-	void inline sendHCIWriteLocalName();
 	void inline sendHCIWriteScanEnable(uint8_t scan_op);
-	void inline sendHCIWriteSSPMode(uint8_t ssp_mode);
-	void inline sendHCIWriteEIR();
-	void inline sendHCIWriteLEHostSupported();
-	void inline sendHCILESetAdvData () ;
-	void inline sendHCILESetScanRSPData();
+
+	void inline sendHCIRemoteNameRequest();
+
+	//void inline sendHCIReadBufferSize();
+	//void inline sendHCIReadClassOfDevice();
+	//void inline sendHCIReadLocalSupportedCommands();
+	//void inline sendHCIReadLocalName();
+	//void inline sendHCIReadVoiceSettings();
+	//void inline sendHCICommandReadNumberSupportedIAC();
+	//void inline sendHCICommandReadCurrentIACLAP();
+	//void inline sendHCIClearAllEventFilters();
+	//void inline sendHCIWriteConnectionAcceptTimeout();
+	//void inline sendHCILEReadBufferSize();
+	//void inline sendHCILEReadLocalSupportedFeatures();
+	//void inline sendHCILEReadSupportedStates();
+	//void inline sendHCIWriteInquiryMode();
+	//void inline sendHCIReadInquiryResponseTransmitPowerLevel();
+	//void inline sendHCIReadLocalExtendedFeatures(uint8_t page);
+	//void inline sendHCISetEventMask();
+	//void inline sendHCIReadStoredLinkKey();
+	//void inline sendHCIWriteDefaultLinkPolicySettings();
+	//void inline sendHCIReadPageScanActivity();
+	//void inline sendHCIReadPageScanType();
+	//void inline sendHCILESetEventMask();
+	//void inline sendHCILEReadADVTXPower();
+	//void inline sendHCIEReadWhiteListSize();
+	//void inline sendHCILEClearWhiteList();
+	//void inline sendHCIDeleteStoredLinkKey();
+	//void inline sendHCIWriteLocalName();
+	//void inline sendHCIWriteSSPMode(uint8_t ssp_mode);
+	//void inline sendHCIWriteEIR();
+	//void inline sendHCIWriteLEHostSupported();
+	//void inline sendHCILESetAdvData () ;
+	//void inline sendHCILESetScanRSPData();
 
 	void handle_hci_command_complete();
 	void handle_hci_command_status();
@@ -1621,16 +1620,19 @@ private:
 	void handle_hci_connection_complete();
 	void handle_hci_disconnect_complete();
 	void handle_hci_authentication_complete();
+	void handle_hci_remote_name_complete();
 	void handle_hci_pin_code_request();
 	void handle_hci_link_key_notification();
 	void handle_hci_link_key_request();
 	void queue_next_hci_command();
 
+	void sendl2cap_ConnectionResponse(uint16_t handle, uint8_t rxid, uint16_t dcid, uint16_t scid, uint8_t result);
 	void sendl2cap_ConnectionRequest(uint16_t handle, uint8_t rxid, uint16_t scid, uint16_t psm);
 	void sendl2cap_ConfigRequest(uint16_t handle, uint8_t rxid, uint16_t dcid);
 	void sendl2cap_ConfigResponse(uint16_t handle, uint8_t rxid, uint16_t scid);
     void sendL2CapCommand(uint16_t handle, uint8_t* data, uint8_t nbytes, uint8_t channelLow = 0x01, uint8_t channelHigh = 0x00);
 
+	void process_l2cap_connection_request(uint8_t *data);
 	void process_l2cap_connection_response(uint8_t *data);
 	void process_l2cap_config_reequest(uint8_t *data);
 	void process_l2cap_config_response(uint8_t *data);
@@ -1657,6 +1659,8 @@ private:
 	uint8_t			txbuf_[256];	// buffer to use to send commands to bluetooth 
 	uint8_t			hciVersion;		// what version of HCI do we have?
 
+	bool 			do_pair_device_;	// Should we do a pair for a new device?
+	const char		*pair_pincode_;	// What pin code to use for the pairing
     uint8_t 		my_bdaddr[6];	// The bluetooth dongles Bluetooth address.
     uint8_t			features[8];	// remember our local features.
     uint8_t			device_bdaddr_[6];// remember devices address
