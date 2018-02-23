@@ -92,6 +92,44 @@ keycode_numlock_t keycode_numlock[] = {
 #define print   USBHost::print_
 #define println USBHost::println_
 
+
+uint16_t KeyboardController::idVendor() 
+{
+	if (device != nullptr) return device->idVendor;
+	if (btdevice != nullptr) return btdevice->idVendor;
+	return 0;
+}
+
+uint16_t KeyboardController::idProduct() 
+{
+	if (device != nullptr) return device->idProduct;
+	if (btdevice != nullptr) return btdevice->idProduct;
+	return 0;
+}
+
+const uint8_t *KeyboardController::manufacturer()
+{
+	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_MAN]];
+	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; 
+	return nullptr;
+}
+
+const uint8_t *KeyboardController::product()
+{
+	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_PROD]];
+	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; 
+	return nullptr;
+}
+
+const uint8_t *KeyboardController::serialNumber()
+{
+	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]];
+	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; 
+	return nullptr;
+}
+
+
+
 void KeyboardController::init()
 {
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
@@ -99,6 +137,7 @@ void KeyboardController::init()
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
 	driver_ready_for_device(this);
 	USBHIDParser::driver_ready_for_hid_collection(this);
+	BluetoothController::driver_ready_for_bluetooth(this);
 }
 
 bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
@@ -323,8 +362,13 @@ void KeyboardController::LEDS(uint8_t leds) {
 
 void KeyboardController::updateLEDS() {
 	// Now lets tell keyboard new state.
-	mk_setup(setup, 0x21, 9, 0x200, 0, sizeof(leds_.byte)); // hopefully this sets leds
-	queue_Control_Transfer(device, &setup, &leds_.byte, this);
+	if (device != nullptr) {
+		// Only do it this way if we are a standard USB device
+		mk_setup(setup, 0x21, 9, 0x200, 0, sizeof(leds_.byte)); // hopefully this sets leds
+		queue_Control_Transfer(device, &setup, &leds_.byte, this);
+	} else {
+		// Bluetooth, need to setup back channel to Bluetooth controller. 
+	}
 }
 
 //=============================================================================
@@ -426,3 +470,51 @@ void KeyboardController::hid_input_end()
 		hid_input_begin_ = false;
 	}		
 }
+
+bool KeyboardController::claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class) 
+{
+	Serial.printf("Keyboard Controller::claim_bluetooth - Class %x\n", bluetooth_class);
+	if ((((bluetooth_class & 0xff00) == 0x2500) || (((bluetooth_class & 0xff00) == 0x500))) && (bluetooth_class & 0x40)) {
+		Serial.printf("KeyboardController::claim_bluetooth TRUE\n");
+		//btdevice = driver;
+		return true;
+	}
+	return false;
+}
+
+bool KeyboardController::process_bluetooth_HID_data(const uint8_t *data, uint16_t length) 
+{
+	// Example DATA from bluetooth keyboard:
+	//                  0  1 2 3 4 5  6 7  8 910 1 2 3 4 5 6 7
+	//                           LEN         D
+	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 0 0 0 0 0 0 
+	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 4 0 0 0 0 0 
+	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 0 0 0 0 0 0 
+	// So Len=9 passed in data starting at report ID=1... 
+	Serial.printf("KeyboardController::process_bluetooth_HID_data\n");
+	if (data[0] != 1) return false;
+	print("  KB Data: ");
+	print_hexbytes(data, length);
+	for (int i=2; i < length; i++) {
+		uint32_t key = prev_report[i];
+		if (key >= 4 && !contains(key, report)) {
+			key_release(prev_report[0], key);
+		}
+	}
+	for (int i=2; i < 8; i++) {
+		uint32_t key = data[i];
+		if (key >= 4 && !contains(key, prev_report)) {
+			key_press(data[1], key);
+		}
+	}
+	// Save away the data.. But shift down one byte... Don't need the report number
+	memcpy(prev_report, &data[1], 8);
+	return true;
+}
+
+void KeyboardController::release_bluetooth() 
+{
+	//btdevice = nullptr;
+
+}
+

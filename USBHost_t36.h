@@ -56,7 +56,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-//#define USBHOST_PRINT_DEBUG
+#define USBHOST_PRINT_DEBUG
 
 /************************************************/
 /*  Data Types                                  */
@@ -516,6 +516,35 @@ protected:
 	Device_t *mydevice = NULL;
 };
 
+
+// Device drivers may inherit from this base class, if they wish to receive
+// HID input like data from Bluetooth HID device. 
+class BluetoothController;
+
+class BTHIDInput {
+public:
+	operator bool() { return (btdevice != nullptr); }
+	uint16_t idVendor() { return (btdevice != nullptr) ? btdevice->idVendor : 0; }
+	uint16_t idProduct() { return (btdevice != nullptr) ? btdevice->idProduct : 0; }
+	const uint8_t *manufacturer()
+		{  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; }
+	const uint8_t *product()
+		{  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; }
+	const uint8_t *serialNumber()
+		{  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
+
+private:
+	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class) {return false;}
+	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length) {return false;}
+	virtual void release_bluetooth() {};
+	void add_to_list();
+	BTHIDInput *next;
+	friend class BluetoothController;
+protected:
+	Device_t *btdevice = NULL;
+};
+
+
 /************************************************/
 /*  USB Device Drivers                          */
 /************************************************/
@@ -655,7 +684,7 @@ private:
 
 //--------------------------------------------------------------------------
 
-class KeyboardController : public USBDriver , public USBHIDInput  {
+class KeyboardController : public USBDriver , public USBHIDInput, public BTHIDInput {
 public:
 typedef union {
    struct {
@@ -673,7 +702,13 @@ public:
 	KeyboardController(USBHost *host) { init(); }
 
 	// Some methods are in both public classes so we need to figure out which one to use
-	operator bool() { return (device != nullptr); }
+	uint16_t idVendor();
+	uint16_t idProduct();
+
+	const uint8_t *manufacturer();
+	const uint8_t *product();
+	const uint8_t *serialNumber();
+	operator bool() { return ((device != nullptr) || (btdevice != nullptr)); }
 	// Main boot keyboard functions. 
 	uint16_t getKey() { return keyCode; }
 	uint8_t  getModifiers() { return modifiers; }
@@ -703,6 +738,12 @@ protected:
 	static void callback(const Transfer_t *transfer);
 	void new_data(const Transfer_t *transfer);
 	void init();
+
+	// Bluetooth data
+	bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class);
+	bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
+	void release_bluetooth();
+
 
 protected:	// HID functions for extra keyboard data. 
 	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
@@ -1546,12 +1587,15 @@ public:
 
 	enum {MAX_ENDPOINTS=4, NUM_SERVICES=4, };  // Max number of Bluetooth services - if you need more than 4 simply increase this number
 	enum {BT_CLASS_DEVICE= 0x0804}; // Toy - Robot
+	static void driver_ready_for_bluetooth(BTHIDInput *driver);
 
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
 	virtual void disconnect();
 	//virtual void timer_event(USBDriverTimer *whichTimer);
+
+	BTHIDInput * find_driver(uint32_t device_type);
 private:
 	static void rx_callback(const Transfer_t *transfer);
 	static void rx2_callback(const Transfer_t *transfer);
@@ -1580,38 +1624,6 @@ private:
 
 	void inline sendHCIRemoteNameRequest();
 
-	//void inline sendHCIReadBufferSize();
-	//void inline sendHCIReadClassOfDevice();
-	//void inline sendHCIReadLocalSupportedCommands();
-	//void inline sendHCIReadLocalName();
-	//void inline sendHCIReadVoiceSettings();
-	//void inline sendHCICommandReadNumberSupportedIAC();
-	//void inline sendHCICommandReadCurrentIACLAP();
-	//void inline sendHCIClearAllEventFilters();
-	//void inline sendHCIWriteConnectionAcceptTimeout();
-	//void inline sendHCILEReadBufferSize();
-	//void inline sendHCILEReadLocalSupportedFeatures();
-	//void inline sendHCILEReadSupportedStates();
-	//void inline sendHCIWriteInquiryMode();
-	//void inline sendHCIReadInquiryResponseTransmitPowerLevel();
-	//void inline sendHCIReadLocalExtendedFeatures(uint8_t page);
-	//void inline sendHCISetEventMask();
-	//void inline sendHCIReadStoredLinkKey();
-	//void inline sendHCIWriteDefaultLinkPolicySettings();
-	//void inline sendHCIReadPageScanActivity();
-	//void inline sendHCIReadPageScanType();
-	//void inline sendHCILESetEventMask();
-	//void inline sendHCILEReadADVTXPower();
-	//void inline sendHCIEReadWhiteListSize();
-	//void inline sendHCILEClearWhiteList();
-	//void inline sendHCIDeleteStoredLinkKey();
-	//void inline sendHCIWriteLocalName();
-	//void inline sendHCIWriteSSPMode(uint8_t ssp_mode);
-	//void inline sendHCIWriteEIR();
-	//void inline sendHCIWriteLEHostSupported();
-	//void inline sendHCILESetAdvData () ;
-	//void inline sendHCILESetScanRSPData();
-
 	void handle_hci_command_complete();
 	void handle_hci_command_status();
 	void handle_hci_inquiry_result();
@@ -1639,6 +1651,7 @@ private:
 
 	void setHIDProtocol(uint8_t protocol);
 	void handleHIDTHDRData(uint8_t *buffer);	// Pass the whole buffer...
+	static BTHIDInput *available_bthid_drivers_list;
 
 
 	setup_t setup;
@@ -1663,6 +1676,7 @@ private:
 	const char		*pair_pincode_;	// What pin code to use for the pairing
     uint8_t 		my_bdaddr[6];	// The bluetooth dongles Bluetooth address.
     uint8_t			features[8];	// remember our local features.
+    BTHIDInput * 	device_driver_ = nullptr;;
     uint8_t			device_bdaddr_[6];// remember devices address
     uint8_t			device_ps_repetion_mode_ ; // mode
     uint8_t			device_clock_offset_[2];

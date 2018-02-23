@@ -149,6 +149,42 @@ enum {PC_RESET = 1, PC_WRITE_CLASS_DEVICE, PC_READ_BDADDR, PC_READ_LOCAL_VERSION
 // Setup some states for the TX pipe where we need to chain messages
 enum {STATE_TX_SEND_CONNECT_INT=200, STATE_TX_SEND_CONECT_RSP_SUCCESS, STATE_TX_SEND_CONFIG_REQ};
 
+// This is a list of all the drivers inherited from the BTHIDInput class.
+// Unlike the list of USBDriver (managed in enumeration.cpp), drivers stay
+// on this list even when they have claimed a top level collection.
+BTHIDInput * BluetoothController::available_bthid_drivers_list = NULL;
+
+void BluetoothController::driver_ready_for_bluetooth(BTHIDInput *driver)
+{
+	driver->next = NULL;
+	if (available_bthid_drivers_list == NULL) {
+		available_bthid_drivers_list = driver;
+	} else {
+		BTHIDInput *last = available_bthid_drivers_list;
+		while (last->next) last = last->next;
+		last->next = driver;
+	}
+}
+
+// When a new top level collection is found, this function asks drivers
+// if they wish to claim it.  The driver taking ownership of the
+// collection is returned, or NULL if no driver wants it.
+BTHIDInput * BluetoothController::find_driver(uint32_t device_type)
+{
+	Serial.printf("BluetoothController::find_driver");
+	BTHIDInput *driver = available_bthid_drivers_list;
+	while (driver) {
+		Serial.printf("  driver %x\n", (uint32_t)driver);
+		if (driver->claim_bluetooth(this, device_type)) {
+			Serial.printf("    *** Claimed ***\n");
+			return driver;
+		}
+		driver = driver->next;
+	}
+	return NULL;
+}
+
+
 /************************************************************/
 //  Initialization and claiming of devices & interfaces
 /************************************************************/
@@ -265,6 +301,11 @@ bool BluetoothController::claim(Device_t *dev, int type, const uint8_t *descript
 
 void BluetoothController::disconnect()
 {
+	Serial.printf("Bluetooth Disconnect");
+	if (device_driver_) {
+		device_driver_->release_bluetooth();
+		device_driver_ = nullptr;
+	}
 }
 
 
@@ -739,6 +780,8 @@ void BluetoothController::handle_hci_inquiry_result()
 			// BUGBUG, lets hard code to go to new state...
 			for (uint8_t i = 0; i < 6; i++) device_bdaddr_[i] = rxbuf_[index_bd+i];
 			device_class_ = bluetooth_class;
+			device_driver_ = find_driver(device_class_);
+
     		device_ps_repetion_mode_  = rxbuf_[index_ps]; // mode
     		device_clock_offset_[0] = rxbuf_[index_clock_offset];
     		device_clock_offset_[1] = rxbuf_[index_clock_offset+1];
@@ -777,6 +820,7 @@ void BluetoothController::handle_hci_incoming_connect() {
 		DBGPrintf("      Peripheral device\n");
 		if (class_of_device & 0x80) DBGPrintf("        Mouse\n");
 		if (class_of_device & 0x40) DBGPrintf("        Keyboard\n"); 
+		device_driver_ = find_driver(class_of_device);
 
 		// We need to save away the BDADDR and class link type?
 		for(uint8_t i=0; i<6; i++) device_bdaddr_[i] = rxbuf_[i+2];
@@ -826,6 +870,14 @@ void BluetoothController::handle_hci_disconnect_complete()
 	//5 4 0 48 0 13
 	DBGPrintf("    Event: HCI Disconnect complete(%d): handle: %x, reason:%x\n", rxbuf_[2], 
 		rxbuf_[3]+(rxbuf_[4]<<8), rxbuf_[5]);
+	if (device_driver_) {
+		device_driver_->release_bluetooth();
+		device_driver_ = nullptr;
+	}
+	// Probably should clear out connection data. 
+	device_class_ = 0;	
+	memset(device_bdaddr_, 0, sizeof(device_bdaddr_));
+	//... 
 }
 
 void BluetoothController::handle_hci_authentication_complete()
@@ -1249,7 +1301,8 @@ void BluetoothController::process_l2cap_config_response(uint8_t *data) {
 		data[8]+((uint16_t)data[9] << 8), data[10]+((uint16_t)data[11] << 8));
 	if (scid == control_dcid_) {
 		// Set HID Boot mode
-		setHIDProtocol(HID_BOOT_PROTOCOL);
+		//setHIDProtocol(HID_BOOT_PROTOCOL);  //
+		setHIDProtocol(HID_RPT_PROTOCOL);  //HID_RPT_PROTOCOL
 		if (do_pair_device_) {
 			// Tell system we will next need to setup connection for the interrupt
 			pending_control_tx_ = STATE_TX_SEND_CONNECT_INT;
@@ -1276,18 +1329,21 @@ void BluetoothController::handleHIDTHDRData(uint8_t *data) {
 	DBGPrintf("HID HDR Data: len: %d, Type: %d\n", len, data[9]);
 
 	// ??? How to parse??? Use HID object??? 
-	switch (data[9]) {
-		case 1:
-			DBGPrintf("    Keyboard report type\n");
-			break;
-		case 2: 
-			DBGPrintf("    Mouse report type\n");	
-			break;
-		case 3:	
-			DBGPrintf("    Combo keyboard/pointing\n");
-			break;
-		default:
-			DBGPrintf("    Unknown report\n");	
+	if (device_driver_) {
+		device_driver_->process_bluetooth_HID_data(&data[9], len-1); // We skip the first byte...
+	} else {
+		switch (data[9]) {
+			case 1:
+				DBGPrintf("    Keyboard report type\n");
+				break;
+			case 2: 
+				DBGPrintf("    Mouse report type\n");	
+				break;
+			case 3:	
+				DBGPrintf("    Combo keyboard/pointing\n");
+				break;
+			default:
+				DBGPrintf("    Unknown report\n");	
+		}
 	}
-
 }
