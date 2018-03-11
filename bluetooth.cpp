@@ -61,6 +61,7 @@ void VDBGPrintf(...) {};
 #define HCI_OP_REMOTE_NAME_REQ				0x0419
 #define HCI_OP_REMOTE_NAME_REQ_CANCEL		0x041a
 #define HCI_OP_READ_REMOTE_FEATURES			0x041b
+#define HCI_OP_READ_REMOTE_VERSION_INFORMATION 0x041D
 
 
 #define HCI_Write_Default_Link_Policy_Settings	0x080f
@@ -393,6 +394,9 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
 			case EV_REMOTE_NAME_COMPLETE: // 0x07
 				handle_hci_remote_name_complete();
 				break;	
+			case EV_READ_REMOTE_VERSION_INFORMATION_COMPLETE:
+				handle_hci_remote_version_information_complete();
+				break;
 			case EV_PIN_CODE_REQUEST: // 0x16
 				handle_hci_pin_code_request();
 				break;
@@ -523,6 +527,11 @@ void BluetoothController::handle_hci_command_complete()
 		case HCI_WRITE_LOCAL_NAME:				//0x0c13
 			break;
 		case HCI_WRITE_SCAN_ENABLE:				//0x0c1a
+			DBGPrintf("Write_Scan_enable Completed\n");
+			if (device_connection_handle_) {
+				// Lets see if we can get the remote information
+				sendHCIRemoteVersionInfoRequest();
+			}
 			break;
 		case HCI_WRITE_SSP_MODE:					//0x0c56
 			break;
@@ -582,155 +591,6 @@ void BluetoothController::queue_next_hci_command()
 			sendHCIWriteScanEnable(2);
 			pending_control_ = 0;	// 
 			break;
-
-#if 0
-    		sendHCIReadLocalSupportedFeatures();
-			pending_control_++;
-			break;
-     	case 4:
-			sendHCIReadBufferSize();
-			pending_control_++;
-			break;
-     	case 5:
-			sendHCIReadClassOfDevice();
-			pending_control_++;
-			break;
-     	case 6:
-			sendHCIReadLocalName();
-			pending_control_++;
-			break;
-		case 7:
-			sendHCIReadVoiceSettings();
-			pending_control_++;	// go to next state
-
-			break;
-		case 8: 
-			sendHCICommandReadNumberSupportedIAC();
-			pending_control_++;
-			break;
-		case 9: 
-			sendHCICommandReadCurrentIACLAP();
-			pending_control_++;
-			break;
-		case 10: 
-			sendHCIClearAllEventFilters();
-			pending_control_++;
-			break;
-		case 11: 
-			sendHCIWriteConnectionAcceptTimeout();
-			pending_control_++;
-			break;
-		case 12:
-			// 0x02 0x20 0x00 => 0x0E 0x07 0x01 0x02 0x20 0x00 0x00 0x00 0x00 (OGF=8???)
-			sendHCILEReadBufferSize();
-			pending_control_++;
-			break;
-		case 13:
-			// 0x03 0x20 0x00 => 0x0E 0x0C 0x01 0x03 0x20 0x00 0x01 0x00 0x00 0x00 0x00 0x00 0x00 0x00
-			sendHCILEReadLocalSupportedFeatures();
-			pending_control_++;
-			break;
-		case 14:
-			// 0x1C 0x20 0x00 => 0x0E 0x0C 0x01 0x1C 0x20 0x00 0xFF 0xFF 0xFF 0x1F 0x00 0x00 0x00 0x00
-			sendHCILEReadSupportedStates();
-			pending_control_++;
-			break;
-		case 15:
-			sendHCIReadLocalSupportedCommands();
-			pending_control_++;
-			break;
-			// Try skipping...
-			// 0x52 0x0C 0xF1 0x00 0x00 ... <several lines of 0x00
-		case 16:
-			// 0x45 0x0C 0x01 0x02
-			sendHCIWriteInquiryMode();
-			pending_control_++;
-			break;
-		case 17: 
-			sendHCIReadInquiryResponseTransmitPowerLevel();
-			pending_control_++;
-			break;
-
-		case 18:
-			sendHCIReadLocalExtendedFeatures(1);//	0x1004
-			pending_control_++;
-			break;
-		case 19:
-			sendHCISetEventMask();//					0x0c01
-			pending_control_++;
-			break;
-		case 20:
-			sendHCIReadStoredLinkKey();//			0x0c0d
-			pending_control_++;
-			break;
-		case 21:
-			sendHCIWriteDefaultLinkPolicySettings();//	0x080f
-			pending_control_++;
-			break;
-		case 22:
-			sendHCIReadPageScanActivity();//			0x0c1b
-			pending_control_++;
-			break;
-		case 23:
-			sendHCIReadPageScanType();//				0x0c46
-			pending_control_++;
-			break;
-		case 24:
-			sendHCILESetEventMask();//				0x2001
-			pending_control_++;
-			break;
-		case 25:
-			sendHCILEReadADVTXPower();//			0x2007
-			pending_control_++;
-			break;
-		case 26:
-			sendHCIEReadWhiteListSize();//			0x200f
-			pending_control_++;
-			break;
-		case 27:
-			sendHCILEClearWhiteList();//				0x2010
-			pending_control_++;
-			break;
-		case 28:
-			sendHCIDeleteStoredLinkKey();//			0x0c12
-			pending_control_++;
-			break;
-		case 29:
-			sendHCIWriteLocalName();//				0x0c13
-			pending_control_++;
-			break;
-		case 30:
-			sendHCIWriteScanEnable(2);//				0x0c1a (0=off, 1=scan, 2=page)
-			pending_control_++;
-			break;
-		case 31:
-			sendHCIWriteSSPMode(1);//					0x0c56
-			pending_control_++;
-			break;
-		case 32:
-			sendHCIWriteEIR();//						0x0c52
-			pending_control_++;
-			break;
-		case 33:
-			sendHCIWriteLEHostSupported();//			0x0c6d
-			pending_control_++;
-			break;
-		case 34:
-			sendHCILESetAdvData();//			0x2008
-			pending_control_++;
-			break;
-		case 35:
-			sendHCILESetScanRSPData();//			0x2009
-			pending_control_++;
-			break;
-
-		case 36:
-#endif
-
-
-
-// 0x09 0x20 0x20 0x0D 0x0C 0x09 0x72 0x61 0x73 0x70 0x62 0x65 0x72 0x72 0x79 0x70 0x69 0x00 0x00 0...
-
 		default:	
 			break;
     }
@@ -741,18 +601,32 @@ void BluetoothController::queue_next_hci_command()
 void BluetoothController::handle_hci_command_status() 
 {
 	// <event type><param count><status><num packets allowed to be sent><CMD><CMD>
+#ifdef DEBUG_BT
 	uint16_t hci_command = rxbuf_[4] + (rxbuf_[5] << 8);
-	VDBGPrintf("    Command %x Status %x\n", hci_command, rxbuf_[2]);
-
-/*	switch (hci_command) {
-		case HCI_RESET:	//0x0c03
-			break;
-		case HCI_INQUIRY:
-			// will probably need to check status and break out of here if error
-			//BT rx_data(6): f 4 0 1 1 4 
-
+	if (rxbuf_[2]) {
+		DBGPrintf("    Command %x Status %x - ", hci_command, rxbuf_[2]);
+		switch (rxbuf_[2]) {
+			case 0x01: DBGPrintf("Unknown HCI Command\n"); break;
+			case 0x02: DBGPrintf("Unknown Connection Identifier\n"); break;
+			case 0x03: DBGPrintf("Hardware Failure\n"); break;
+			case 0x04: DBGPrintf("Page Timeout\n"); break;
+			case 0x05: DBGPrintf("Authentication Failure\n"); break;
+			case 0x06: DBGPrintf("PIN or Key Missing\n"); break;
+			case 0x07: DBGPrintf("Memory Capacity Exceeded\n"); break;
+			case 0x08: DBGPrintf("Connection Timeout\n"); break;
+			case 0x09: DBGPrintf("Connection Limit Exceeded\n"); break;
+			case 0x0A: DBGPrintf("Synchronous Connection Limit To A Device Exceeded\n"); break;
+			case 0x0B: DBGPrintf("Connection Already Exists\n"); break;
+			case 0x0C: DBGPrintf("Command Disallowed\n"); break;
+			case 0x0D: DBGPrintf("Connection Rejected due to Limited Resources\n"); break;
+			case 0x0E: DBGPrintf("Connection Rejected Due To Security Reasons\n"); break;
+			case 0x0F: DBGPrintf("Connection Rejected due to Unacceptable BD_ADDR\n"); break;
+			default: DBGPrintf("???\n"); break;
+		}
+	} else {
+		VDBGPrintf("    Command %x Status %x\n", hci_command, rxbuf_[2]);
 	}
-*/	
+#endif
 }
 
 void BluetoothController::handle_hci_inquiry_result() 
@@ -776,6 +650,11 @@ void BluetoothController::handle_hci_inquiry_result()
 			DBGPrintf("      Peripheral device\n");
 			if (bluetooth_class & 0x80) DBGPrintf("        Mouse\n");
 			if (bluetooth_class & 0x40) DBGPrintf("        Keyboard\n"); 
+			switch(bluetooth_class & 0x3c) {
+				case 4: DBGPrintf("        Joystick\n"); break;
+				case 8: DBGPrintf("        Gamepad\n"); break;
+				case 0xc: DBGPrintf("        Remote Control\n"); break;
+			}
 
 			// BUGBUG, lets hard code to go to new state...
 			for (uint8_t i = 0; i < 6; i++) device_bdaddr_[i] = rxbuf_[index_bd+i];
@@ -820,6 +699,11 @@ void BluetoothController::handle_hci_incoming_connect() {
 		DBGPrintf("      Peripheral device\n");
 		if (class_of_device & 0x80) DBGPrintf("        Mouse\n");
 		if (class_of_device & 0x40) DBGPrintf("        Keyboard\n"); 
+		switch(class_of_device & 0x3c) {
+			case 4: DBGPrintf("        Joystick\n"); break;
+			case 8: DBGPrintf("        Gamepad\n"); break;
+			case 0xc: DBGPrintf("        Remote Control\n"); break;
+		}
 		device_driver_ = find_driver(class_of_device);
 
 		// We need to save away the BDADDR and class link type?
@@ -875,6 +759,7 @@ void BluetoothController::handle_hci_disconnect_complete()
 		device_driver_ = nullptr;
 	}
 	// Probably should clear out connection data. 
+	device_connection_handle_ = 0;
 	device_class_ = 0;	
 	memset(device_bdaddr_, 0, sizeof(device_bdaddr_));
 	//... 
@@ -903,6 +788,19 @@ void BluetoothController::handle_hci_remote_name_complete() {
 	sendHCIAcceptConnectionRequest();
 }
 
+void BluetoothController::handle_hci_remote_version_information_complete() {
+	//           STAT bd   bd   bd   bd    bd  bd
+	//c 8 0 48 0 5 45 0 0 0
+	remote_ver_ = rxbuf_[6];
+	remote_man_ = rxbuf_[7]+((uint16_t)rxbuf_[8]<< 8);
+	remote_subv_ = rxbuf_[9];
+	
+	DBGPrintf("    Event: handle_hci_remote_version_information_complete(%d): ", rxbuf_[2]);
+	DBGPrintf(" Handle: %x, Ver:%x, Man: %x, SV: %x\n", 
+		rxbuf_[3]+((uint16_t)rxbuf_[4]<< 8), remote_ver_, remote_man_, remote_subv_);
+	// Lets now try to accept the connection. 
+	sendHCIAcceptConnectionRequest();
+}
 
 void BluetoothController::rx2_data(const Transfer_t *transfer)
 {
@@ -929,7 +827,7 @@ void BluetoothController::rx2_data(const Transfer_t *transfer)
 				process_l2cap_connection_response(&buffer[8]);
 				break;
 			case L2CAP_CMD_CONFIG_REQUEST:
-				process_l2cap_config_reequest(&buffer[8]);
+				process_l2cap_config_request(&buffer[8]);
 				break;
 			case L2CAP_CMD_CONFIG_RESPONSE:
 				process_l2cap_config_response(&buffer[8]);
@@ -937,6 +835,12 @@ void BluetoothController::rx2_data(const Transfer_t *transfer)
 
 			case HID_THDR_DATA_INPUT:
 				handleHIDTHDRData(buffer);	// Pass the whole buffer...
+				break;
+			case L2CAP_CMD_COMMAND_REJECT:
+				process_l2cap_command_reject(&buffer[8]);
+				break;
+			case L2CAP_CMD_DISCONNECT_REQUEST:
+				process_l2cap_disconnect_request(&buffer[8]);
 				break;
 		}
 	}
@@ -1095,6 +999,16 @@ void BluetoothController::sendHCIRemoteNameRequest() {		// 0x0419
 	sendHCICommand(HCI_OP_REMOTE_NAME_REQ, sizeof(connection_data), connection_data);	
 }
 
+void BluetoothController::sendHCIRemoteVersionInfoRequest() {		// 0x041D
+	//               BD   BD   BD   BD   BD   BD   PS   0    CLK   CLK
+	//0x19 0x04 0x0A 0x79 0x22 0x23 0x0A 0xC5 0xCC 0x01 0x00 0x00 0x00
+
+	DBGPrintf("HCI_OP_READ_REMOTE_VERSION_INFORMATION called (");
+	uint8_t connection_data[2];
+	connection_data[0] = device_connection_handle_ & 0xff;
+	connection_data[1] = (device_connection_handle_>>8) & 0xff;
+	sendHCICommand(HCI_OP_READ_REMOTE_VERSION_INFORMATION, sizeof(connection_data), connection_data);	
+}
 
 // l2cap support functions. 
 void BluetoothController::sendl2cap_ConnectionResponse(uint16_t handle, uint8_t rxid, uint16_t dcid, uint16_t scid, uint8_t result) {
@@ -1129,7 +1043,7 @@ void BluetoothController::sendl2cap_ConnectionRequest(uint16_t handle, uint8_t r
     l2capbuf[6] = scid & 0xff; // Source CID
     l2capbuf[7] = (scid >> 8) & 0xff;
 
-	DBGPrintf("L2CAP_ConnectionRequest called(");
+	DBGPrintf("`ConnectionRequest called(");
     sendL2CapCommand(handle, l2capbuf, sizeof(l2capbuf));
 }
 
@@ -1277,7 +1191,7 @@ void BluetoothController::process_l2cap_connection_response(uint8_t *data) {
 	}
 }
 
-void BluetoothController::process_l2cap_config_reequest(uint8_t *data) {
+void BluetoothController::process_l2cap_config_request(uint8_t *data) {
 	//48 20 10 0 c 0 1 0 *4 2 8 0 70 0 0 0 1 2 30 0
 	uint16_t dcid = data[4]+((uint16_t)data[5] << 8); 
 	DBGPrintf("    L2CAP config Request: ID: %d, Dest:%x, Flags:%x,  Options: %x %x %x %x\n",
@@ -1301,17 +1215,32 @@ void BluetoothController::process_l2cap_config_response(uint8_t *data) {
 		data[8]+((uint16_t)data[9] << 8), data[10]+((uint16_t)data[11] << 8));
 	if (scid == control_dcid_) {
 		// Set HID Boot mode
-		//setHIDProtocol(HID_BOOT_PROTOCOL);  //
-		setHIDProtocol(HID_RPT_PROTOCOL);  //HID_RPT_PROTOCOL
-		if (do_pair_device_) {
+		setHIDProtocol(HID_BOOT_PROTOCOL);  //
+		//setHIDProtocol(HID_RPT_PROTOCOL);  //HID_RPT_PROTOCOL
+		//if (do_pair_device_) {
 			// Tell system we will next need to setup connection for the interrupt
 			pending_control_tx_ = STATE_TX_SEND_CONNECT_INT;
-		}
+		//}
 	} else if (scid == interrupt_dcid_) {
 		// Enable SCan to page mode
 		sendHCIWriteScanEnable(2);
 	}
 }
+
+void BluetoothController::process_l2cap_command_reject(uint8_t *data) {		
+	// 48 20 b 0 7 0 70 0 *1 0 0 0 2 0 4 
+	DBGPrintf("    L2CAP command reject: ID: %d, length:%x, Reason:%x,  Data: %x %x \n",
+		data[1], data[2] + ((uint16_t)data[3] << 8), data[4], data[5], data[6]);
+
+}
+
+void BluetoothController::process_l2cap_disconnect_request(uint8_t *data) {
+	uint16_t dcid = data[4]+((uint16_t)data[5] << 8); 
+	uint16_t scid = data[6]+((uint16_t)data[7] << 8); 
+	DBGPrintf("    L2CAP disconnect request: ID: %d, Length:%x, Dest:%x, Source:%x\n",
+		data[1], data[2] + ((uint16_t)data[3] << 8), dcid, scid);
+}
+
 
 void BluetoothController::setHIDProtocol(uint8_t protocol) {
 	// Should verify protocol is boot or report

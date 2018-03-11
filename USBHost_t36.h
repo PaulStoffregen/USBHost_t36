@@ -56,7 +56,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-#define USBHOST_PRINT_DEBUG
+//#define USBHOST_PRINT_DEBUG
 
 /************************************************/
 /*  Data Types                                  */
@@ -740,9 +740,9 @@ protected:
 	void init();
 
 	// Bluetooth data
-	bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class);
-	bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
-	void release_bluetooth();
+	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class);
+	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
+	virtual void release_bluetooth();
 
 
 protected:	// HID functions for extra keyboard data. 
@@ -813,7 +813,7 @@ private:
 
 //--------------------------------------------------------------------------
 
-class JoystickController : public USBDriver, public USBHIDInput {
+class JoystickController : public USBDriver, public USBHIDInput, public BTHIDInput {
 public:
 	JoystickController(USBHost &host) { init(); }
 
@@ -854,6 +854,12 @@ protected:
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 	virtual bool hid_process_out_data(const Transfer_t *transfer);
+
+		// Bluetooth data
+	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class);
+	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
+	virtual void release_bluetooth();
+
 private:
 
 	// Class specific
@@ -1623,7 +1629,7 @@ private:
 	void inline sendHCIWriteScanEnable(uint8_t scan_op);
 
 	void inline sendHCIRemoteNameRequest();
-
+	void inline sendHCIRemoteVersionInfoRequest();
 	void handle_hci_command_complete();
 	void handle_hci_command_status();
 	void handle_hci_inquiry_result();
@@ -1633,6 +1639,7 @@ private:
 	void handle_hci_disconnect_complete();
 	void handle_hci_authentication_complete();
 	void handle_hci_remote_name_complete();
+	void handle_hci_remote_version_information_complete();
 	void handle_hci_pin_code_request();
 	void handle_hci_link_key_notification();
 	void handle_hci_link_key_request();
@@ -1646,8 +1653,10 @@ private:
 
 	void process_l2cap_connection_request(uint8_t *data);
 	void process_l2cap_connection_response(uint8_t *data);
-	void process_l2cap_config_reequest(uint8_t *data);
+	void process_l2cap_config_request(uint8_t *data);
 	void process_l2cap_config_response(uint8_t *data);
+	void process_l2cap_command_reject(uint8_t *data);
+	void process_l2cap_disconnect_request(uint8_t *data);
 
 	void setHIDProtocol(uint8_t protocol);
 	void handleHIDTHDRData(uint8_t *buffer);	// Pass the whole buffer...
@@ -1657,7 +1666,7 @@ private:
 	setup_t setup;
 	Pipe_t mypipes[4] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
-	strbuf_t mystring_bufs[1];
+	strbuf_t mystring_bufs[2];		// 2 string buffers - one for our device - one for remote device...
 	uint16_t 		pending_control_ = 0;
 	uint16_t		pending_control_tx_ = 0;
 	uint16_t 		rx_size_ = 0;
@@ -1687,6 +1696,10 @@ private:
     uint16_t		interrupt_dcid_ = 0x71;
     uint16_t		interrupt_scid_;
     uint16_t		control_scid_;
+	uint8_t    		remote_ver_;
+	uint16_t		remote_man_;
+	uint8_t			remote_subv_;
+
 };
 
 #endif

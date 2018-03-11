@@ -47,6 +47,7 @@ void JoystickController::init()
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
 	driver_ready_for_device(this);
 	USBHIDParser::driver_ready_for_hid_collection(this);
+	BluetoothController::driver_ready_for_bluetooth(this);
 }
 
 //-----------------------------------------------------------------------------
@@ -643,4 +644,37 @@ void JoystickController::disconnect()
 	// TODO: free resources
 }
 
+bool JoystickController::claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class) 
+{
+	if ((((bluetooth_class & 0xff00) == 0x2500) || (((bluetooth_class & 0xff00) == 0x500))) && ((bluetooth_class & 0x3C) == 0x08)) {
+		Serial.printf("JoystickController::claim_bluetooth TRUE\n");
+		//btdevice = driver;
+		return true;
+	}
+	return false;
+}
+
+
+bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_t length) 
+{
+	// Example data from PS4 controller
+	//01 7e 7f 82 84 08 00 00 00 00
+	//   LX LY RX RY BT BT PS LT RT
+	Serial.printf("JoystickController::process_bluetooth_HID_data\n");
+	if (data[0] != 1) return false;
+	print("  Joystick Data: ");
+	print_hexbytes(data, length);
+	Serial.printf("  Joystick Data: ");
+	for (uint16_t i = 0; i < length; i++ ) {
+		Serial.printf("%02x ", data[i]);
+	}
+	Serial.printf("\n");
+	return true;
+}
+
+void JoystickController::release_bluetooth() 
+{
+	//btdevice = nullptr;
+
+}
 
