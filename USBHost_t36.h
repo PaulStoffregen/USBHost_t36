@@ -782,7 +782,7 @@ public:
 	const uint8_t *manufacturer();
 	const uint8_t *product();
 	const uint8_t *serialNumber();
-	operator bool() { return ((device != nullptr) || (mydevice != nullptr)); }	// override as in both USBDriver and in USBHIDInput
+	operator bool() { return (((device != nullptr) || (mydevice != nullptr)) && connected_); }	// override as in both USBDriver and in USBHIDInput
 
 	bool    available() { return joystickEvent; }
 	void    joystickDataClear();
@@ -798,7 +798,7 @@ public:
     // setLEDs on PS4(RGB), PS3 simple LED setting (only uses lr)
     bool setLEDs(uint8_t lr, uint8_t lg=0, uint8_t lb=0);  // sets Leds, 
 	enum { STANDARD_AXIS_COUNT = 10, ADDITIONAL_AXIS_COUNT = 54, TOTAL_AXIS_COUNT = (STANDARD_AXIS_COUNT+ADDITIONAL_AXIS_COUNT) };
-	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE} joytype_t;
+	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360} joytype_t;
 	joytype_t joystickType = UNKNOWN;
 protected:
 	// From USBDriver
@@ -839,6 +839,7 @@ private:
 	uint8_t rumble_rValue_ = 0;
 	uint8_t rumble_timeout_ = 0;
 	uint8_t leds_[3] = {0,0,0};
+	uint8_t connected_ = 0;	// what type of device if any is connected xbox 360... 
 
 
 	// Used by HID code
@@ -854,6 +855,7 @@ private:
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
 
+	uint8_t			rx_ep_ = 0;	// remember which end point this object is...
 	uint16_t 		rx_size_ = 0;
 	uint16_t 		tx_size_ = 0;
 	Pipe_t 			*rxpipe_;
