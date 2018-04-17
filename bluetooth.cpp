@@ -530,7 +530,7 @@ void BluetoothController::handle_hci_command_complete()
 			DBGPrintf("Write_Scan_enable Completed\n");
 			if (device_connection_handle_) {
 				// Lets see if we can get the remote information
-				sendHCIRemoteVersionInfoRequest();
+				//sendHCIRemoteVersionInfoRequest();
 			}
 			break;
 		case HCI_WRITE_SSP_MODE:					//0x0c56
