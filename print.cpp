@@ -172,6 +172,150 @@ void USBHost::print_qh_list(const Pipe_t *list)
 	Serial.println();
 }
 
+static void print_class_subclass_protocol(uint8_t c, uint8_t s, uint8_t p)
+{
+	Serial.print(c);
+	if (c == 3) Serial.print("(HID)");
+	if (c == 8) Serial.print("(Mass Storage)");
+	if (c == 9) Serial.print("(Hub)");
+	Serial.print(" / ");
+	Serial.print(s);
+	if (c == 3 && s == 1) Serial.print("(Boot)");
+	if (c == 8 && s == 6) Serial.print("(SCSI)");
+	Serial.print(" / ");
+	Serial.print(p);
+	if (c == 3 && s == 1 && p == 1) Serial.print("(Keyboard)");
+	if (c == 3 && s == 1 && p == 2) Serial.print("(Mouse)");
+	if (c == 8 && s == 6 && p == 0x50) Serial.print("(Bulk Only)");
+	if (c == 8 && s == 6 && p == 0x62) Serial.print("(UAS)");
+	if (c == 9 && s == 0 && p == 1) Serial.print("(Single-TT)");
+	if (c == 9 && s == 0 && p == 2) Serial.print("(Multi-TT)");
+	Serial.println();
+}
+
+void USBHost::print_device_descriptor(const uint8_t *p)
+{
+	Serial.println("Device Descriptor:");
+	Serial.print("  ");
+	print_hexbytes(p, p[0]);
+	if (p[0] != 18) {
+		Serial.println("error: device must be 18 bytes");
+		return;
+	}
+	if (p[1] != 1) {
+		Serial.println("error: device must type 1");
+		return;
+	}
+	Serial.printf("    VendorID = %04X, ProductID = %04X, Version = %04X",
+		p[8] | (p[9] << 8), p[10] | (p[11] << 8), p[12] | (p[13] << 8));
+	Serial.println();
+	Serial.print("    Class/Subclass/Protocol = ");
+	print_class_subclass_protocol(p[4], p[5], p[6]);
+	Serial.print("    Number of Configurations = ");
+	Serial.println(p[17]);
+}
+
+void USBHost::print_config_descriptor(const uint8_t *p, uint32_t maxlen)
+{
+	// Descriptor Types: (USB 2.0, page 251)
+	Serial.println("Configuration Descriptor:");
+	Serial.print("  ");
+	print_hexbytes(p, p[0]);
+	if (p[0] != 9) {
+		Serial.println("error: config must be 9 bytes");
+		return;
+	}
+	if (p[1] != 2) {
+		Serial.println("error: config must type 2");
+		return;
+	}
+	Serial.print("    NumInterfaces = ");
+	Serial.println(p[4]);
+	Serial.print("    ConfigurationValue = ");
+	Serial.println(p[5]);
+
+	uint32_t len = p[2] | (p[3] << 8);
+	if (len > maxlen) len = maxlen;
+	len -= p[0];
+	p += 9;
+
+	while (len > 0) {
+		if (p[0] > len) {
+			Serial.print("  ");
+			print_hexbytes(p, len);
+			Serial.println("  error: length beyond total data size");
+			break;
+		}
+		Serial.print("  ");
+		print_hexbytes(p, p[0]);
+		if (p[0] == 9 && p[1] == 4) { // Interface Descriptor
+			Serial.print("    Interface = ");
+			Serial.println(p[2]);
+			Serial.print("    Number of endpoints = ");
+			Serial.println(p[4]);
+			Serial.print("    Class/Subclass/Protocol = ");
+			print_class_subclass_protocol(p[5], p[6], p[7]);
+		} else if (p[0] >= 7 && p[0] <= 9 && p[1] == 5) { // Endpoint Descriptor
+			Serial.print("    Endpoint = ");
+			Serial.print(p[2] & 15);
+			Serial.println((p[2] & 128) ? " IN" : " OUT");
+			Serial.print("    Type = ");
+			switch (p[3] & 3) {
+				case 0: Serial.println("Control"); break;
+				case 1: Serial.println("Isochronous"); break;
+				case 2: Serial.println("Bulk"); break;
+				case 3: Serial.println("Interrupt"); break;
+			}
+			Serial.print("    Max Size = ");
+			Serial.println(p[4] | (p[5] << 8));
+			Serial.print("    Polling Interval = ");
+			Serial.println(p[6]);
+		} else if (p[0] == 8 && p[1] == 11) { // IAD
+			Serial.print("    Interface Association = ");
+			Serial.print(p[2]);
+			Serial.print(" through ");
+			Serial.println(p[2] + p[3] - 1);
+			Serial.print("    Class / Subclass / Protocol = ");
+			print_class_subclass_protocol(p[4], p[5], p[7]);
+		} else if (p[0] >= 9 && p[1] == 0x21) { // HID
+			Serial.print("    HID, ");
+			Serial.print(p[5]);
+			Serial.print(" report descriptor");
+			if (p[5] != 1) Serial.print('s');
+			Serial.println();
+		}
+		len -= p[0];
+		p += p[0];
+	}
+}
+
+void USBHost::print_string_descriptor(const char *name, const uint8_t *p)
+{
+	uint32_t len = p[0];
+	if (len < 4) return;
+	Serial.print(name);
+	len -= 2;
+	p += 2;
+	while (len >= 2) {
+		uint32_t c = p[0] | (p[1] << 8);
+		if (c < 0x80) {
+			Serial.write(c);
+		} else if (c < 0x800) {
+			Serial.write((c >> 6) | 0xC0);
+			Serial.write((c & 0x3F) | 0x80);
+		} else {
+			Serial.write((c >> 12) | 0xE0);
+			Serial.write(((c >> 6) & 0x3F) | 0x80);
+			Serial.write((c & 0x3F) | 0x80);
+		}
+		len -= 2;
+		p += 2;
+	}
+	Serial.println();
+	//print_hexbytes(p, p[0]);
+}
+
+
 void USBHost::print_hexbytes(const void *ptr, uint32_t len)
 {
 	if (ptr == NULL || len == 0) return;

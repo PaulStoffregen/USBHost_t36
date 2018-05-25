@@ -183,6 +183,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 2;
 			return;
 		case 2: // parse 18 device desc bytes
+			print_device_descriptor(enumbuf);
 			dev->bDeviceClass = enumbuf[4];
 			dev->bDeviceSubClass = enumbuf[5];
 			dev->bDeviceProtocol = enumbuf[6];
@@ -221,6 +222,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 6;
 			return;
 		case 6: // parse Manufacturer string
+			print_string_descriptor("Manufacturer: ", enumbuf + 4);
 			convertStringDescriptorToASCIIString(0, dev, transfer);
 			// TODO: receive the string...
 			if (enumbuf[1]) dev->enum_state = 7;
@@ -234,6 +236,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 8;
 			return;
 		case 8: // parse Product string
+			print_string_descriptor("Product: ", enumbuf + 4);
 			convertStringDescriptorToASCIIString(1, dev, transfer);
 			if (enumbuf[2]) dev->enum_state = 9;
 			else dev->enum_state = 11;
@@ -245,6 +248,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 10;
 			return;
 		case 10: // parse Serial Number string
+			print_string_descriptor("Serial Number: ", enumbuf + 4);
 			convertStringDescriptorToASCIIString(2, dev, transfer);
 			dev->enum_state = 11;
 			break;
@@ -257,6 +261,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			enumlen = enumbuf[2] | (enumbuf[3] << 8);
 			println("Config data length = ", enumlen);
 			if (enumlen > sizeof(enumbuf)) {
+				enumlen = sizeof(enumbuf);
 				// TODO: how to handle device with too much config data
 			}
 			mk_setup(enumsetup, 0x80, 6, 0x0200, 0, enumlen); // 6=GET_DESCRIPTOR
@@ -264,8 +269,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 13;
 			return;
 		case 13: // read all config desc, send set config
-			println("bNumInterfaces = ", enumbuf[4]);
-			println("bConfigurationValue = ", enumbuf[5]);
+			print_config_descriptor(enumbuf, sizeof(enumbuf));
 			dev->bmAttributes = enumbuf[7];
 			dev->bMaxPower = enumbuf[8];
 			// TODO: actually do something with interface descriptor?

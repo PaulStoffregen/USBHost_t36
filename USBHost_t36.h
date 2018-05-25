@@ -309,6 +309,9 @@ protected:
 	static void print_(const Pipe_t *pipe);
 	static void print_driverlist(const char *name, const USBDriver *driver);
 	static void print_qh_list(const Pipe_t *list);
+	static void print_device_descriptor(const uint8_t *p);
+	static void print_config_descriptor(const uint8_t *p, uint32_t maxlen);
+	static void print_string_descriptor(const char *name, const uint8_t *p);
 	static void print_hexbytes(const void *ptr, uint32_t len);
 	static void print_(const char *s)	{ Serial.print(s); }
 	static void print_(int n)		{ Serial.print(n); }
@@ -347,6 +350,9 @@ protected:
 	static void print_(const Pipe_t *pipe) {}
 	static void print_driverlist(const char *name, const USBDriver *driver) {}
 	static void print_qh_list(const Pipe_t *list) {}
+	static void print_device_descriptor(const uint8_t *p) {}
+	static void print_config_descriptor(const uint8_t *p, uint32_t maxlen) {}
+	static void print_string_descriptor(const char *name, const uint8_t *p) {}
 	static void print_hexbytes(const void *ptr, uint32_t len) {}
 	static void print_(const char *s) {}
 	static void print_(int n) {}
