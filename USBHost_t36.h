@@ -581,6 +581,10 @@ private:
 	uint32_t changebits;
 	uint32_t statusbits;
 	uint8_t  hub_desc[16];
+	uint8_t  interface_count;
+	uint8_t  interface_number;
+	uint8_t  altsetting;
+	uint8_t  protocol;
 	uint8_t  endpoint;
 	uint8_t  interval;
 	uint8_t  numports;

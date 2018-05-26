@@ -41,7 +41,7 @@ void USBHub::init()
 	driver_ready_for_device(this);
 }
 
-bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
+bool USBHub::claim(Device_t *dev, int type, const uint8_t *d, uint32_t len)
 {
 	// only claim entire device, never at interface level
 	if (type != 0) return false;
@@ -56,33 +56,44 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t
 	if (dev->bDeviceClass != 9 || dev->bDeviceSubClass != 0) return false;
 	// protocol must be 0=FS, 1=HS Single-TT, or 2=HS Multi-TT
 	if (dev->bDeviceProtocol > 2) return false;
-	// check for endpoint descriptor
-	if (descriptors[9] != 7 || descriptors[10] != 5) return false;
-	// endpoint must be IN direction
-	if ((descriptors[11] & 0xF0) != 0x80) return false;
-	// endpoint type must be interrupt
-	if (descriptors[12] != 3) return false;
-	// get the endpoint number, must not be zero
-	endpoint = descriptors[11] & 0x0F;
-	if (endpoint == 0) return false;
-	// get the maximum packet size
-	uint32_t maxsize = descriptors[13] | (descriptors[14] << 8);
-	if (maxsize == 0) return false;
-	if (maxsize > 1) return false; // do hub chips with > 7 ports exist?
-	interval = descriptors[15];
-	println("  polling interval = ", interval);
-	println(descriptors[9]);
-	println(descriptors[10]);
-	println(descriptors[11], HEX);
-	println(maxsize);
-	// bDeviceProtocol = 0 is full speed
-	// bDeviceProtocol = 1 is high speed single TT
-	// bDeviceProtocol = 2 is high speed multiple TT
 
-	println("bDeviceClass = ", dev->bDeviceClass);
-	println("bDeviceSubClass = ", dev->bDeviceSubClass);
-	println("bDeviceProtocol = ", dev->bDeviceProtocol);
-
+	interface_count = 0;
+	while (len >= 16) {
+		if (d[0] == 9 && d[1] == 4 &&		// valid interface descriptor
+		  d[4] == 1 &&				// has 1 endpoint
+		  d[5] == 9 &&				// bInterfaceClass is HUB type
+		  d[7] >= 0 && d[7] <= 2 &&		// bInterfaceProtocol is ok
+		  d[9] == 7 && d[10] == 5 &&		// valid endpoint descriptor
+		  (d[11] & 0xF0) == 0x80 &&		// endpoint direction is IN
+		  d[12] == 3 &&				// endpoint type is interrupt
+		  d[13] == 1 && d[14] == 0) {		// max packet size is 1 byte
+			println("found possible interface, altsetting=", d[3]);
+			if (interface_count == 0) {
+				interface_number = d[2];
+				altsetting = d[3];
+				protocol = d[7];
+				endpoint = d[11] & 0x0F;
+				interval = d[15];
+			} else {
+				if (d[2] != interface_number) break;
+				if (d[7] > protocol) {
+					altsetting = d[3];
+					protocol = d[7];
+					endpoint = d[11] & 0x0F;
+					interval = d[15];
+				}
+			}
+			interface_count++;
+		}
+		d += 16; // jump forward to next interface
+		len -= 16;
+	}
+	if (interface_count == 0) return false; // no usable interface found
+	println("number of interfaces found = ", interface_count);
+	if (interface_count > 1) {
+		print("best interface is ", interface_number);
+		println(" using altsetting ", altsetting);
+	}
 	numports = 0; // unknown until hub descriptor is read
 	changepipe = NULL;
 	changebits = 0;
