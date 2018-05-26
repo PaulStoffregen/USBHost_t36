@@ -56,7 +56,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-//#define USBHOST_PRINT_DEBUG
+#define USBHOST_PRINT_DEBUG
 
 /************************************************/
 /*  Data Types                                  */
@@ -563,6 +563,7 @@ protected:
 	void send_clearstatus_overcurrent(uint32_t port);
 	void send_clearstatus_reset(uint32_t port);
 	void send_setreset(uint32_t port);
+	void send_setinterface();
 	static void callback(const Transfer_t *transfer);
 	void status_change(const Transfer_t *transfer);
 	void new_port_status(uint32_t port, uint32_t status);

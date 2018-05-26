@@ -215,6 +215,14 @@ void USBHub::send_setreset(uint32_t port)
 	}
 }
 
+void USBHub::send_setinterface()
+{
+	// assumes not already sending another control transfer
+	mk_setup(setup, 1, 11, altsetting, interface_number, 0);
+	queue_Control_Transfer(device, &setup, NULL, this);
+	sending_control_transfer = 1;
+}
+
 static uint32_t lowestbit(uint32_t bitmask)
 {
 	return __builtin_ctz(bitmask);
@@ -234,6 +242,9 @@ void USBHub::control(const Transfer_t *transfer)
 		numports = hub_desc[2];
 		characteristics = hub_desc[3];
 		powertime = hub_desc[5];
+		if (interface_count > 1) {
+			send_setinterface();
+		}
 		// TODO: do we need to use the DeviceRemovable
 		// bits to make synthetic device connect events?
 		println("Hub ports = ", numports);
