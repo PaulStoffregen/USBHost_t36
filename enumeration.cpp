@@ -417,7 +417,7 @@ uint32_t USBHost::assign_address(void)
 
 static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen)
 {
-	pipe->qh.capabilities[0] = (pipe->qh.capabilities[0] & 0x8000FFFF) | (maxlen << 16);
+	pipe->qh.capabilities[0] = (pipe->qh.capabilities[0] & 0xF800FFFF) | (maxlen << 16);
 }
 
 static void pipe_set_addr(Pipe_t *pipe, uint32_t addr)
