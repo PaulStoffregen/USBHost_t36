@@ -122,6 +122,7 @@ void loop()
 
         case JoystickController::XBOXONE:
         case JoystickController::XBOX360:
+        case JoystickController::XBOX360USB:
           ltv = joysticks[joystick_index].getAxis(4);
           rtv = joysticks[joystick_index].getAxis(5);
           if ((ltv != joystick_left_trigger_value[joystick_index]) || (rtv != joystick_right_trigger_value[joystick_index])) {

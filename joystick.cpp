@@ -33,6 +33,7 @@
 JoystickController::product_vendor_mapping_t JoystickController::pid_vid_mapping[] = {
 	{ 0x045e, 0x02ea, XBOXONE, false },{ 0x045e, 0x02dd, XBOXONE, false },
 	{ 0x045e, 0x0719, XBOX360, false},
+	{ 0x045e, 0x028e, XBOX360USB, false},
 	{ 0x054C, 0x0268, PS3, true}, 
 	{ 0x054C, 0x05C4, PS4, true}, {0x054C, 0x09CC, PS4, true }
 };
@@ -153,6 +154,19 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
 				println("XBox360 rumble transfer fail");
 			}
 			return true;
+		case XBOX360USB:
+			txbuf_[0] = 0x00;
+			txbuf_[1] = 0x08;
+			txbuf_[2] = 0x00;
+			txbuf_[3] = lValue;
+			txbuf_[4] = rValue;
+			txbuf_[5] = 0x00;
+			txbuf_[6] = 0x00;
+			txbuf_[7] = 0x00;
+			if (!queue_Data_Transfer(txpipe_, txbuf_, 8, this)) {
+				println("XBox360USB rumble transfer fail");
+			}
+			return true;
 	} 
 	return false;
 }
@@ -189,6 +203,45 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
 				txbuf_[11] = 0x00;
 				if (!queue_Data_Transfer(txpipe_, txbuf_, 12, this)) {
 					println("XBox360 set leds fail");
+				}
+				return true;
+			case XBOX360USB:
+				/* http://www.tattiebogle.net/index.php/ProjectRoot/Xbox360Controller/UsbInfo
+
+				   Some control over the LEDs surrounding the XBox button is
+				   provided, corresponding to the markings 1, 2, 3 and 4. This
+				   is controlled using message type 0x01.
+
+				   To select a new pattern for the LEDs, send a message of the following form:
+
+				   0103xx
+				   Where xx is the desired pattern:
+
+				   0x00	All off
+				   0x01	All blinking
+				   0x02	1 flashes, then on
+				   0x03	2 flashes, then on
+				   0x04	3 flashes, then on
+				   0x05	4 flashes, then on
+				   0x06	1 on
+				   0x07	2 on
+				   0x08	3 on
+				   0x09	4 on
+				   0x0A	Rotating (e.g. 1-2-4-3)
+				   0x0B	Blinking*
+				   0x0C	Slow blinking*
+				   0x0D	Alternating (e.g. 1+4-2+3), then back to previous*
+				   * The previous setting will be used for these (all blinking, or 1, 2, 3 or 4 on).
+
+				   At startup, the device seems to report 01030E. I believe
+				   this to indicate that there are 14 options (e.g. 0 to D hex)
+				   for the LEDs.
+				 */
+				txbuf_[0] = 0x01;
+				txbuf_[1] = 0x03;
+				txbuf_[2] = lr;
+				if (!queue_Data_Transfer(txpipe_, txbuf_, 3, this)) {
+					println("XBox360USB set leds fail");
 				}
 				return true;
 			case XBOXONE:
@@ -417,11 +470,21 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
   	// 29 30  1  2  3  4  5  6  7  8  9 40 41 42
 	// 07 05 81 03 20 00 01 07 05 01 03 20 00 08 
 
+	// XBOX 360 wired USB... Has 4 interfaces and extra descriptors
+	// Shows data for #1 only...
+	// Also they have some unknown data type we need to ignore between interface and end points.
+	//  0  1  2  3  4  5  6  7  8 *9 10  1  2  3  4  5  6  7  8  9 20  1  2  3  4  5 *6  7  8
+	// 09 04 00 00 02 FF 5D 01 00 11 21 10 01 01 25 81 14 03 03 03 04 13 02 08 03 03 07 05 81
+
+	// 29 30  1  2 *3  4  5  6  7  8  9 40 41 42
+	// 03 20 00 04 07 05 02 03 20 00 08
+
 	if (len < 9+7+7) return false;
 
 	// Some common stuff for both XBoxs
 	uint32_t count_end_points = descriptors[4];
 	if (count_end_points < 2) return false;
+	if ((jtype == XBOX360USB) && (count_end_points != 2)) return false;
 	if (descriptors[5] != 0xff) return false; // bInterfaceClass, 3 = HID
 	rx_ep_ = 0;
 	uint32_t txep = 0;
@@ -434,6 +497,9 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 		if (descriptors[descriptor_index] != 0x14) return false; // only support specific versions...
 		descriptor_index += descriptors[descriptor_index]; // XBox360w ignore this unknown setup...
 	}	
+	else if (descriptors[descriptor_index+1] == 0x21)  {
+		descriptor_index += descriptors[descriptor_index]; // XBox360USB skip this unknown setup...
+	}
 	while (count_end_points-- && ((rx_ep_ == 0) || txep == 0)) {
 		if (descriptors[descriptor_index] != 7) return false; // length 7
 		if (descriptors[descriptor_index+1] != 5) return false; // ep desc
@@ -474,7 +540,7 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 	if (jtype == XBOXONE) {
 		queue_Data_Transfer(txpipe_, xboxone_start_input, sizeof(xboxone_start_input), this);
 		connected_ = true;		// remember that hardware is actually connected...
-	} else if (jtype == XBOX360) {
+	} else if ((jtype == XBOX360) || (jtype == XBOX360USB)) {
 		queue_Data_Transfer(txpipe_, xbox360w_inquire_present, sizeof(xbox360w_inquire_present), this);
 		connected_ = 0;		// remember that hardware is actually connected...
 	}
@@ -506,46 +572,39 @@ void JoystickController::tx_callback(const Transfer_t *transfer)
 
 
 
-/************************************************************/
-//  Interrupt-based Data Movement
-// XBox one input data when type == 0x20
-// Information came from several places on the web including: 
-// https://github.com/quantus/xbox-one-controller-protocol
-/************************************************************/
-typedef struct {
-	uint8_t type;
-	uint8_t const_0;
-	uint16_t id;
-	// From online references button order: 
-	//     sync, dummy, start, back, a, b, x, y
-	//     dpad up, down left, right
-	//	   lb, rb, left stick, right stick
-	// Axis: 
-	//     lt, rt, lx, ly, rx, ry
-	//     
-	uint16_t buttons; 
-	int16_t	axis[6];
-} xbox1data20_t;
-
-typedef struct {
-	uint8_t state;
-	uint8_t id_or_type;
-	uint16_t controller_status;
-	uint16_t unknown;
-	// From online references button order: 
-	//     sync, dummy, start, back, a, b, x, y
-	//     dpad up, down left, right
-	//	   lb, rb, left stick, right stick
-	// Axis: 
-	//     lt, rt, lx, ly, rx, ry
-	//
-	uint16_t buttons; 
-	uint8_t lt;
-	uint8_t rt;
-	int16_t	axis[4];
-} xbox360data_t;
-
 static const uint8_t xbox_axis_order_mapping[] = {4, 5, 0, 1, 2, 3};
+
+void JoystickController::extract_xbox360controls(const xbox360controls_t *cont)
+{
+	if (buttons != cont->buttons) {
+		buttons = cont->buttons;
+		anychange = true;
+	}
+	axis_mask_ = 0x3f;
+	axis_changed_mask_ = 0;	// assume none for now
+
+	for (uint8_t i = 0; i < 4; i++) {
+		if (axis[i] != cont->axis[i]) {
+			axis[i] = cont->axis[i];
+			axis_changed_mask_ |= (1 << i);
+			anychange = true;
+		}
+	}
+	// the two triggers show up as 4 and 5
+	if (axis[4] != cont->lt) {
+		axis[4] = cont->lt;
+		axis_changed_mask_ |= (1 << 4);
+		anychange = true;
+	}
+
+	if (axis[5] != cont->rt) {
+		axis[5] = cont->rt;
+		axis_changed_mask_ |= (1 << 5);
+		anychange = true;
+	}
+
+	if (anychange) joystickEvent = true;
+}
 
 void JoystickController::rx_data(const Transfer_t *transfer)
 {
@@ -591,41 +650,21 @@ void JoystickController::rx_data(const Transfer_t *transfer)
 				}
 			}
 		} else if((xb360d->id_or_type == 0x00) && (xb360d->controller_status & 0x1300)) {
-			  // Controller status report - Maybe we should save away and allow the user access?
-	            println("XBox360w - controllerStatus: ", xb360d->controller_status, HEX);
-        } else if(xb360d->id_or_type == 0x01) { // Lets only process report 1.
+			// Controller status report - Maybe we should save away and allow the user access?
+			println("XBox360w - controllerStatus: ", xb360d->controller_status, HEX);
+		} else if(xb360d->id_or_type == 0x01) { // Lets only process report 1.
 			//const uint8_t *pbuffer = (uint8_t*)transfer->buffer;
-        	//for (uint8_t i = 0; i < transfer->length; i++) Serial.printf("%02x ", pbuffer[i]);
-        	//Serial.printf("\n");
-	        
-	        if (buttons != xb360d->buttons) {
-	        	buttons = xb360d->buttons;
-	        	anychange = true;
-	        }
-			axis_mask_ = 0x3f;	
-			axis_changed_mask_ = 0;	// assume none for now
-
-			for (uint8_t i = 0; i < 4; i++) {
-				if (axis[i] != xb360d->axis[i]) {
-					axis[i] = xb360d->axis[i];
-					axis_changed_mask_ |= (1 << i);
-					anychange = true;
-				}
-			}
-			// the two triggers show up as 4 and 5
-			if (axis[4] != xb360d->lt) {
-				axis[4] = xb360d->lt;
-				axis_changed_mask_ |= (1 << 4);
-				anychange = true;
-			}
-
-			if (axis[5] != xb360d->rt) {
-				axis[5] = xb360d->rt;
-				axis_changed_mask_ |= (1 << 5);
-				anychange = true;
-			}
-
-			if (anychange) joystickEvent = true;
+			//for (uint8_t i = 0; i < transfer->length; i++) Serial.printf("%02x ", pbuffer[i]);
+			//Serial.printf("\n");
+			extract_xbox360controls(&xb360d->controls);
+		}
+	} else if (joystickType == XBOX360USB) {
+		xbox360udata_t  *xb360ud = (xbox360udata_t *)transfer->buffer;
+		if ((xb360ud->rType == 0) && (xb360ud->rLen == 0x14)) {
+	        extract_xbox360controls(&xb360ud->controls);
+		}
+		else {
+            Serial.printf("XBox360u - rType=0x%x rLen=0x%x\n", xb360ud->rType, xb360ud->rLen);
 		}
 	}
 

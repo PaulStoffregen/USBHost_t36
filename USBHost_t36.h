@@ -809,7 +809,7 @@ public:
     // setLEDs on PS4(RGB), PS3 simple LED setting (only uses lr)
     bool setLEDs(uint8_t lr, uint8_t lg=0, uint8_t lb=0);  // sets Leds, 
 	enum { STANDARD_AXIS_COUNT = 10, ADDITIONAL_AXIS_COUNT = 54, TOTAL_AXIS_COUNT = (STANDARD_AXIS_COUNT+ADDITIONAL_AXIS_COUNT) };
-	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360} joytype_t;
+	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360, XBOX360USB} joytype_t;
 	joytype_t joystickType = UNKNOWN;
 protected:
 	// From USBDriver
@@ -827,8 +827,83 @@ protected:
 private:
 
 	// Class specific
+	/************************************************************/
+	//  Interrupt-based Data Movement
+	// XBox one input data when type == 0x20
+	// Information came from several places on the web including:
+	// https://github.com/quantus/xbox-one-controller-protocol
+	/************************************************************/
+	typedef struct {
+		uint8_t type;
+		uint8_t const_0;
+		uint16_t id;
+		// From online references button order:
+		//     sync, dummy, start, back, a, b, x, y
+		//     dpad up, down left, right
+		//	   lb, rb, left stick, right stick
+		// Axis:
+		//     lt, rt, lx, ly, rx, ry
+		//
+		uint16_t buttons;
+		int16_t	axis[6];
+	} xbox1data20_t;
+
+	typedef struct {
+		uint16_t buttons;
+		uint8_t lt;
+		uint8_t rt;
+		int16_t	axis[4];
+	} xbox360controls_t;
+
+	typedef struct {
+		uint8_t state;
+		uint8_t id_or_type;
+		uint16_t controller_status;
+		uint16_t unknown;
+		// From online references button order:
+		//     sync, dummy, start, back, a, b, x, y
+		//     dpad up, down left, right
+		//	   lb, rb, left stick, right stick
+		// Axis:
+		//     lt, rt, lx, ly, rx, ry
+		//
+		xbox360controls_t controls;
+	} xbox360data_t;
+
+	/* Xbox 360 wired USB report
+	   http://www.tattiebogle.net/index.php/ProjectRoot/Xbox360Controller/UsbInfo
+
+	   Reports are type 0x00, and seem to be 20 bytes long:
+
+	   0014ttttxxyyaaaaaaaabbbbbbbb000000000000
+	   Where x is the left trigger, y is the right trigger, a is the left hat, b is the right hat and t is the buttons:
+
+	   0x0001	Left shoulder
+	   0x0002	Right shoulder
+	   0x0004	XBox button
+	   0x0008
+	   0x0010	A
+	   0x0020	B
+	   0x0040	X
+	   0x0080	Y
+	   0x0100	D-pad up
+	   0x0200	D-pad down
+	   0x0400	D-pad left
+	   0x0800	D-pad right
+	   0x1000	Start
+	   0x2000	Back
+	   0x4000	Left hat button
+	   0x8000	Right hat button
+	 */
+	typedef struct {
+		uint8_t rType;
+		uint8_t rLen;
+		xbox360controls_t controls;
+	} xbox360udata_t;
+
 	void init();
 	USBHIDParser *driver_ = nullptr;
+	void extract_xbox360controls(const xbox360controls_t *cont);
 	joytype_t mapVIDPIDtoJoystickType(uint16_t idVendor, uint16_t idProduct, bool exclude_hid_devices);
 	bool transmitPS4UserFeedbackMsg();
 	bool transmitPS3UserFeedbackMsg();
