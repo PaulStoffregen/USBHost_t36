@@ -56,7 +56,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-//#define USBHOST_PRINT_DEBUG
+#define USBHOST_PRINT_DEBUG
 
 /************************************************/
 /*  Data Types                                  */
@@ -522,6 +522,35 @@ protected:
 	Device_t *mydevice = NULL;
 };
 
+
+// Device drivers may inherit from this base class, if they wish to receive
+// HID input like data from Bluetooth HID device. 
+class BluetoothController;
+
+class BTHIDInput {
+public:
+	operator bool() { return (btdevice != nullptr); }
+	uint16_t idVendor() { return (btdevice != nullptr) ? btdevice->idVendor : 0; }
+	uint16_t idProduct() { return (btdevice != nullptr) ? btdevice->idProduct : 0; }
+	const uint8_t *manufacturer()
+		{  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; }
+	const uint8_t *product()
+		{  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; }
+	const uint8_t *serialNumber()
+		{  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
+
+private:
+	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class) {return false;}
+	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length) {return false;}
+	virtual void release_bluetooth() {};
+	void add_to_list();
+	BTHIDInput *next;
+	friend class BluetoothController;
+protected:
+	Device_t *btdevice = NULL;
+};
+
+
 /************************************************/
 /*  USB Device Drivers                          */
 /************************************************/
@@ -666,7 +695,7 @@ private:
 
 //--------------------------------------------------------------------------
 
-class KeyboardController : public USBDriver , public USBHIDInput  {
+class KeyboardController : public USBDriver , public USBHIDInput, public BTHIDInput {
 public:
 typedef union {
    struct {
@@ -684,7 +713,13 @@ public:
 	KeyboardController(USBHost *host) { init(); }
 
 	// Some methods are in both public classes so we need to figure out which one to use
-	operator bool() { return (device != nullptr); }
+	uint16_t idVendor();
+	uint16_t idProduct();
+
+	const uint8_t *manufacturer();
+	const uint8_t *product();
+	const uint8_t *serialNumber();
+	operator bool() { return ((device != nullptr) || (btdevice != nullptr)); }
 	// Main boot keyboard functions. 
 	uint16_t getKey() { return keyCode; }
 	uint8_t  getModifiers() { return modifiers; }
@@ -714,6 +749,12 @@ protected:
 	static void callback(const Transfer_t *transfer);
 	void new_data(const Transfer_t *transfer);
 	void init();
+
+	// Bluetooth data
+	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class);
+	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
+	virtual void release_bluetooth();
+
 
 protected:	// HID functions for extra keyboard data. 
 	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
@@ -783,7 +824,7 @@ private:
 
 //--------------------------------------------------------------------------
 
-class JoystickController : public USBDriver, public USBHIDInput {
+class JoystickController : public USBDriver, public USBHIDInput, public BTHIDInput {
 public:
 	JoystickController(USBHost &host) { init(); }
 
@@ -824,6 +865,12 @@ protected:
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 	virtual bool hid_process_out_data(const Transfer_t *transfer);
+
+		// Bluetooth data
+	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class);
+	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
+	virtual void release_bluetooth();
+
 private:
 
 	// Class specific
@@ -1545,6 +1592,124 @@ private:
 
 	// See if we can contribute transfers
 	Transfer_t mytransfers[2] __attribute__ ((aligned(32)));
+
+};
+
+//--------------------------------------------------------------------------
+
+class BluetoothController: public USBDriver {
+public:
+	BluetoothController(USBHost &host, bool pair = false, const char *pin = "0000") : do_pair_device_(pair), pair_pincode_(pin) 
+			 { init(); }
+
+	enum {MAX_ENDPOINTS=4, NUM_SERVICES=4, };  // Max number of Bluetooth services - if you need more than 4 simply increase this number
+	enum {BT_CLASS_DEVICE= 0x0804}; // Toy - Robot
+	static void driver_ready_for_bluetooth(BTHIDInput *driver);
+
+protected:
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
+	virtual void control(const Transfer_t *transfer);
+	virtual void disconnect();
+	//virtual void timer_event(USBDriverTimer *whichTimer);
+
+	BTHIDInput * find_driver(uint32_t device_type);
+private:
+	static void rx_callback(const Transfer_t *transfer);
+	static void rx2_callback(const Transfer_t *transfer);
+	static void tx_callback(const Transfer_t *transfer);
+	void rx_data(const Transfer_t *transfer);
+	void rx2_data(const Transfer_t *transfer);
+	void tx_data(const Transfer_t *transfer);
+
+	void init();
+
+	// HCI support functions...
+	void sendHCICommand(uint16_t hciCommand, uint16_t cParams, const uint8_t* data);
+	//void sendHCIReadLocalSupportedFeatures();
+	void inline sendHCI_INQUIRY();
+	void inline sendHCIInquiryCancel();
+	void inline sendHCICreateConnection();
+	void inline sendHCIAuthenticationRequested();
+	void inline sendHCIAcceptConnectionRequest();
+	void inline sendHCILinkKeyNegativeReply();
+	void inline sendHCIPinCodeReply();
+    void inline sendResetHCI();
+    void inline sendHDCWriteClassOfDev();
+	void inline sendHCIReadBDAddr();
+	void inline sendHCIReadLocalVersionInfo();
+	void inline sendHCIWriteScanEnable(uint8_t scan_op);
+
+	void inline sendHCIRemoteNameRequest();
+	void inline sendHCIRemoteVersionInfoRequest();
+	void handle_hci_command_complete();
+	void handle_hci_command_status();
+	void handle_hci_inquiry_result();
+	void handle_hci_inquiry_complete();
+	void handle_hci_incoming_connect();
+	void handle_hci_connection_complete();
+	void handle_hci_disconnect_complete();
+	void handle_hci_authentication_complete();
+	void handle_hci_remote_name_complete();
+	void handle_hci_remote_version_information_complete();
+	void handle_hci_pin_code_request();
+	void handle_hci_link_key_notification();
+	void handle_hci_link_key_request();
+	void queue_next_hci_command();
+
+	void sendl2cap_ConnectionResponse(uint16_t handle, uint8_t rxid, uint16_t dcid, uint16_t scid, uint8_t result);
+	void sendl2cap_ConnectionRequest(uint16_t handle, uint8_t rxid, uint16_t scid, uint16_t psm);
+	void sendl2cap_ConfigRequest(uint16_t handle, uint8_t rxid, uint16_t dcid);
+	void sendl2cap_ConfigResponse(uint16_t handle, uint8_t rxid, uint16_t scid);
+    void sendL2CapCommand(uint16_t handle, uint8_t* data, uint8_t nbytes, uint8_t channelLow = 0x01, uint8_t channelHigh = 0x00);
+
+	void process_l2cap_connection_request(uint8_t *data);
+	void process_l2cap_connection_response(uint8_t *data);
+	void process_l2cap_config_request(uint8_t *data);
+	void process_l2cap_config_response(uint8_t *data);
+	void process_l2cap_command_reject(uint8_t *data);
+	void process_l2cap_disconnect_request(uint8_t *data);
+
+	void setHIDProtocol(uint8_t protocol);
+	void handleHIDTHDRData(uint8_t *buffer);	// Pass the whole buffer...
+	static BTHIDInput *available_bthid_drivers_list;
+
+
+	setup_t setup;
+	Pipe_t mypipes[4] __attribute__ ((aligned(32)));
+	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
+	strbuf_t mystring_bufs[2];		// 2 string buffers - one for our device - one for remote device...
+	uint16_t 		pending_control_ = 0;
+	uint16_t		pending_control_tx_ = 0;
+	uint16_t 		rx_size_ = 0;
+	uint16_t 		rx2_size_ = 0;
+	uint16_t 		tx_size_ = 0;
+	Pipe_t 			*rxpipe_;
+	Pipe_t 			*rx2pipe_;
+	Pipe_t 			*txpipe_;
+	uint8_t 		rxbuf_[256];	// used to receive data from RX, which may come with several packets...
+	uint8_t 		rx_packet_data_remaining=0; // how much data remaining
+	uint8_t 		rx2buf_[64];	// receive buffer from Bulk end point
+	uint8_t			txbuf_[256];	// buffer to use to send commands to bluetooth 
+	uint8_t			hciVersion;		// what version of HCI do we have?
+
+	bool 			do_pair_device_;	// Should we do a pair for a new device?
+	const char		*pair_pincode_;	// What pin code to use for the pairing
+    uint8_t 		my_bdaddr[6];	// The bluetooth dongles Bluetooth address.
+    uint8_t			features[8];	// remember our local features.
+    BTHIDInput * 	device_driver_ = nullptr;;
+    uint8_t			device_bdaddr_[6];// remember devices address
+    uint8_t			device_ps_repetion_mode_ ; // mode
+    uint8_t			device_clock_offset_[2];
+    uint32_t		device_class_;	// class of device. 
+    uint16_t		device_connection_handle_;	// handle to connection 
+    uint16_t		connection_rxid_ = 0;
+    uint16_t		control_dcid_ = 0x70;
+    uint16_t		interrupt_dcid_ = 0x71;
+    uint16_t		interrupt_scid_;
+    uint16_t		control_scid_;
+	uint8_t    		remote_ver_;
+	uint16_t		remote_man_;
+	uint8_t			remote_subv_;
 
 };
 
