@@ -884,6 +884,7 @@ void USBSerial::control(const Transfer_t *transfer)
 			if (format_ & 0x100) cp210x_format |= 2;
 
 			mk_setup(setup, 0x41, 3, cp210x_format, 0, 0); // data format 8N1
+			println("CP210x setup, 0x41, 3, cp210x_format ",cp210x_format, HEX);
 			queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			return;
@@ -896,38 +897,31 @@ void USBSerial::control(const Transfer_t *transfer)
 			setupdata[2] = (baudrate >> 16) & 0xff;
 			setupdata[3] = (baudrate >> 24) & 0xff;
 			mk_setup(setup, 0x40, 0x1e, 0, 0, 4);
+			println("CP210x Set Baud  0x40, 0x1e");
 			queue_Control_Transfer(device, &setup, setupdata, this);
 			control_queued = true;
 			return;
 		}
-		// configure flow control
+		// Appears to be an enable command
 		if (pending_control & 4) {
 			pending_control &= ~4;
 			memset(setupdata, 0, sizeof(setupdata));	// clear out the data
-			setupdata[0] = 1; 	// Set dtr active? 
-			mk_setup(setup, 0x41, 13, 0, 0, 0x10);
-			queue_Control_Transfer(device, &setup, setupdata, this);
+			println("CP210x 0x41, 0, 1");
+			mk_setup(setup, 0x41, 0, 1, 0, 0);
+			queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true; 
 			return;
 		}
-		// set DTR
-		if (pending_control & 8) {
-			pending_control &= ~8;
-			mk_setup(setup, 0x41, 7, 0x0101, 0, 0);
-			queue_Control_Transfer(device, &setup, NULL, this);
-			control_queued = true;
-			return;
-		}
-		// clear DTR
-		if (pending_control & 0x80) {
-			pending_control &= ~0x80;
-			println("CP210x clear DTR");
-			mk_setup(setup, 0x40, 1, 0x0100, 0, 0);
-			queue_Control_Transfer(device, &setup, NULL, this);
-			control_queued = true;
-			return;
-		}
 
+		// MHS_REQUEST
+		if (pending_control & 8) {
+			pending_control &= ~0x88;
+			mk_setup(setup, 0x41, 7, 0x0303, 0, 0);
+			queue_Control_Transfer(device, &setup, NULL, this);
+			control_queued = true;
+			println("CP210x 0x41, 7, 0x0303");
+			return;
+		}
 	}
 }
 
