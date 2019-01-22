@@ -21,21 +21,21 @@ uint32_t buttons_prev = 0;
 RawHIDController rawhid1(myusb);
 RawHIDController rawhid2(myusb, 0xffc90004);
 
-USBDriver *drivers[] = {&hub1, &hub2,&keyboard1, &keyboard2, &joystick1, &hid1, &hid2, &hid3, &hid4, &hid5};
+USBDriver *drivers[] = {&hub1, &hub2, &keyboard1, &keyboard2, &joystick1, &hid1, &hid2, &hid3, &hid4, &hid5};
 #define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[0]))
-const char * driver_names[CNT_DEVICES] = {"Hub1","Hub2", "KB1", "KB2", "JOY1D", "HID1", "HID2", "HID3", "HID4", "HID5"};
+const char * driver_names[CNT_DEVICES] = {"Hub1", "Hub2", "KB1", "KB2", "JOY1D", "HID1", "HID2", "HID3", "HID4", "HID5"};
 bool driver_active[CNT_DEVICES] = {false, false, false, false};
 
 // Lets also look at HID Input devices
 USBHIDInput *hiddrivers[] = {&mouse1, &joystick1, &rawhid1, &rawhid2};
 #define CNT_HIDDEVICES (sizeof(hiddrivers)/sizeof(hiddrivers[0]))
-const char * hid_driver_names[CNT_DEVICES] = {"Mouse1","Joystick1", "RawHid1", "RawHid2"};
+const char * hid_driver_names[CNT_DEVICES] = {"Mouse1", "Joystick1", "RawHid1", "RawHid2"};
 bool hid_driver_active[CNT_DEVICES] = {false, false};
-bool show_changed_only = false; 
+bool show_changed_only = false;
 
 uint8_t joystick_left_trigger_value = 0;
 uint8_t joystick_right_trigger_value = 0;
-uint64_t joystick_full_notify_mask = (uint64_t)-1;
+uint64_t joystick_full_notify_mask = (uint64_t) - 1;
 
 void setup()
 {
@@ -50,6 +50,11 @@ void setup()
   keyboard2.attachExtrasPress(OnHIDExtrasPress);
   keyboard2.attachExtrasRelease(OnHIDExtrasRelease);
 
+  // The below forceBootProtocol will force which ever
+  // next keyboard that attaches to this device to be in boot protocol
+  // Only try this if you run into keyboard with issues.  If this is a combined
+  // device like wireless mouse and keyboard this can cause mouse problems.
+  //keyboard1.forceBootProtocol();
   rawhid1.attachReceive(OnReceiveHidData);
   rawhid2.attachReceive(OnReceiveHidData);
 }
@@ -60,8 +65,8 @@ void loop()
   myusb.Task();
 
   if (Serial.available()) {
-    int ch = Serial.read(); // get the first char. 
-    while (Serial.read() != -1) ; 
+    int ch = Serial.read(); // get the first char.
+    while (Serial.read() != -1) ;
     if ((ch == 'b') || (ch == 'B')) {
       Serial.println("Only notify on Basic Axis changes");
       joystick1.axisChangeNotifyMask(0x3ff);
@@ -78,7 +83,7 @@ void loop()
         Serial.println("\n*** Show only changed fields mode ***");
       }
     }
- }
+  }
 
   for (uint8_t i = 0; i < CNT_DEVICES; i++) {
     if (*drivers[i] != driver_active[i]) {
@@ -95,6 +100,19 @@ void loop()
         if (psz && *psz) Serial.printf("  product: %s\n", psz);
         psz = drivers[i]->serialNumber();
         if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
+
+        // Note: with some keyboards there is an issue that they don't output in boot protocol mode
+        // and may not work.  The above code can try to force the keyboard into boot mode, but there
+        // are issues with doing this blindly with combo devices like wireless keyboard/mouse, which
+        // may cause the mouse to not work.  Note: the above id is in the builtin list of
+        // vendor IDs that are already forced
+        if (drivers[i] == &keyboard1) {
+          if (keyboard1.idVendor() == 0x04D9) {
+            Serial.println("Gigabyte vendor: force boot protocol");
+            // Gigabyte keyboard
+            keyboard1.forceBootProtocol();
+          }
+        }
       }
     }
   }
@@ -120,7 +138,7 @@ void loop()
 
 
 
-  if(mouse1.available()) {
+  if (mouse1.available()) {
     Serial.print("Mouse: buttons = ");
     Serial.print(mouse1.getButtons());
     Serial.print(",  mouseX = ");
@@ -168,7 +186,7 @@ void loop()
           joystick_left_trigger_value = ltv;
           joystick_right_trigger_value = rtv;
           joystick1.setRumble(ltv, rtv);
-        } 
+        }
         break;
 
       case JoystickController::PS3:
@@ -178,11 +196,11 @@ void loop()
           joystick_left_trigger_value = ltv;
           joystick_right_trigger_value = rtv;
           joystick1.setRumble(ltv, rtv, 50);
-        } 
+        }
         break;
 
-      case JoystickController::XBOXONE:   
-      case JoystickController::XBOX360:   
+      case JoystickController::XBOXONE:
+      case JoystickController::XBOX360:
         ltv = joystick1.getAxis(4);
         rtv = joystick1.getAxis(5);
         if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
@@ -190,16 +208,16 @@ void loop()
           joystick_right_trigger_value = rtv;
           joystick1.setRumble(ltv, rtv);
           Serial.printf(" Set Rumble %d %d", ltv, rtv);
-        } 
+        }
         break;
     }
     if (buttons != buttons_prev) {
       if (joystick1.joystickType == JoystickController::PS3) {
-        joystick1.setLEDs((buttons>>12) & 0xf); //  try to get to TRI/CIR/X/SQuare
+        joystick1.setLEDs((buttons >> 12) & 0xf); //  try to get to TRI/CIR/X/SQuare
       } else {
-        uint8_t lr = (buttons & 1)? 0xff : 0;
-        uint8_t lg = (buttons & 2)? 0xff : 0;
-        uint8_t lb = (buttons & 4)? 0xff : 0;
+        uint8_t lr = (buttons & 1) ? 0xff : 0;
+        uint8_t lg = (buttons & 2) ? 0xff : 0;
+        uint8_t lb = (buttons & 4) ? 0xff : 0;
         joystick1.setLEDs(lr, lg, lb);
       }
       buttons_prev = buttons;
@@ -213,7 +231,7 @@ void loop()
   if (rawhid1) {
     int ch;
     uint8_t buffer[64];
-    uint8_t count_chars = 0; 
+    uint8_t count_chars = 0;
     memset(buffer, 0, sizeof(buffer));
     if (Serial.available()) {
       while (((ch = Serial.read()) != -1) && (count_chars < sizeof(buffer))) {
@@ -277,7 +295,7 @@ void OnPress(int key)
   //Serial.print((char)keyboard2.getKey());
   //Serial.println();
 }
-void OnHIDExtrasPress(uint32_t top, uint16_t key) 
+void OnHIDExtrasPress(uint32_t top, uint16_t key)
 {
   Serial.print("HID (");
   Serial.print(top, HEX);
@@ -513,7 +531,7 @@ void OnHIDExtrasPress(uint32_t top, uint16_t key)
   Serial.println();
 }
 
-void OnHIDExtrasRelease(uint32_t top, uint16_t key) 
+void OnHIDExtrasRelease(uint32_t top, uint16_t key)
 {
   Serial.print("HID (");
   Serial.print(top, HEX);
@@ -523,10 +541,10 @@ void OnHIDExtrasRelease(uint32_t top, uint16_t key)
 
 bool OnReceiveHidData(uint32_t usage, const uint8_t *data, uint32_t len) {
   // Called for maybe both HIDS for rawhid basic test.  One is for the Teensy
-  // to output to Serial. while still having Raw Hid... 
+  // to output to Serial. while still having Raw Hid...
   if (usage == 0xffc90004) {
     // Lets trim off trailing null characters.
-    while ((len > 0) && (data[len-1] == 0)) {
+    while ((len > 0) && (data[len - 1] == 0)) {
       len--;
     }
     if (len) {
@@ -537,7 +555,7 @@ bool OnReceiveHidData(uint32_t usage, const uint8_t *data, uint32_t len) {
     Serial.print("RawHID data: ");
     Serial.println(usage, HEX);
     while (len) {
-      uint8_t cb = (len > 16)? 16 : len;
+      uint8_t cb = (len > 16) ? 16 : len;
       const uint8_t *p = data;
       uint8_t i;
       for (i = 0; i < cb; i++) {
@@ -545,7 +563,7 @@ bool OnReceiveHidData(uint32_t usage, const uint8_t *data, uint32_t len) {
       }
       Serial.print(": ");
       for (i = 0; i < cb; i++) {
-        Serial.write(((*data >= ' ')&&(*data <= '~'))? *data : '.');
+        Serial.write(((*data >= ' ') && (*data <= '~')) ? *data : '.');
         data++;
       }
       len -= cb;

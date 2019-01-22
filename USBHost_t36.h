@@ -683,6 +683,13 @@ public:
 	KeyboardController(USBHost &host) { init(); }
 	KeyboardController(USBHost *host) { init(); }
 
+	// need their own versions as both USBDriver and USBHIDInput provide
+	uint16_t idVendor();
+	uint16_t idProduct();
+	const uint8_t *manufacturer();
+	const uint8_t *product();
+	const uint8_t *serialNumber();
+
 	// Some methods are in both public classes so we need to figure out which one to use
 	operator bool() { return (device != nullptr); }
 	// Main boot keyboard functions. 
@@ -704,6 +711,7 @@ public:
 	// Added for extras information.
 	void     attachExtrasPress(void (*f)(uint32_t top, uint16_t code)) { extrasKeyPressedFunction = f; }
 	void     attachExtrasRelease(void (*f)(uint32_t top, uint16_t code)) { extrasKeyReleasedFunction = f; }
+	void	 forceBootProtocol();
 	enum {MAX_KEYS_DOWN=4};
 
 
@@ -750,7 +758,8 @@ private:
 	volatile bool hid_input_data_ = false; 	// did we receive any valid data with report?
 	uint8_t count_keys_down_ = 0;
 	uint16_t keys_down[MAX_KEYS_DOWN];
-
+	bool 	force_boot_protocol;  // User or VID/PID said force boot protocol?
+	bool control_queued;
 };
 
 
@@ -1283,7 +1292,7 @@ private:
 	uint8_t pl2303_v1;		// Which version do we have
 	uint8_t pl2303_v2;
 	uint8_t interface;
-	bool control_queued;
+	bool 	control_queued;	// Is there already a queued control messaged
 	typedef enum { UNKNOWN=0, CDCACM, FTDI, PL2303, CH341, CP210X } sertype_t;
 	sertype_t sertype;
 
