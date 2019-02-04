@@ -26,9 +26,10 @@
 
 #include <stdint.h>
 
-#if !defined(__MK66FX1M0__)
+#if !defined(__MK66FX1M0__) && !defined(__IMXRT1052__) && !defined(__IMXRT1062__)
 #error "USBHost_t36 only works with Teensy 3.6.  Please select it in Tools > Boards"
 #endif
+#include "utility/imxrt_usbhs.h"
 
 // Dear inquisitive reader, USB is a complex protocol defined with
 // very specific terminology.  To have any chance of understand this

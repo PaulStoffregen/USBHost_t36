@@ -106,6 +106,7 @@ static void remove_from_periodic_followup_list(Transfer_t *transfer);
 
 void USBHost::begin()
 {
+#if defined(__MK66FX1M0__)
 	// Teensy 3.6 has USB host power controlled by PTE6
 	PORTE_PCR6 = PORT_PCR_MUX(1);
 	GPIOE_PDDR |= (1<<6);
@@ -150,6 +151,15 @@ void USBHost::begin()
 
 	// turn on power to PHY
 	USBPHY_PWD = 0;
+
+#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
+	// Teensy 4.0 PLL & USB PHY powerup
+
+
+
+
+
+#endif
 	delay(10);
 
 	// sanity check, connect 470K pullup & 100K pulldown and watch D+ voltage change
