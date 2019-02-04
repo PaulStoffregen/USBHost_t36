@@ -152,16 +152,6 @@ void USBHost::begin()
 	// turn on power to PHY
 	USBPHY_PWD = 0;
 
-#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
-	// Teensy 4.0 PLL & USB PHY powerup
-
-
-
-
-
-#endif
-	delay(10);
-
 	// sanity check, connect 470K pullup & 100K pulldown and watch D+ voltage change
 	//USBPHY_ANACTRL_CLR = (1<<10); // turn off both 15K pulldowns... works! :)
 
@@ -173,14 +163,60 @@ void USBHost::begin()
 	//SIM_SOPT2 = SIM_SOPT2 & (~SIM_SOPT2_CLKOUTSEL(7)) | SIM_SOPT2_CLKOUTSEL(4); // MCGIRCLK
 	//CORE_PIN9_CONFIG = PORT_PCR_MUX(5);  // CLKOUT on PTC3 Alt5 (Arduino pin 9)
 
+
+#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
+	// Teensy 4.0 PLL & USB PHY powerup
+	while (1) {
+		uint32_t n = CCM_ANALOG_PLL_USB2;
+		if (n & CCM_ANALOG_PLL_USB2_DIV_SELECT) {
+			CCM_ANALOG_PLL_USB2_CLR = 0xC000; // get out of 528 MHz mode
+			CCM_ANALOG_PLL_USB2_SET = CCM_ANALOG_PLL_USB2_BYPASS;
+			CCM_ANALOG_PLL_USB2_CLR = CCM_ANALOG_PLL_USB2_POWER |
+				CCM_ANALOG_PLL_USB2_DIV_SELECT |
+				CCM_ANALOG_PLL_USB2_ENABLE |
+				CCM_ANALOG_PLL_USB2_EN_USB_CLKS;
+			continue;
+		}
+		if (!(n & CCM_ANALOG_PLL_USB2_ENABLE)) {
+			CCM_ANALOG_PLL_USB2_SET = CCM_ANALOG_PLL_USB2_ENABLE; // enable
+			continue;
+		}
+		if (!(n & CCM_ANALOG_PLL_USB2_POWER)) {
+			CCM_ANALOG_PLL_USB2_SET = CCM_ANALOG_PLL_USB2_POWER; // power up
+			continue;
+		}
+		if (!(n & CCM_ANALOG_PLL_USB2_LOCK)) {
+			continue; // wait for lock
+		}
+		if (n & CCM_ANALOG_PLL_USB2_BYPASS) {
+			CCM_ANALOG_PLL_USB2_CLR = CCM_ANALOG_PLL_USB2_BYPASS; // turn off bypass
+			continue;
+		}
+		if (!(n & CCM_ANALOG_PLL_USB2_EN_USB_CLKS)) {
+			CCM_ANALOG_PLL_USB2_SET = CCM_ANALOG_PLL_USB2_EN_USB_CLKS; // enable
+			continue;
+		}
+		println("USB2 PLL running");
+		break; // USB2 PLL up and running
+	}
+	// turn on USB clocks (should already be on)
+	CCM_CCGR6 |= CCM_CCGR6_USBOH3(CCM_CCGR_ON);
+	// turn on USB2 PHY
+	USBPHY2_CTRL_CLR = USBPHY_CTRL_SFTRST | USBPHY_CTRL_CLKGATE;
+	USBPHY2_CTRL_SET = USBPHY_CTRL_ENUTMILEVEL2 | USBPHY_CTRL_ENUTMILEVEL3;
+	USBPHY2_PWD = 0;
+
+#endif
+	delay(10);
+
 	// now with the PHY up and running, start up USBHS
 	//print("begin ehci reset");
 	USBHS_USBCMD |= USBHS_USBCMD_RST;
-	//count = 0;
+	int count = 0;
 	while (USBHS_USBCMD & USBHS_USBCMD_RST) {
-		//count++;
+		count++;
 	}
-	//println(" reset waited ", count);
+	println(" reset waited ", count);
 
 	init_Device_Pipe_Transfer_memory();
 	for (int i=0; i < PERIODIC_LIST_SIZE; i++) {
@@ -226,9 +262,9 @@ void USBHost::begin()
 	//USBHS_PORTSC1 |= USBHS_PORTSC_PFSC; // force 12 Mbit/sec
 	//USBHS_PORTSC1 |= USBHS_PORTSC_PHCD; // phy off
 
-	//println("USBHS_ASYNCLISTADDR = ", USBHS_ASYNCLISTADDR, HEX);
-	//println("USBHS_PERIODICLISTBASE = ", USBHS_PERIODICLISTBASE, HEX);
-	//println("periodictable = ", (uint32_t)periodictable, HEX);
+	println("USBHS_ASYNCLISTADDR = ", USBHS_ASYNCLISTADDR, HEX);
+	println("USBHS_PERIODICLISTBASE = ", USBHS_PERIODICLISTBASE, HEX);
+	println("periodictable = ", (uint32_t)periodictable, HEX);
 
 	// enable interrupts, after this point interruts to all the work
 	attachInterruptVector(IRQ_USBHS, isr);
