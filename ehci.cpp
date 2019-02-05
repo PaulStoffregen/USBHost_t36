@@ -143,11 +143,11 @@ void USBHost::begin()
 	USBPHY_PLL_SIC = USBPHY_PLL_SIC_PLL_POWER | USBPHY_PLL_SIC_PLL_ENABLE |
 		USBPHY_PLL_SIC_PLL_DIV_SEL(1) | USBPHY_PLL_SIC_PLL_EN_USB_CLKS;
 	// wait for the PLL to lock
-	int count=0;
+	int pll_count=0;
 	while ((USBPHY_PLL_SIC & USBPHY_PLL_SIC_PLL_LOCK) == 0) {
-		count++;
+		pll_count++;
 	}
-	//println("PLL locked, waited ", count);
+	//println("PLL locked, waited ", pll_count);
 
 	// turn on power to PHY
 	USBPHY_PWD = 0;
@@ -212,11 +212,11 @@ void USBHost::begin()
 	// now with the PHY up and running, start up USBHS
 	//print("begin ehci reset");
 	USBHS_USBCMD |= USBHS_USBCMD_RST;
-	int count = 0;
+	int reset_count = 0;
 	while (USBHS_USBCMD & USBHS_USBCMD_RST) {
-		count++;
+		reset_count++;
 	}
-	println(" reset waited ", count);
+	println(" reset waited ", reset_count);
 
 	init_Device_Pipe_Transfer_memory();
 	for (int i=0; i < PERIODIC_LIST_SIZE; i++) {
