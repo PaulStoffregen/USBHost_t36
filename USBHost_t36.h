@@ -26,9 +26,10 @@
 
 #include <stdint.h>
 
-#if !defined(__MK66FX1M0__)
+#if !defined(__MK66FX1M0__) && !defined(__IMXRT1052__) && !defined(__IMXRT1062__)
 #error "USBHost_t36 only works with Teensy 3.6.  Please select it in Tools > Boards"
 #endif
+#include "utility/imxrt_usbhs.h"
 
 // Dear inquisitive reader, USB is a complex protocol defined with
 // very specific terminology.  To have any chance of understand this
@@ -712,6 +713,13 @@ public:
 	KeyboardController(USBHost &host) { init(); }
 	KeyboardController(USBHost *host) { init(); }
 
+	// need their own versions as both USBDriver and USBHIDInput provide
+	uint16_t idVendor();
+	uint16_t idProduct();
+	const uint8_t *manufacturer();
+	const uint8_t *product();
+	const uint8_t *serialNumber();
+
 	// Some methods are in both public classes so we need to figure out which one to use
 	uint16_t idVendor();
 	uint16_t idProduct();
@@ -739,6 +747,7 @@ public:
 	// Added for extras information.
 	void     attachExtrasPress(void (*f)(uint32_t top, uint16_t code)) { extrasKeyPressedFunction = f; }
 	void     attachExtrasRelease(void (*f)(uint32_t top, uint16_t code)) { extrasKeyReleasedFunction = f; }
+	void	 forceBootProtocol();
 	enum {MAX_KEYS_DOWN=4};
 
 
@@ -791,7 +800,8 @@ private:
 	volatile bool hid_input_data_ = false; 	// did we receive any valid data with report?
 	uint8_t count_keys_down_ = 0;
 	uint16_t keys_down[MAX_KEYS_DOWN];
-
+	bool 	force_boot_protocol;  // User or VID/PID said force boot protocol?
+	bool control_queued;
 };
 
 
@@ -1330,7 +1340,7 @@ private:
 	uint8_t pl2303_v1;		// Which version do we have
 	uint8_t pl2303_v2;
 	uint8_t interface;
-	bool control_queued;
+	bool 	control_queued;	// Is there already a queued control messaged
 	typedef enum { UNKNOWN=0, CDCACM, FTDI, PL2303, CH341, CP210X } sertype_t;
 	sertype_t sertype;
 

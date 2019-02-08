@@ -36,12 +36,17 @@ typedef struct {
 	uint8_t charNumlockOn;		// We will assume when num lock is on we have all characters...
 } keycode_numlock_t;
 
+typedef struct {
+	uint16_t	idVendor;		// vendor id of keyboard
+	uint16_t	idProduct;		// product id - 0 implies all of the ones from vendor; 
+} keyboard_force_boot_protocol_t;	// list of products to force into boot protocol
+
 #ifdef M
 #undef M
 #endif
 #define M(n) ((n) & KEYCODE_MASK)
 
-keycode_extra_t keycode_extras[] = {
+static const keycode_extra_t keycode_extras[] = {
 	{M(KEY_ENTER), '\n'},
 	{M(KEY_ESC), 0x1b},
 	{M(KEY_TAB), 0x9 },
@@ -70,7 +75,7 @@ keycode_extra_t keycode_extras[] = {
 };
 
 // Some of these mapped to key + shift.
-keycode_numlock_t keycode_numlock[] = {
+static const keycode_numlock_t keycode_numlock[] = {
 	{M(KEYPAD_SLASH), 	'/', '/'},
 	{M(KEYPAD_ASTERIX), '*', '*'},
 	{M(KEYPAD_MINUS),	'-', '-'},
@@ -88,6 +93,11 @@ keycode_numlock_t keycode_numlock[] = {
 	{M(KEYPAD_0), 		0x80 | M(KEY_INSERT), '0'},
 	{M(KEYPAD_PERIOD), 	0x80 | M(KEY_DELETE), '.'}
 };
+
+static const keyboard_force_boot_protocol_t keyboard_forceBootMode[] = {
+	{0x04D9, 0}
+};
+
 
 #define print   USBHost::print_
 #define println USBHost::println_
@@ -138,6 +148,7 @@ void KeyboardController::init()
 	driver_ready_for_device(this);
 	USBHIDParser::driver_ready_for_hid_collection(this);
 	BluetoothController::driver_ready_for_bluetooth(this);
+	force_boot_protocol = false;	// start off assuming not
 }
 
 bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
@@ -147,6 +158,7 @@ bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descripto
 	// only claim at interface level
 	if (type != 1) return false;
 	if (len < 9+9+7) return false;
+	print_hexbytes(descriptors, len);
 
 	uint32_t numendpoint = descriptors[4];
 	if (numendpoint < 1) return false;
@@ -178,22 +190,45 @@ bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descripto
 	datapipe->callback_function = callback;
 	queue_Data_Transfer(datapipe, report, 8, this);
 
-	mk_setup(setup, 0x21, 11, 0, 0, 0); // 11=SET_PROTOCOL  BOOT
+	// see if this device in list of devices that need to be set in
+	// boot protocol mode
+	bool in_forceBoot_mode_list = false;
+	for (uint8_t i = 0; i < sizeof(keyboard_forceBootMode)/sizeof(keyboard_forceBootMode[0]); i++) {
+		if (dev->idVendor == keyboard_forceBootMode[i].idVendor) {
+			if ((dev->idProduct == keyboard_forceBootMode[i].idProduct) ||
+					(keyboard_forceBootMode[i].idProduct == 0)) {
+				in_forceBoot_mode_list = true;
+				break;
+			}
+		}
+	}
+	if (in_forceBoot_mode_list) {
+		println("SET_PROTOCOL Boot");
+		mk_setup(setup, 0x21, 11, 0, 0, 0); // 11=SET_PROTOCOL  BOOT
+	} else {
+		mk_setup(setup, 0x21, 10, 0, 0, 0); // 10=SET_IDLE
+	}
 	queue_Control_Transfer(dev, &setup, NULL, this);
+	control_queued = true;
 	return true;
 }
 
 void KeyboardController::control(const Transfer_t *transfer)
 {
 	println("control callback (keyboard)");
+	control_queued = false;
 	print_hexbytes(transfer->buffer, transfer->length);
 	// To decode hex dump to human readable HID report summary:
 	//   http://eleccelerator.com/usbdescreqparser/
 	uint32_t mesg = transfer->setup.word1;
 	println("  mesg = ", mesg, HEX);
-	if (mesg == 0x001021 && transfer->length == 0) { // SET_PROTOCOL
+	if (mesg == 0x00B21 && transfer->length == 0) { // SET_PROTOCOL
 		mk_setup(setup, 0x21, 10, 0, 0, 0); // 10=SET_IDLE
+		control_queued = true;
 		queue_Control_Transfer(device, &setup, NULL, this);
+	} else if (force_boot_protocol) {
+		forceBootProtocol();	// lets setup to do the boot protocol
+		force_boot_protocol = false;	// turn back off
 	}
 }
 
@@ -202,6 +237,17 @@ void KeyboardController::callback(const Transfer_t *transfer)
 	//println("KeyboardController Callback (static)");
 	if (transfer->driver) {
 		((KeyboardController *)(transfer->driver))->new_data(transfer);
+	}
+}
+
+void KeyboardController::forceBootProtocol()
+{
+	if (device && !control_queued) {
+		mk_setup(setup, 0x21, 11, 0, 0, 0); // 11=SET_PROTOCOL  BOOT
+		control_queued = true;
+		queue_Control_Transfer(device, &setup, NULL, this);		
+	} else {
+		force_boot_protocol = true;	// let system know we want to force this.
 	}
 }
 
@@ -527,5 +573,42 @@ void KeyboardController::release_bluetooth()
 {
 	//btdevice = nullptr;
 
+//*****************************************************************************
+// Some simple query functions depend on which interface we are using...
+//*****************************************************************************
+
+uint16_t KeyboardController::idVendor() 
+{
+	if (device != nullptr) return device->idVendor;
+	if (mydevice != nullptr) return mydevice->idVendor;
+	return 0;
+}
+
+uint16_t KeyboardController::idProduct() 
+{
+	if (device != nullptr) return device->idProduct;
+	if (mydevice != nullptr) return mydevice->idProduct;
+	return 0;
+}
+
+const uint8_t *KeyboardController::manufacturer()
+{
+	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_MAN]];
+	if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; 
+	return nullptr;
+}
+
+const uint8_t *KeyboardController::product()
+{
+	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_PROD]];
+	if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; 
+	return nullptr;
+}
+
+const uint8_t *KeyboardController::serialNumber()
+{
+	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]];
+	if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; 
+	return nullptr;
 }
 
