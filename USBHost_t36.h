@@ -57,7 +57,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-//#define USBHOST_PRINT_DEBUG
+#define USBHOST_PRINT_DEBUG
 
 /************************************************/
 /*  Data Types                                  */
@@ -517,7 +517,7 @@ private:
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 	void add_to_list();
-	USBHIDInput *next;
+	USBHIDInput *next = NULL;
 	friend class USBHIDParser;
 protected:
 	Device_t *mydevice = NULL;
@@ -545,7 +545,7 @@ private:
 	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length) {return false;}
 	virtual void release_bluetooth() {};
 	void add_to_list();
-	BTHIDInput *next;
+	BTHIDInput *next = NULL;
 	friend class BluetoothController;
 protected:
 	Device_t *btdevice = NULL;
