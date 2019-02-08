@@ -720,13 +720,6 @@ public:
 	const uint8_t *product();
 	const uint8_t *serialNumber();
 
-	// Some methods are in both public classes so we need to figure out which one to use
-	uint16_t idVendor();
-	uint16_t idProduct();
-
-	const uint8_t *manufacturer();
-	const uint8_t *product();
-	const uint8_t *serialNumber();
 	operator bool() { return ((device != nullptr) || (btdevice != nullptr)); }
 	// Main boot keyboard functions. 
 	uint16_t getKey() { return keyCode; }

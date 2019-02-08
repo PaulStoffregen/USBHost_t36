@@ -103,41 +103,6 @@ static const keyboard_force_boot_protocol_t keyboard_forceBootMode[] = {
 #define println USBHost::println_
 
 
-uint16_t KeyboardController::idVendor() 
-{
-	if (device != nullptr) return device->idVendor;
-	if (btdevice != nullptr) return btdevice->idVendor;
-	return 0;
-}
-
-uint16_t KeyboardController::idProduct() 
-{
-	if (device != nullptr) return device->idProduct;
-	if (btdevice != nullptr) return btdevice->idProduct;
-	return 0;
-}
-
-const uint8_t *KeyboardController::manufacturer()
-{
-	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_MAN]];
-	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; 
-	return nullptr;
-}
-
-const uint8_t *KeyboardController::product()
-{
-	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_PROD]];
-	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; 
-	return nullptr;
-}
-
-const uint8_t *KeyboardController::serialNumber()
-{
-	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]];
-	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; 
-	return nullptr;
-}
-
 
 
 void KeyboardController::init()
@@ -572,6 +537,7 @@ bool KeyboardController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 void KeyboardController::release_bluetooth() 
 {
 	//btdevice = nullptr;
+}
 
 //*****************************************************************************
 // Some simple query functions depend on which interface we are using...
@@ -581,6 +547,7 @@ uint16_t KeyboardController::idVendor()
 {
 	if (device != nullptr) return device->idVendor;
 	if (mydevice != nullptr) return mydevice->idVendor;
+	if (btdevice != nullptr) return btdevice->idVendor;
 	return 0;
 }
 
@@ -588,12 +555,14 @@ uint16_t KeyboardController::idProduct()
 {
 	if (device != nullptr) return device->idProduct;
 	if (mydevice != nullptr) return mydevice->idProduct;
+	if (btdevice != nullptr) return btdevice->idProduct;
 	return 0;
 }
 
 const uint8_t *KeyboardController::manufacturer()
 {
 	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_MAN]];
+	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; 
 	if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; 
 	return nullptr;
 }
@@ -602,6 +571,7 @@ const uint8_t *KeyboardController::product()
 {
 	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_PROD]];
 	if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; 
+	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; 
 	return nullptr;
 }
 
@@ -609,6 +579,7 @@ const uint8_t *KeyboardController::serialNumber()
 {
 	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]];
 	if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; 
+	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; 
 	return nullptr;
 }
 
