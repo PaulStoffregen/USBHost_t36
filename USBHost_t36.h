@@ -837,7 +837,7 @@ public:
 	const uint8_t *manufacturer();
 	const uint8_t *product();
 	const uint8_t *serialNumber();
-	operator bool() { return (((device != nullptr) || (mydevice != nullptr)) && connected_); }	// override as in both USBDriver and in USBHIDInput
+	operator bool() { return (((device != nullptr) || (mydevice != nullptr || (btdevice != nullptr))) && connected_); }	// override as in both USBDriver and in USBHIDInput
 
 	bool    available() { return joystickEvent; }
 	void    joystickDataClear();

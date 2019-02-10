@@ -669,12 +669,14 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 		Serial.printf("%02x ", data[i]);
 	}
 	Serial.printf("\n");
+	connected_ = true;
 	return true;
 }
 
 void JoystickController::release_bluetooth() 
 {
 	//btdevice = nullptr;
+	connected_ = false;
 
 }
 
