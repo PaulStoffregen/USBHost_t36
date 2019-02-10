@@ -201,21 +201,39 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
 }
 
 bool JoystickController::transmitPS4UserFeedbackMsg() {
-if (!driver_) return false;
-	uint8_t packet[32];
-    memset(packet, 0, sizeof(packet));
+	if (driver_)  {
+		uint8_t packet[32];
+	    memset(packet, 0, sizeof(packet));
 
-    packet[0] = 0x05; // Report ID
-    packet[1]= 0xFF;
+	    packet[0] = 0x05; // Report ID
+	    packet[1]= 0xFF;
 
-    packet[4] = rumble_lValue_; // Small Rumble
-    packet[5] = rumble_rValue_; // Big rumble
-    packet[6] = leds_[0]; // RGB value 
-    packet[7] = leds_[1]; 
-    packet[8] = leds_[2];
-    // 9, 10 flash ON, OFF times in 100ths of sedond?  2.5 seconds = 255
-    Serial.printf("Joystick update Rumble/LEDs");
-	return driver_->sendPacket(packet, 32);
+	    packet[4] = rumble_lValue_; // Small Rumble
+	    packet[5] = rumble_rValue_; // Big rumble
+	    packet[6] = leds_[0]; // RGB value 
+	    packet[7] = leds_[1]; 
+	    packet[8] = leds_[2];
+	    // 9, 10 flash ON, OFF times in 100ths of sedond?  2.5 seconds = 255
+	    Serial.printf("Joystick update Rumble/LEDs");
+		return driver_->sendPacket(packet, 32);
+	} else if (btdriver_) {
+		uint8_t packet[32];
+	    memset(packet, 0, sizeof(packet));
+
+	    packet[0] = 0x05; // Report ID
+	    packet[1]= 0xFF;
+
+	    packet[4] = rumble_lValue_; // Small Rumble
+	    packet[5] = rumble_rValue_; // Big rumble
+	    packet[6] = leds_[0]; // RGB value 
+	    packet[7] = leds_[1]; 
+	    packet[8] = leds_[2];
+	    // 9, 10 flash ON, OFF times in 100ths of sedond?  2.5 seconds = 255
+	    Serial.printf("Joystick update Rumble/LEDs");
+     	btdriver_->sendL2CapCommand(packet, sizeof(packet));
+     	return true;
+	}
+	return false;
 }
 
 static const uint8_t PS3_USER_FEEDBACK_INIT[] = {
@@ -648,7 +666,7 @@ bool JoystickController::claim_bluetooth(BluetoothController *driver, uint32_t b
 {
 	if ((((bluetooth_class & 0xff00) == 0x2500) || (((bluetooth_class & 0xff00) == 0x500))) && ((bluetooth_class & 0x3C) == 0x08)) {
 		Serial.printf("JoystickController::claim_bluetooth TRUE\n");
-		//btdevice = driver;
+		btdriver_ = driver;
 		return true;
 	}
 	return false;
@@ -675,7 +693,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 
 void JoystickController::release_bluetooth() 
 {
-	//btdevice = nullptr;
+	btdriver_ = nullptr;
 	connected_ = false;
 
 }

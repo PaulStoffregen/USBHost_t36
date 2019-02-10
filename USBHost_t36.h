@@ -539,7 +539,6 @@ public:
 		{  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; }
 	const uint8_t *serialNumber()
 		{  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
-
 private:
 	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class) {return false;}
 	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length) {return false;}
@@ -879,6 +878,8 @@ private:
 	// Class specific
 	void init();
 	USBHIDParser *driver_ = nullptr;
+	BluetoothController *btdriver_ = nullptr;
+
 	joytype_t mapVIDPIDtoJoystickType(uint16_t idVendor, uint16_t idProduct, bool exclude_hid_devices);
 	bool transmitPS4UserFeedbackMsg();
 	bool transmitPS3UserFeedbackMsg();
@@ -1609,6 +1610,13 @@ public:
 	enum {BT_CLASS_DEVICE= 0x0804}; // Toy - Robot
 	static void driver_ready_for_bluetooth(BTHIDInput *driver);
 
+
+	// BUGBUG version to allow some of the controlled objects to call?
+
+    void sendL2CapCommand(uint8_t* data, uint8_t nbytes, uint8_t channelLow = 0x01, uint8_t channelHigh = 0x00) {
+    	sendL2CapCommand (device_connection_handle_, data, nbytes, channelLow, channelHigh);
+    }
+
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
@@ -1617,6 +1625,7 @@ protected:
 
 	BTHIDInput * find_driver(uint32_t device_type);
 private:
+	friend class BTHIDInput;
 	static void rx_callback(const Transfer_t *transfer);
 	static void rx2_callback(const Transfer_t *transfer);
 	static void tx_callback(const Transfer_t *transfer);
