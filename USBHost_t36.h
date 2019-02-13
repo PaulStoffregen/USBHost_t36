@@ -57,7 +57,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-#define USBHOST_PRINT_DEBUG
+//#define USBHOST_PRINT_DEBUG
 
 /************************************************/
 /*  Data Types                                  */
@@ -854,6 +854,15 @@ public:
 	enum { STANDARD_AXIS_COUNT = 10, ADDITIONAL_AXIS_COUNT = 54, TOTAL_AXIS_COUNT = (STANDARD_AXIS_COUNT+ADDITIONAL_AXIS_COUNT) };
 	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360} joytype_t;
 	joytype_t joystickType = UNKNOWN;
+	
+	//Bluetooth PS4
+	int		getAxisPS4(uint32_t index) { return (index < (sizeof(axisPS4)/sizeof(axisPS4[0]))) ? axisPS4[index] : 0; }
+	int		getOnChangePS4() {return ps4OnChange; }
+	int		getAxisChangePS4(uint32_t index) { return (index < (sizeof(axisChange)/sizeof(axisChange[0]))) ? axisChange[index] : 0; }
+	bool    setRumblePS4(uint8_t lValue, uint8_t rValue, uint8_t timeout=0xff);
+	bool    setPS4LEDs(uint8_t lr, uint8_t lg, uint8_t lb);
+
+	
 protected:
 	// From USBDriver
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
@@ -932,6 +941,11 @@ private:
 		bool 		hidDevice;
 	} product_vendor_mapping_t;
 	static product_vendor_mapping_t pid_vid_mapping[];
+	
+	//Bluetooth PS4
+	int axisPS4[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};	
+	int axisChange[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};	
+	int ps4OnChange;
 
 };
 
