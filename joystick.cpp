@@ -84,6 +84,7 @@ uint16_t JoystickController::idProduct()
 const uint8_t *JoystickController::manufacturer()
 {
 	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_MAN]];
+	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; 
 	if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; 
 	return nullptr;
 }
@@ -395,6 +396,8 @@ void JoystickController::joystickDataClear() {
 	anychange = false;
 	axis_changed_mask_ = 0;
 	axis_mask_ = 0;
+	ps4OnChange = 0;
+	for(uint8_t i=0; i<10;i++) {axisChange[i] = 0; }
 }
 
 //*****************************************************************************
@@ -678,18 +681,95 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 	// Example data from PS4 controller
 	//01 7e 7f 82 84 08 00 00 00 00
 	//   LX LY RX RY BT BT PS LT RT
-	Serial.printf("JoystickController::process_bluetooth_HID_data\n");
+	//Serial.printf("JoystickController::process_bluetooth_HID_data\n");
 	if (data[0] != 1) return false;
-	print("  Joystick Data: ");
-	print_hexbytes(data, length);
-	Serial.printf("  Joystick Data: ");
+	//print("  Joystick Data: ");
+	//print_hexbytes(data, length);
+	//Serial.printf("  Joystick Data: ");
 	for (uint16_t i = 0; i < length; i++ ) {
-		Serial.printf("%02x ", data[i]);
+		if(data[i] != axisPS4[i]) { ps4OnChange = 1; axisChange[i] = 1; }
+		axisPS4[i] = data[i];
+		//Serial.printf("%02x ", axis[i]);
 	}
-	Serial.printf("\n");
+	//Serial.printf("\n");
+  joystickEvent = true;
 	connected_ = true;
 	return true;
 }
+
+bool JoystickController::setRumblePS4(uint8_t lValue, uint8_t rValue, uint8_t timeout)
+{
+  /*              uint8_t buf[79];
+                memset(buf, 0, sizeof(buf));
+
+                buf[0] = 0x52; // HID BT Set_report (0x50) | Report Type (Output 0x02)
+                buf[1] = 0x11; // Report ID
+                buf[2] = 0x80;
+                buf[4]= 0xFF;
+
+                buf[7] = rumble_lValue_; // Small Rumble
+                buf[8] = rumble_rValue_; // Big rumble
+
+                buf[9] = leds_[0]; // Red
+                buf[10] = leds_[1]; // Green
+                buf[11] = leds_[2]; // Blue
+				
+	// 9, 10 flash ON, OFF times in 100ths of sedond?  2.5 seconds = 255
+	Serial.printf("Joystick update Rumble/LEDs");
+	btdriver_->sendL2CapCommand(buf, sizeof(buf));
+ */
+		uint8_t packet[32];
+	    memset(packet, 0, sizeof(packet));
+//0xa2, 0x11, 0xc0, 0x20, 0xf0, 0x04, 0x00
+	    packet[0] = 0x52; 
+	    packet[1] = 0x11;      // Report ID
+		packet[2] = 0x80;
+		//packet[3] = 0x20;
+		packet[4] = 0xFF;
+
+	    packet[7] = rumble_lValue_; // Small Rumble
+	    packet[8] = rumble_rValue_; // Big rumble
+	    packet[9] = leds_[0]; // RGB value 
+	    packet[10] = leds_[1]; 
+	    packet[11] = leds_[2];
+
+	    // 9, 10 flash ON, OFF times in 100ths of sedond?  2.5 seconds = 255
+	    Serial.printf("Joystick update Rumble/LEDs");
+     	btdriver_->sendL2CapCommand(packet, sizeof(packet), 0x45, 0x00);
+
+	return true;
+}
+
+bool JoystickController::setPS4LEDs(uint8_t lr, uint8_t lg, uint8_t lb)
+{
+	// Need to know which joystick we are on.  Start off with XBox support - maybe need to add some enum value for the known
+	// joystick types. 
+	if ((leds_[0] != lr) || (leds_[1] != lg) || (leds_[2] != lb)) {
+		leds_[0] = lr;
+		leds_[1] = lg;
+		leds_[2] = lb;
+
+		uint8_t packet[32];
+	    memset(packet, 0, sizeof(packet));
+//0xa2, 0x11, 0xc0, 0x20, 0xf0, 0x04, 0x00
+	    packet[0] = 0x52; 
+	    packet[1] = 0x11;      // Report ID
+		packet[2] = 0x80;
+		packet[3] = 0x20;
+		packet[4] = 0xFF;
+
+	    packet[7] = 0; // Small Rumble
+	    packet[8] = 0; // Big rumble
+	    packet[9] = leds_[0]; // RGB value 
+	    packet[10] = leds_[1]; 
+	    packet[11] = leds_[2];
+
+	    // 9, 10 flash ON, OFF times in 100ths of sedond?  2.5 seconds = 255
+	    Serial.printf("Joystick update Rumble/LEDs");
+     	btdriver_->sendL2CapCommand(packet, sizeof(packet));
+	}
+	return true;
+}		
 
 void JoystickController::release_bluetooth() 
 {
