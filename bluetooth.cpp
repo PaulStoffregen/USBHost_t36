@@ -147,6 +147,7 @@ enum {PC_RESET = 1, PC_WRITE_CLASS_DEVICE, PC_READ_BDADDR, PC_READ_LOCAL_VERSION
 
 //////////////
 
+
 // Setup some states for the TX pipe where we need to chain messages
 enum {STATE_TX_SEND_CONNECT_INT=200, STATE_TX_SEND_CONECT_RSP_SUCCESS, STATE_TX_SEND_CONFIG_REQ};
 
@@ -184,7 +185,11 @@ BTHIDInput * BluetoothController::find_driver(uint32_t device_type)
 	}
 	return NULL;
 }
-
+//12 01 00 02 FF 01 01 40 5C 0A E8 21 12 01 01 02 03 01
+//VendorID = 0A5C, ProductID = 21E8, Version = 0112
+//Class/Subclass/Protocol = 255 / 1 / 1
+BluetoothController::product_vendor_mapping_t BluetoothController::pid_vid_mapping[] = {
+	{ 0xA5C, 0x21E8 }};
 
 /************************************************************/
 //  Initialization and claiming of devices & interfaces
@@ -203,11 +208,21 @@ bool BluetoothController::claim(Device_t *dev, int type, const uint8_t *descript
 	// only claim at device level 
 	println("BluetoothController claim this=", (uint32_t)this, HEX);
 
+	if (type != 0) return false; // claim at the device level
+
 	// Lets try to support the main USB Bluetooth class...
 	// http://www.usb.org/developers/defined_class/#BaseClassE0h
-	if (dev->bDeviceClass != 0xe0) return false;	// not base class wireless controller
+	if (dev->bDeviceClass != 0xe0)  {
+		bool special_case_device = false;
+		for (uint8_t i=0; i < (sizeof(pid_vid_mapping)/sizeof(pid_vid_mapping[0])); i++) {
+			if ((pid_vid_mapping[i].idVendor == dev->idVendor) && (pid_vid_mapping[i].idProduct == dev->idProduct)) {
+				special_case_device = true;
+				break;
+			}
+		}
+		if (!special_case_device) return false;
+	}
 	if ((dev->bDeviceSubClass != 1) || (dev->bDeviceProtocol != 1)) return false; // Bluetooth Programming Interface
-	if (type != 0) return false;
 
 	DBGPrintf("BluetoothController claim this=%x vid:pid=%x:%x\n    ", (uint32_t)this, dev->idVendor,  dev->idProduct);
 	if (len > 512) {
@@ -784,7 +799,17 @@ void BluetoothController::handle_hci_remote_name_complete() {
 		for (uint8_t *psz = &rxbuf_[9]; *psz; psz++) DBGPrintf("%c", *psz);
 		DBGPrintf("\n");
 	}
-	if (device_driver_) device_driver_->remoteNameComplete(&rxbuf_[9]);
+	/*
+	if (device_driver_) {
+		if (!device_driver_->btstrbuf) {
+			device_driver_->btstrbuf = USBHost::allocate_string_buffer();
+			if (device_driver_->btstrbuf) {
+
+			}
+		}
+		device_driver_->remoteNameComplete(&rxbuf_[9]);
+	}
+	*/
 
 	// Lets now try to accept the connection. 
 	sendHCIAcceptConnectionRequest();

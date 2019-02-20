@@ -61,6 +61,11 @@
 #define USBHDBGSerial	Serial1
 
 
+#ifndef USBHDBGSerial
+#define USBHDBGSerial	Serial
+#endif
+
+
 /************************************************/
 /*  Data Types                                  */
 /************************************************/
@@ -1732,6 +1737,12 @@ private:
 	uint8_t    		remote_ver_;
 	uint16_t		remote_man_;
 	uint8_t			remote_subv_;
+
+	typedef struct {
+		uint16_t 	idVendor;
+		uint16_t 	idProduct;
+	} product_vendor_mapping_t;
+	static product_vendor_mapping_t pid_vid_mapping[];
 
 };
 
