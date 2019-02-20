@@ -13,8 +13,8 @@ USBHIDParser hid3(myusb);
 USBHIDParser hid4(myusb);
 USBHIDParser hid5(myusb);
 JoystickController joystick1(myusb);
-BluetoothController bluet(myusb, true, "0000");   // Version does pairing to device
-//BluetoothController bluet(myusb);   // version assumes it already was paired
+//BluetoothController bluet(myusb, true, "0000");   // Version does pairing to device
+BluetoothController bluet(myusb);   // version assumes it already was paired
 int user_axis[64];
 uint32_t buttons_prev = 0;
 RawHIDController rawhid1(myusb);
@@ -32,7 +32,6 @@ USBHIDInput *hiddrivers[] = {&joystick1, &rawhid1, &rawhid2};
 
 #define CNT_HIDDEVICES (sizeof(hiddrivers)/sizeof(hiddrivers[0]))
 const char * hid_driver_names[CNT_DEVICES] = {"Joystick1", "RawHid1", "RawHid2"};
-
 bool hid_driver_active[CNT_DEVICES] = {false, false, false};
 bool show_changed_only = false; 
 
@@ -41,9 +40,11 @@ uint8_t joystick_right_trigger_value = 0;
 uint64_t joystick_full_notify_mask = (uint64_t)-1;
 
 int psAxis[10];
+bool first_joystick_message = true;
 
 void setup()
 {
+  Serial1.begin(115200);
   while (!Serial) ; // wait for Arduino Serial Monitor
   Serial.println("\n\nUSB Host Testing");
   Serial.println(sizeof(USBHub), DEC);
@@ -118,8 +119,21 @@ void loop()
   }
 
   if (joystick1.available()) {
+      if (first_joystick_message) {
+        Serial.printf("*** First Joystick message %x:%x ***\n", 
+            joystick1.idVendor(), joystick1.idProduct());
+        first_joystick_message = false;
+
+        const uint8_t *psz = joystick1.manufacturer();
+        if (psz && *psz) Serial.printf("  manufacturer: %s\n", psz);
+        psz = joystick1.product();
+        if (psz && *psz) Serial.printf("  product: %s\n", psz);
+        psz =joystick1.serialNumber();
+        if (psz && *psz) Serial.printf("  Serial: %s\n", psz);        
+      }
+      
       for (uint8_t i = 0; i<10; i++) {
-          psAxis[i] = joystick1.getAxisPS4(i);
+          psAxis[i] = joystick1.getAxis(i);
       }
 
       Serial.printf("LX: %d, LY: %d, RX: %d, RY: %d \r\n", psAxis[1], psAxis[2], psAxis[3], psAxis[4]);
@@ -130,25 +144,14 @@ void loop()
     uint8_t ltv;
     uint8_t rtv;
 
-        ltv = joystick1.getAxisPS4(8);
-        rtv = joystick1.getAxisPS4(9);
+        ltv = joystick1.getAxis(8);
+        rtv = joystick1.getAxis(9);
 
         if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
           joystick_left_trigger_value = ltv;
           joystick_right_trigger_value = rtv;
-          joystick1.setRumblePS4(ltv, rtv);
+          joystick1.setRumble(ltv, rtv);
         }
-
-        //tr=136,sq=24, cir=72, x=40
-        //lar=6, up=0, dw=4 rgt=2
-        //ltrb=1, rt =2
-      if (psAxis[6] != buttons_prev) {
-          uint8_t lr = (psAxis[6] & 136) ? 0xff : 0;
-          uint8_t lg = (psAxis[6] & 24) ? 0xff : 0;
-          uint8_t lb = (psAxis[6] & 72) ? 0xff : 0;
-          joystick1.setPS4LEDs(lr, lg, lb);
-          buttons_prev = psAxis[6];
-      }
         
      joystick1.joystickDataClear();
   }

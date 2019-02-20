@@ -8,39 +8,31 @@ USBHost myusb;
 USBHub hub1(myusb);
 USBHub hub2(myusb);
 KeyboardController keyboard1(myusb);
-//KeyboardController keyboard2(myusb);
+KeyboardController keyboard2(myusb);
 USBHIDParser hid1(myusb);
 USBHIDParser hid2(myusb);
 USBHIDParser hid3(myusb);
 USBHIDParser hid4(myusb);
 USBHIDParser hid5(myusb);
-//MouseController mouse1(myusb);
-//JoystickController joystick1(myusb);
-BluetoothController bluet(myusb, true, "0000");   // Version does pairing to device
-//BluetoothController bluet(myusb);   // version assumes it already was paired
+MouseController mouse1(myusb);
+JoystickController joystick1(myusb);
+//BluetoothController bluet(myusb, true, "0000");   // Version does pairing to device
+BluetoothController bluet(myusb);   // version assumes it already was paired
 int user_axis[64];
 uint32_t buttons_prev = 0;
 RawHIDController rawhid1(myusb);
 RawHIDController rawhid2(myusb, 0xffc90004);
 
-//USBDriver *drivers[] = {&hub1, &hub2,&keyboard1, &keyboard2, &joystick1, &bluet, &hid1, &hid2, &hid3, &hid4, &hid5};
-USBDriver *drivers[] = {&hub1, &hub2, &keyboard1, &bluet, &hid1, &hid2, &hid3, &hid4, &hid5};
-
+USBDriver *drivers[] = {&hub1, &hub2,&keyboard1, &keyboard2, &joystick1, &bluet, &hid1, &hid2, &hid3, &hid4, &hid5};
 #define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[0]))
-//const char * driver_names[CNT_DEVICES] = {"Hub1","Hub2", "KB1", "KB2", "JOY1D", "Bluet", "HID1" , "HID2", "HID3", "HID4", "HID5"};
-const char * driver_names[CNT_DEVICES] = {"Hub1","Hub2", "KB1", "Bluet", "HID1" , "HID2", "HID3", "HID4", "HID5"};
-
+const char * driver_names[CNT_DEVICES] = {"Hub1","Hub2", "KB1", "KB2", "JOY1D", "Bluet", "HID1" , "HID2", "HID3", "HID4", "HID5"};
 bool driver_active[CNT_DEVICES] = {false, false, false, false};
 
 // Lets also look at HID Input devices
-//USBHIDInput *hiddrivers[] = {&mouse1, &joystick1, &rawhid1, &rawhid2};
-USBHIDInput *hiddrivers[] = {&rawhid1, &rawhid2};
-
+USBHIDInput *hiddrivers[] = {&mouse1, &joystick1, &rawhid1, &rawhid2};
 #define CNT_HIDDEVICES (sizeof(hiddrivers)/sizeof(hiddrivers[0]))
-//const char * hid_driver_names[CNT_DEVICES] = {"Mouse1","Joystick1", "RawHid1", "RawHid2"};
-const char * hid_driver_names[CNT_DEVICES] = {"RawHid1", "RawHid2"};
-
-bool hid_driver_active[CNT_DEVICES] = {false, false, false};
+const char * hid_driver_names[CNT_DEVICES] = {"Mouse1","Joystick1", "RawHid1", "RawHid2"};
+bool hid_driver_active[CNT_DEVICES] = {false, false};
 bool show_changed_only = false; 
 
 uint8_t joystick_left_trigger_value = 0;
@@ -54,11 +46,11 @@ void setup()
   Serial.println(sizeof(USBHub), DEC);
   myusb.begin();
   keyboard1.attachPress(OnPress);
-  //keyboard2.attachPress(OnPress);
+  keyboard2.attachPress(OnPress);
   keyboard1.attachExtrasPress(OnHIDExtrasPress);
   keyboard1.attachExtrasRelease(OnHIDExtrasRelease);
-  //keyboard2.attachExtrasPress(OnHIDExtrasPress);
-  //keyboard2.attachExtrasRelease(OnHIDExtrasRelease);
+  keyboard2.attachExtrasPress(OnHIDExtrasPress);
+  keyboard2.attachExtrasRelease(OnHIDExtrasRelease);
 
   rawhid1.attachReceive(OnReceiveHidData);
   rawhid2.attachReceive(OnReceiveHidData);
@@ -68,7 +60,7 @@ void setup()
 void loop()
 {
   myusb.Task();
-/*
+
   if (Serial.available()) {
     int ch = Serial.read(); // get the first char. 
     while (Serial.read() != -1) ; 
@@ -89,7 +81,7 @@ void loop()
       }
     }
  }
-*/
+
   for (uint8_t i = 0; i < CNT_DEVICES; i++) {
     if (*drivers[i] != driver_active[i]) {
       if (driver_active[i]) {
@@ -129,7 +121,7 @@ void loop()
   }
 
 
-/*
+
   if(mouse1.available()) {
     Serial.print("Mouse: buttons = ");
     Serial.print(mouse1.getButtons());
@@ -219,7 +211,7 @@ void loop()
     Serial.println();
     joystick1.joystickDataClear();
   }
-*/
+
   // See if we have some RAW data
   if (rawhid1) {
     int ch;
@@ -274,12 +266,12 @@ void OnPress(int key)
     Serial.print(keyboard1.getOemKey(), HEX);
     Serial.print(" LEDS: ");
     Serial.println(keyboard1.LEDS(), HEX);
-  //} else {
-    //Serial.print(keyboard2.getModifiers(), HEX);
-    //Serial.print(" OEM: ");
-    //Serial.print(keyboard2.getOemKey(), HEX);
-    //Serial.print(" LEDS: ");
-    //Serial.println(keyboard2.LEDS(), HEX);
+  } else {
+    Serial.print(keyboard2.getModifiers(), HEX);
+    Serial.print(" OEM: ");
+    Serial.print(keyboard2.getOemKey(), HEX);
+    Serial.print(" LEDS: ");
+    Serial.println(keyboard2.LEDS(), HEX);
   }
 
   //Serial.print("key ");

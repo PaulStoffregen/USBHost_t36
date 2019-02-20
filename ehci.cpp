@@ -468,8 +468,8 @@ void USBDriverTimer::start(uint32_t microseconds)
 		return;
 	}
 	uint32_t remain = USBHS_GPTIMER1CTL & 0xFFFFFF;
-	//Serial.print("remain = ");
-	//Serial.println(remain);
+	//USBHDBGSerial.print("remain = ");
+	//USBHDBGSerial.println(remain);
 	if (microseconds < remain) {
 		// this timer event is before any on the schedule
 		__disable_irq();

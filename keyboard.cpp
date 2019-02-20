@@ -403,12 +403,12 @@ void KeyboardController::updateLEDS() {
 hidclaim_t KeyboardController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
 {
 	// Lets try to claim a few specific Keyboard related collection/reports
-	//Serial.printf("KBH Claim %x\n", topusage);
+	//USBHDBGSerial.printf("KBH Claim %x\n", topusage);
 	if ((topusage != TOPUSAGE_SYS_CONTROL) 
 		&& (topusage != TOPUSAGE_CONSUMER_CONTROL)
 		) return CLAIM_NO;
 	// only claim from one physical device
-	//Serial.println("KeyboardController claim collection");
+	//USBHDBGSerial.println("KeyboardController claim collection");
 	// Lets only claim if this is the same device as claimed Keyboard... 
 	if (dev != device) return CLAIM_NO;
 	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
@@ -426,7 +426,7 @@ void KeyboardController::disconnect_collection(Device_t *dev)
 
 void KeyboardController::hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax)
 {
-	//Serial.printf("KPC:hid_input_begin TUSE: %x TYPE: %x Range:%x %x\n", topusage, type, lgmin, lgmax);
+	//USBHDBGSerial.printf("KPC:hid_input_begin TUSE: %x TYPE: %x Range:%x %x\n", topusage, type, lgmin, lgmax);
 	topusage_ = topusage;	// remember which report we are processing. 
 	hid_input_begin_ = true;
 	hid_input_data_ = false;
@@ -436,7 +436,7 @@ void KeyboardController::hid_input_data(uint32_t usage, int32_t value)
 {
 	// Hack ignore 0xff00 high words as these are user values... 
 	if ((usage & 0xffff0000) == 0xff000000) return; 
-	//Serial.printf("KeyboardController: topusage= %x usage=%X, value=%d\n", topusage_, usage, value);
+	//USBHDBGSerial.printf("KeyboardController: topusage= %x usage=%X, value=%d\n", topusage_, usage, value);
 
 	// See if the value is in our keys_down list
 	usage &= 0xffff;		// only keep the actual key
@@ -475,7 +475,7 @@ void KeyboardController::hid_input_data(uint32_t usage, int32_t value)
 
 void KeyboardController::hid_input_end()
 {
-	//Serial.println("KPC:hid_input_end");
+	//USBHDBGSerial.println("KPC:hid_input_end");
 	if (hid_input_begin_) {
 
 		// See if we received any data from parser if not, assume all keys released... 
@@ -495,9 +495,9 @@ void KeyboardController::hid_input_end()
 
 bool KeyboardController::claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class) 
 {
-	Serial.printf("Keyboard Controller::claim_bluetooth - Class %x\n", bluetooth_class);
+	USBHDBGSerial.printf("Keyboard Controller::claim_bluetooth - Class %x\n", bluetooth_class);
 	if ((((bluetooth_class & 0xff00) == 0x2500) || (((bluetooth_class & 0xff00) == 0x500))) && (bluetooth_class & 0x40)) {
-		Serial.printf("KeyboardController::claim_bluetooth TRUE\n");
+		USBHDBGSerial.printf("KeyboardController::claim_bluetooth TRUE\n");
 		//btdevice = driver;
 		return true;
 	}
@@ -513,7 +513,7 @@ bool KeyboardController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 4 0 0 0 0 0 
 	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 0 0 0 0 0 0 
 	// So Len=9 passed in data starting at report ID=1... 
-	Serial.printf("KeyboardController::process_bluetooth_HID_data\n");
+	USBHDBGSerial.printf("KeyboardController::process_bluetooth_HID_data\n");
 	if (data[0] != 1) return false;
 	print("  KB Data: ");
 	print_hexbytes(data, length);

@@ -58,6 +58,8 @@
 
 
 //#define USBHOST_PRINT_DEBUG
+#define USBHDBGSerial	Serial1
+
 
 /************************************************/
 /*  Data Types                                  */
@@ -314,35 +316,35 @@ protected:
 	static void print_config_descriptor(const uint8_t *p, uint32_t maxlen);
 	static void print_string_descriptor(const char *name, const uint8_t *p);
 	static void print_hexbytes(const void *ptr, uint32_t len);
-	static void print_(const char *s)	{ Serial.print(s); }
-	static void print_(int n)		{ Serial.print(n); }
-	static void print_(unsigned int n)	{ Serial.print(n); }
-	static void print_(long n)		{ Serial.print(n); }
-	static void print_(unsigned long n)	{ Serial.print(n); }
-	static void println_(const char *s)	{ Serial.println(s); }
-	static void println_(int n)		{ Serial.println(n); }
-	static void println_(unsigned int n)	{ Serial.println(n); }
-	static void println_(long n)		{ Serial.println(n); }
-	static void println_(unsigned long n)	{ Serial.println(n); }
-	static void println_()			{ Serial.println(); }
-	static void print_(uint32_t n, uint8_t b) { Serial.print(n, b); }
-	static void println_(uint32_t n, uint8_t b) { Serial.println(n, b); }
+	static void print_(const char *s)	{ USBHDBGSerial.print(s); }
+	static void print_(int n)		{ USBHDBGSerial.print(n); }
+	static void print_(unsigned int n)	{ USBHDBGSerial.print(n); }
+	static void print_(long n)		{ USBHDBGSerial.print(n); }
+	static void print_(unsigned long n)	{ USBHDBGSerial.print(n); }
+	static void println_(const char *s)	{ USBHDBGSerial.println(s); }
+	static void println_(int n)		{ USBHDBGSerial.println(n); }
+	static void println_(unsigned int n)	{ USBHDBGSerial.println(n); }
+	static void println_(long n)		{ USBHDBGSerial.println(n); }
+	static void println_(unsigned long n)	{ USBHDBGSerial.println(n); }
+	static void println_()			{ USBHDBGSerial.println(); }
+	static void print_(uint32_t n, uint8_t b) { USBHDBGSerial.print(n, b); }
+	static void println_(uint32_t n, uint8_t b) { USBHDBGSerial.println(n, b); }
 	static void print_(const char *s, int n, uint8_t b = DEC) {
-		Serial.print(s); Serial.print(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.print(n, b); }
 	static void print_(const char *s, unsigned int n, uint8_t b = DEC) {
-		Serial.print(s); Serial.print(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.print(n, b); }
 	static void print_(const char *s, long n, uint8_t b = DEC) {
-		Serial.print(s); Serial.print(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.print(n, b); }
 	static void print_(const char *s, unsigned long n, uint8_t b = DEC) {
-		Serial.print(s); Serial.print(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.print(n, b); }
 	static void println_(const char *s, int n, uint8_t b = DEC) {
-		Serial.print(s); Serial.println(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.println(n, b); }
 	static void println_(const char *s, unsigned int n, uint8_t b = DEC) {
-		Serial.print(s); Serial.println(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.println(n, b); }
 	static void println_(const char *s, long n, uint8_t b = DEC) {
-		Serial.print(s); Serial.println(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.println(n, b); }
 	static void println_(const char *s, unsigned long n, uint8_t b = DEC) {
-		Serial.print(s); Serial.println(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.println(n, b); }
 	friend class USBDriverTimer; // for access to print & println
 #else
 	static void print_(const Transfer_t *transfer) {}
@@ -543,10 +545,12 @@ private:
 	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class) {return false;}
 	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length) {return false;}
 	virtual void release_bluetooth() {};
+	virtual void remoteNameComplete(const uint8_t *remoteName) {};
 	void add_to_list();
 	BTHIDInput *next = NULL;
 	friend class BluetoothController;
 protected:
+	strbuf_t *btstrbuf;
 	Device_t *btdevice = NULL;
 };
 
@@ -855,13 +859,6 @@ public:
 	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360} joytype_t;
 	joytype_t joystickType = UNKNOWN;
 	
-	//Bluetooth PS4
-	int		getAxisPS4(uint32_t index) { return (index < (sizeof(axisPS4)/sizeof(axisPS4[0]))) ? axisPS4[index] : 0; }
-	int		getOnChangePS4() {return ps4OnChange; }
-	int		getAxisChangePS4(uint32_t index) { return (index < (sizeof(axisChange)/sizeof(axisChange[0]))) ? axisChange[index] : 0; }
-	bool    setRumblePS4(uint8_t lValue, uint8_t rValue, uint8_t timeout=0xff);
-	bool    setPS4LEDs(uint8_t lr, uint8_t lg, uint8_t lb);
-
 	
 protected:
 	// From USBDriver
@@ -881,6 +878,7 @@ protected:
 	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class);
 	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
 	virtual void release_bluetooth();
+	virtual void remoteNameComplete(const uint8_t *remoteName);
 
 private:
 
@@ -941,11 +939,6 @@ private:
 		bool 		hidDevice;
 	} product_vendor_mapping_t;
 	static product_vendor_mapping_t pid_vid_mapping[];
-	
-	//Bluetooth PS4
-	int axisPS4[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};	
-	int axisChange[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};	
-	int ps4OnChange;
 
 };
 
@@ -1624,10 +1617,13 @@ public:
 	enum {BT_CLASS_DEVICE= 0x0804}; // Toy - Robot
 	static void driver_ready_for_bluetooth(BTHIDInput *driver);
 
+    const uint8_t* 	myBDAddr(void) {return my_bdaddr_;}
 
 	// BUGBUG version to allow some of the controlled objects to call?
 
     void sendL2CapCommand(uint8_t* data, uint8_t nbytes, uint8_t channelLow = 0x01, uint8_t channelHigh = 0x00) {
+    	//sendL2CapCommand(device_connection_handle_, data, nbytes, control_scid_ & 0xff, control_scid_ >> 8);
+
     	sendL2CapCommand (device_connection_handle_, data, nbytes, channelLow, channelHigh);
     }
 
@@ -1720,7 +1716,7 @@ private:
 
 	bool 			do_pair_device_;	// Should we do a pair for a new device?
 	const char		*pair_pincode_;	// What pin code to use for the pairing
-    uint8_t 		my_bdaddr[6];	// The bluetooth dongles Bluetooth address.
+    uint8_t 		my_bdaddr_[6];	// The bluetooth dongles Bluetooth address.
     uint8_t			features[8];	// remember our local features.
     BTHIDInput * 	device_driver_ = nullptr;;
     uint8_t			device_bdaddr_[6];// remember devices address

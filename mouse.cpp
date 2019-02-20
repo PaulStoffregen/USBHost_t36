@@ -52,7 +52,7 @@ void MouseController::hid_input_begin(uint32_t topusage, uint32_t type, int lgmi
 
 void MouseController::hid_input_data(uint32_t usage, int32_t value)
 {
-	//Serial.printf("Mouse: usage=%X, value=%d\n", usage, value);
+	//USBHDBGSerial.printf("Mouse: usage=%X, value=%d\n", usage, value);
 	uint32_t usage_page = usage >> 16;
 	usage &= 0xFFFF;
 	if (usage_page == 9 && usage >= 1 && usage <= 8) {

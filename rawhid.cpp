@@ -34,7 +34,7 @@ hidclaim_t RawHIDController::claim_collection(USBHIDParser *driver, Device_t *de
 {
 	// only claim RAWHID devices currently: 16c0:0486
 #ifdef USBHOST_PRINT_DEBUG
-	Serial.printf("Rawhid Claim: %x:%x usage: %x\n", dev->idVendor, dev->idProduct, topusage);
+	USBHDBGSerial.printf("Rawhid Claim: %x:%x usage: %x\n", dev->idVendor, dev->idProduct, topusage);
 #endif
 
 	if ((dev->idVendor != 0x16c0 || (dev->idProduct) != 0x486)) return CLAIM_NO;
@@ -59,7 +59,7 @@ void RawHIDController::disconnect_collection(Device_t *dev)
 bool RawHIDController::hid_process_in_data(const Transfer_t *transfer) 
 {
 #ifdef USBHOST_PRINT_DEBUG
-	Serial.printf("RawHIDController::hid_process_in_data: %x\n", usage_);
+	USBHDBGSerial.printf("RawHIDController::hid_process_in_data: %x\n", usage_);
 #endif
 
 	if (receiveCB) {
@@ -71,7 +71,7 @@ bool RawHIDController::hid_process_in_data(const Transfer_t *transfer)
 bool RawHIDController::hid_process_out_data(const Transfer_t *transfer) 
 {
 #ifdef USBHOST_PRINT_DEBUG
-	Serial.printf("RawHIDController::hid_process_out_data: %x\n", usage_);
+	USBHDBGSerial.printf("RawHIDController::hid_process_out_data: %x\n", usage_);
 #endif
 	return true;
 }
@@ -89,7 +89,7 @@ void RawHIDController::hid_input_begin(uint32_t topusage, uint32_t type, int lgm
 	// These should not be called as we are claiming the whole interface and not
 	// allowing the parse to happen
 #ifdef USBHOST_PRINT_DEBUG
-	Serial.printf("RawHID::hid_input_begin %x %x %x %x\n", topusage, type, lgmin, lgmax);
+	USBHDBGSerial.printf("RawHID::hid_input_begin %x %x %x %x\n", topusage, type, lgmin, lgmax);
 #endif
 	//hid_input_begin_ = true;
 }
@@ -99,9 +99,9 @@ void RawHIDController::hid_input_data(uint32_t usage, int32_t value)
 	// These should not be called as we are claiming the whole interface and not
 	// allowing the parse to happen
 #ifdef USBHOST_PRINT_DEBUG
-	Serial.printf("RawHID: usage=%X, value=%d", usage, value);
-	if ((value >= ' ') && (value <='~')) Serial.printf("(%c)", value);
-	Serial.println();
+	USBHDBGSerial.printf("RawHID: usage=%X, value=%d", usage, value);
+	if ((value >= ' ') && (value <='~')) USBHDBGSerial.printf("(%c)", value);
+	USBHDBGSerial.println();
 #endif
 }
 
@@ -110,7 +110,7 @@ void RawHIDController::hid_input_end()
 	// These should not be called as we are claiming the whole interface and not
 	// allowing the parse to happen
 #ifdef USBHOST_PRINT_DEBUG
-	Serial.println("RawHID::hid_input_end");
+	USBHDBGSerial.println("RawHID::hid_input_end");
 #endif
 //	if (hid_input_begin_) {
 //		hid_input_begin_ = false;

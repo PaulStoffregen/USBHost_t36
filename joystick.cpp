@@ -84,7 +84,7 @@ uint16_t JoystickController::idProduct()
 const uint8_t *JoystickController::manufacturer()
 {
 	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_MAN]];
-	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; 
+	//if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; 
 	if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; 
 	return nullptr;
 }
@@ -214,24 +214,29 @@ bool JoystickController::transmitPS4UserFeedbackMsg() {
 	    packet[6] = leds_[0]; // RGB value 
 	    packet[7] = leds_[1]; 
 	    packet[8] = leds_[2];
-	    // 9, 10 flash ON, OFF times in 100ths of sedond?  2.5 seconds = 255
-	    Serial.printf("Joystick update Rumble/LEDs");
+	    // 9, 10 flash ON, OFF times in 100ths of second?  2.5 seconds = 255
+	    USBHDBGSerial.printf("Joystick update Rumble/LEDs\n");
 		return driver_->sendPacket(packet, 32);
 	} else if (btdriver_) {
-		uint8_t packet[32];
+		uint8_t packet[79];
 	    memset(packet, 0, sizeof(packet));
+//0xa2, 0x11, 0xc0, 0x20, 0xf0, 0x04, 0x00
+	    packet[0] = 0x52; 
+	    packet[1] = 0x11;      // Report ID
+		packet[2] = 0x80;
+		//packet[3] = 0x20;
+		packet[4] = 0xFF;
 
-	    packet[0] = 0x05; // Report ID
-	    packet[1]= 0xFF;
+	    packet[7] = rumble_lValue_; // Small Rumble
+	    packet[8] = rumble_rValue_; // Big rumble
+	    packet[9] = leds_[0]; // RGB value 
+	    packet[10] = leds_[1]; 
+	    packet[11] = leds_[2];
 
-	    packet[4] = rumble_lValue_; // Small Rumble
-	    packet[5] = rumble_rValue_; // Big rumble
-	    packet[6] = leds_[0]; // RGB value 
-	    packet[7] = leds_[1]; 
-	    packet[8] = leds_[2];
 	    // 9, 10 flash ON, OFF times in 100ths of sedond?  2.5 seconds = 255
-	    Serial.printf("Joystick update Rumble/LEDs");
-     	btdriver_->sendL2CapCommand(packet, sizeof(packet));
+	    USBHDBGSerial.printf("Joystick update Rumble/LEDs\n");
+     	btdriver_->sendL2CapCommand(packet, sizeof(packet), 0x42, 0x00);
+
      	return true;
 	}
 	return false;
@@ -258,7 +263,7 @@ if (!driver_) return false;
     txbuf_[3] = rumble_rValue_? rumble_timeout_ : 0; 
     txbuf_[4] = rumble_rValue_; // Big rumble
     txbuf_[9] = leds_[0] << 1; // RGB value 
-    //Serial.printf("\nJoystick update Rumble/LEDs %d %d %d %d %d\n",  txbuf_[1], txbuf_[2],  txbuf_[3],  txbuf_[4],  txbuf_[9]);
+    //USBHDBGSerial.printf("\nJoystick update Rumble/LEDs %d %d %d %d %d\n",  txbuf_[1], txbuf_[2],  txbuf_[3],  txbuf_[4],  txbuf_[9]);
 	return driver_->sendControlPacket(0x21, 9, 0x201, 0, 48, txbuf_); 
 }
 
@@ -304,7 +309,7 @@ hidclaim_t JoystickController::claim_collection(USBHIDParser *driver, Device_t *
 			additional_axis_usage_count_ = 0;
 			axis_change_notify_mask_ = 0x3ff;	// Start off assume only the 10 bits...
 	}
-	Serial.printf("Claim Additional axis: %x %x %d\n", additional_axis_usage_page_, additional_axis_usage_start_, additional_axis_usage_count_);
+	USBHDBGSerial.printf("Claim Additional axis: %x %x %d\n", additional_axis_usage_page_, additional_axis_usage_start_, additional_axis_usage_count_);
 	return CLAIM_REPORT;
 }
 
@@ -325,7 +330,7 @@ void JoystickController::hid_input_begin(uint32_t topusage, uint32_t type, int l
 
 void JoystickController::hid_input_data(uint32_t usage, int32_t value)
 {
-	//Serial.printf("Joystick: usage=%X, value=%d\n", usage, value);
+	//USBHDBGSerial.printf("Joystick: usage=%X, value=%d\n", usage, value);
 	uint32_t usage_page = usage >> 16;
 	usage &= 0xFFFF;
 	if (usage_page == 9 && usage >= 1 && usage <= 32) {
@@ -354,7 +359,7 @@ void JoystickController::hid_input_data(uint32_t usage, int32_t value)
 		}
 	} else if (usage_page == additional_axis_usage_page_) {
 		// see if the usage is witin range.
-		//Serial.printf("UP: usage_page=%x usage=%x User: %x %d\n", usage_page, usage, user_buttons_usage_start, user_buttons_count_);
+		//USBHDBGSerial.printf("UP: usage_page=%x usage=%x User: %x %d\n", usage_page, usage, user_buttons_usage_start, user_buttons_count_);
 		if ((usage >= additional_axis_usage_start_) && (usage < (additional_axis_usage_start_ + additional_axis_usage_count_))) {
 			// We are in the user range. 
 			uint16_t usage_index = usage - additional_axis_usage_start_ + STANDARD_AXIS_COUNT;
@@ -368,11 +373,11 @@ void JoystickController::hid_input_data(uint32_t usage, int32_t value)
 				}
 				axis_mask_ |= ((uint64_t)1 << usage_index);		// Keep record of which axis we have data on.
 			}
-			//Serial.printf("UB: index=%x value=%x\n", usage_index, value);
+			//USBHDBGSerial.printf("UB: index=%x value=%x\n", usage_index, value);
 		}
 
 	} else {
-		Serial.printf("UP: usage_page=%x usage=%x add: %x %x %d\n", usage_page, usage, additional_axis_usage_page_, additional_axis_usage_start_, additional_axis_usage_count_);
+		USBHDBGSerial.printf("UP: usage_page=%x usage=%x add: %x %x %d\n", usage_page, usage, additional_axis_usage_page_, additional_axis_usage_start_, additional_axis_usage_count_);
 
 	}
 	// TODO: hat switch?
@@ -387,7 +392,7 @@ void JoystickController::hid_input_end()
 
 bool JoystickController::hid_process_out_data(const Transfer_t *transfer) 
 {
-	//Serial.printf("JoystickController::hid_process_out_data\n");
+	//USBHDBGSerial.printf("JoystickController::hid_process_out_data\n");
 	return true;
 }
 
@@ -396,8 +401,6 @@ void JoystickController::joystickDataClear() {
 	anychange = false;
 	axis_changed_mask_ = 0;
 	axis_mask_ = 0;
-	ps4OnChange = 0;
-	for(uint8_t i=0; i<10;i++) {axisChange[i] = 0; }
 }
 
 //*****************************************************************************
@@ -617,8 +620,8 @@ void JoystickController::rx_data(const Transfer_t *transfer)
 	            println("XBox360w - controllerStatus: ", xb360d->controller_status, HEX);
         } else if(xb360d->id_or_type == 0x01) { // Lets only process report 1.
 			//const uint8_t *pbuffer = (uint8_t*)transfer->buffer;
-        	//for (uint8_t i = 0; i < transfer->length; i++) Serial.printf("%02x ", pbuffer[i]);
-        	//Serial.printf("\n");
+        	//for (uint8_t i = 0; i < transfer->length; i++) USBHDBGSerial.printf("%02x ", pbuffer[i]);
+        	//USBHDBGSerial.printf("\n");
 	        
 	        if (buttons != xb360d->buttons) {
 	        	buttons = xb360d->buttons;
@@ -668,8 +671,9 @@ void JoystickController::disconnect()
 bool JoystickController::claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class) 
 {
 	if ((((bluetooth_class & 0xff00) == 0x2500) || (((bluetooth_class & 0xff00) == 0x500))) && ((bluetooth_class & 0x3C) == 0x08)) {
-		Serial.printf("JoystickController::claim_bluetooth TRUE\n");
+		USBHDBGSerial.printf("JoystickController::claim_bluetooth TRUE\n");
 		btdriver_ = driver;
+		btdevice = (Device_t*)driver;	// remember this way 
 		return true;
 	}
 	return false;
@@ -681,98 +685,46 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 	// Example data from PS4 controller
 	//01 7e 7f 82 84 08 00 00 00 00
 	//   LX LY RX RY BT BT PS LT RT
-	//Serial.printf("JoystickController::process_bluetooth_HID_data\n");
+	//USBHDBGSerial.printf("JoystickController::process_bluetooth_HID_data\n");
+	// May have to look at this one with other controllers...
 	if (data[0] != 1) return false;
+	
 	//print("  Joystick Data: ");
 	//print_hexbytes(data, length);
-	//Serial.printf("  Joystick Data: ");
+	//USBHDBGSerial.printf("  Joystick Data: ");
+	uint64_t mask = 0x1;
+	axis_mask_ = 0;
+	axis_changed_mask_ = 0;
 	for (uint16_t i = 0; i < length; i++ ) {
-		if(data[i] != axisPS4[i]) { ps4OnChange = 1; axisChange[i] = 1; }
-		axisPS4[i] = data[i];
-		//Serial.printf("%02x ", axis[i]);
+		axis_mask_ |= mask;
+		if(data[i] != axis[i]) { 
+			axis_changed_mask_ |= mask;
+			axis[i] = data[i];
+		} 
+		mask <<= 1;	// shift down the mask.
+		//USBHDBGSerial.printf("%02x ", axisPS4[i]);
 	}
-	//Serial.printf("\n");
-  joystickEvent = true;
+	//USBHDBGSerial.printf("\n");
+    joystickEvent = true;
 	connected_ = true;
 	return true;
 }
 
-bool JoystickController::setRumblePS4(uint8_t lValue, uint8_t rValue, uint8_t timeout)
+void JoystickController::remoteNameComplete(const uint8_t *remoteName) 
 {
-  /*              uint8_t buf[79];
-                memset(buf, 0, sizeof(buf));
+	// Sort of a hack, but try to map the name given from remote to a type...
+	if (!remoteName) return;
 
-                buf[0] = 0x52; // HID BT Set_report (0x50) | Report Type (Output 0x02)
-                buf[1] = 0x11; // Report ID
-                buf[2] = 0x80;
-                buf[4]= 0xFF;
-
-                buf[7] = rumble_lValue_; // Small Rumble
-                buf[8] = rumble_rValue_; // Big rumble
-
-                buf[9] = leds_[0]; // Red
-                buf[10] = leds_[1]; // Green
-                buf[11] = leds_[2]; // Blue
-				
-	// 9, 10 flash ON, OFF times in 100ths of sedond?  2.5 seconds = 255
-	Serial.printf("Joystick update Rumble/LEDs");
-	btdriver_->sendL2CapCommand(buf, sizeof(buf));
- */
-		uint8_t packet[32];
-	    memset(packet, 0, sizeof(packet));
-//0xa2, 0x11, 0xc0, 0x20, 0xf0, 0x04, 0x00
-	    packet[0] = 0x52; 
-	    packet[1] = 0x11;      // Report ID
-		packet[2] = 0x80;
-		//packet[3] = 0x20;
-		packet[4] = 0xFF;
-
-	    packet[7] = rumble_lValue_; // Small Rumble
-	    packet[8] = rumble_rValue_; // Big rumble
-	    packet[9] = leds_[0]; // RGB value 
-	    packet[10] = leds_[1]; 
-	    packet[11] = leds_[2];
-
-	    // 9, 10 flash ON, OFF times in 100ths of sedond?  2.5 seconds = 255
-	    Serial.printf("Joystick update Rumble/LEDs");
-     	btdriver_->sendL2CapCommand(packet, sizeof(packet), 0x45, 0x00);
-
-	return true;
-}
-
-bool JoystickController::setPS4LEDs(uint8_t lr, uint8_t lg, uint8_t lb)
-{
-	// Need to know which joystick we are on.  Start off with XBox support - maybe need to add some enum value for the known
-	// joystick types. 
-	if ((leds_[0] != lr) || (leds_[1] != lg) || (leds_[2] != lb)) {
-		leds_[0] = lr;
-		leds_[1] = lg;
-		leds_[2] = lb;
-
-		uint8_t packet[32];
-	    memset(packet, 0, sizeof(packet));
-//0xa2, 0x11, 0xc0, 0x20, 0xf0, 0x04, 0x00
-	    packet[0] = 0x52; 
-	    packet[1] = 0x11;      // Report ID
-		packet[2] = 0x80;
-		packet[3] = 0x20;
-		packet[4] = 0xFF;
-
-	    packet[7] = 0; // Small Rumble
-	    packet[8] = 0; // Big rumble
-	    packet[9] = leds_[0]; // RGB value 
-	    packet[10] = leds_[1]; 
-	    packet[11] = leds_[2];
-
-	    // 9, 10 flash ON, OFF times in 100ths of sedond?  2.5 seconds = 255
-	    Serial.printf("Joystick update Rumble/LEDs");
-     	btdriver_->sendL2CapCommand(packet, sizeof(packet));
+	if (strncmp((const char *)remoteName, "Wireless Controller", 19) == 0) {
+		USBHDBGSerial.printf("  JoystickController::remoteNameComplete %s - set to PS4\n", remoteName);
+		joystickType = PS4;
 	}
-	return true;
-}		
+
+}
 
 void JoystickController::release_bluetooth() 
 {
+	btdevice = nullptr;	// remember this way 
 	btdriver_ = nullptr;
 	connected_ = false;
 
