@@ -799,17 +799,17 @@ void BluetoothController::handle_hci_remote_name_complete() {
 		for (uint8_t *psz = &rxbuf_[9]; *psz; psz++) DBGPrintf("%c", *psz);
 		DBGPrintf("\n");
 	}
-	/*
 	if (device_driver_) {
+	/*
 		if (!device_driver_->btstrbuf) {
 			device_driver_->btstrbuf = USBHost::allocate_string_buffer();
 			if (device_driver_->btstrbuf) {
 
 			}
 		}
+	*/
 		device_driver_->remoteNameComplete(&rxbuf_[9]);
 	}
-	*/
 
 	// Lets now try to accept the connection. 
 	sendHCIAcceptConnectionRequest();
