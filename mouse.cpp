@@ -25,6 +25,12 @@
 #include "USBHost_t36.h"  // Read this header first for key info
 
 
+void MouseController::init()
+{
+	USBHIDParser::driver_ready_for_hid_collection(this);
+	BluetoothController::driver_ready_for_bluetooth(this);
+}
+
 
 hidclaim_t MouseController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
 {
@@ -101,3 +107,42 @@ void MouseController::mouseDataClear() {
 }
 
 
+bool MouseController::claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class) 
+{
+	// How to handle combo devices? 
+	USBHDBGSerial.printf("MouseController Controller::claim_bluetooth - Class %x\n", bluetooth_class);
+	if ((((bluetooth_class & 0xff00) == 0x2500) || (((bluetooth_class & 0xff00) == 0x500))) && (bluetooth_class & 0x80)) {
+		USBHDBGSerial.printf("MouseController::claim_bluetooth TRUE\n");
+		btdevice = (Device_t*)driver;	// remember this way 
+		return true;
+	}
+	return false;
+}
+
+bool MouseController::process_bluetooth_HID_data(const uint8_t *data, uint16_t length) 
+{
+	// Example DATA from bluetooth keyboard:
+	//                  0  1 2 3 4 5  6 7  8 910 1 2 3 4 5 6 7
+	//                           LEN         D
+	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 0 0 0 0 0 0 
+	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 4 0 0 0 0 0 
+	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 0 0 0 0 0 0 
+	// So Len=9 passed in data starting at report ID=1... 
+	USBHDBGSerial.printf("MouseController::process_bluetooth_HID_data\n");
+	if (length == 0) return false;
+	if (data[0] != 1) return false;
+	USBHDBGSerial.printf("  Mouse Data: ");
+	const uint8_t *p = (const uint8_t *)data;
+	do {
+		if (*p < 16) USBHDBGSerial.print('0');
+		USBHDBGSerial.print(*p++, HEX);
+		USBHDBGSerial.print(' ');
+	} while (--length);
+	USBHDBGSerial.println();
+	return true;
+}
+
+void MouseController::release_bluetooth() 
+{
+	//btdevice = nullptr;
+}

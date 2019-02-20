@@ -806,9 +806,9 @@ private:
 };
 
 
-class MouseController : public USBHIDInput {
+class MouseController : public USBHIDInput, public BTHIDInput {
 public:
-	MouseController(USBHost &host) { USBHIDParser::driver_ready_for_hid_collection(this); }
+	MouseController(USBHost &host) { init(); }
 	bool	available() { return mouseEvent; }
 	void	mouseDataClear();
 	uint8_t getButtons() { return buttons; }
@@ -822,7 +822,17 @@ protected:
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
+
+	// Bluetooth data
+	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class);
+	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
+	virtual void release_bluetooth();
+
+
 private:
+	void init();
+	BluetoothController *btdriver_ = nullptr;
+
 	uint8_t collections_claimed = 0;
 	volatile bool mouseEvent = false;
 	volatile bool hid_input_begin_ = false;
