@@ -124,21 +124,36 @@ bool MouseController::process_bluetooth_HID_data(const uint8_t *data, uint16_t l
 	// Example DATA from bluetooth keyboard:
 	//                  0  1 2 3 4 5  6 7  8 910 1 2 3 4 5 6 7
 	//                           LEN         D
-	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 0 0 0 0 0 0 
-	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 4 0 0 0 0 0 
-	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 0 0 0 0 0 0 
+	//BT rx2_data(14): b 20 a 0 6 0 71 0 a1 2 0 9 fe 0 
+	//BT rx2_data(14): b 20 a 0 6 0 71 0 a1 2 0 8 fd 0 
+
 	// So Len=9 passed in data starting at report ID=1... 
-	USBHDBGSerial.printf("MouseController::process_bluetooth_HID_data\n");
 	if (length == 0) return false;
-	if (data[0] != 1) return false;
+#ifdef USBHOST_PRINT_DEBUG
+	USBHDBGSerial.printf("MouseController::process_bluetooth_HID_data %d\n", length);
 	USBHDBGSerial.printf("  Mouse Data: ");
 	const uint8_t *p = (const uint8_t *)data;
+	uint16_t len = length;
 	do {
 		if (*p < 16) USBHDBGSerial.print('0');
 		USBHDBGSerial.print(*p++, HEX);
 		USBHDBGSerial.print(' ');
-	} while (--length);
+	} while (--len);
 	USBHDBGSerial.println();
+#endif	
+	// Looks like report 2 is for the mouse info.
+	if (data[0] != 2) return false;
+	buttons = data[1];
+	mouseX  = (int8_t)data[2];
+	mouseY  = (int8_t)data[3];
+	if (length >= 5) {
+		wheel   = (int8_t)data[4];
+		if (length >= 6) {
+			wheelH = (int8_t)data[5];
+		}
+	}
+	mouseEvent = true;
+
 	return true;
 }
 
