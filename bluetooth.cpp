@@ -28,10 +28,9 @@
 #include "USBHost_t36.h"  // Read this header first for key info
 
 #define print   USBHost::print_
-#define println USBHost::println_
-
+#define println USBHost::println_//#define DEBUG_BT
 //#define DEBUG_BT
-//#define DEBUG_BT_VERBOSE
+#define DEBUG_BT_VERBOSE
 
 #ifndef DEBUG_BT
 #undef DEBUG_BT_VERBOSE
@@ -149,7 +148,7 @@ enum {PC_RESET = 1, PC_WRITE_CLASS_DEVICE, PC_READ_BDADDR, PC_READ_LOCAL_VERSION
 
 
 // Setup some states for the TX pipe where we need to chain messages
-enum {STATE_TX_SEND_CONNECT_INT=200, STATE_TX_SEND_CONECT_RSP_SUCCESS, STATE_TX_SEND_CONFIG_REQ};
+enum {STATE_TX_SEND_CONNECT_INT=200, STATE_TX_SEND_CONECT_RSP_SUCCESS, STATE_TX_SEND_CONFIG_REQ, STATE_TX_SEND_CONECT_ISR_RSP_SUCCESS, STATE_TX_SEND_CONFIG_ISR_REQ};
 
 // This is a list of all the drivers inherited from the BTHIDInput class.
 // Unlike the list of USBDriver (managed in enumeration.cpp), drivers stay
@@ -310,6 +309,7 @@ bool BluetoothController::claim(Device_t *dev, int type, const uint8_t *descript
 	device = dev; // yes this is normally done on return from this but should not hurt if we do it here.
 	sendResetHCI();
 	pending_control_ = PC_RESET; 
+	pending_control_tx_ = 0;	// 
 
 	return true;
 }
@@ -1143,6 +1143,17 @@ void BluetoothController::tx_data(const Transfer_t *transfer)
 		sendl2cap_ConfigRequest(device_connection_handle_, connection_rxid_, control_scid_);
 		pending_control_tx_ = 0;
 		break;
+	case STATE_TX_SEND_CONECT_ISR_RSP_SUCCESS:
+		delay(1);
+		// Tell the device we are ready
+		sendl2cap_ConnectionResponse(device_connection_handle_, connection_rxid_++, interrupt_dcid_, interrupt_scid_, SUCCESSFUL);
+		pending_control_tx_ = STATE_TX_SEND_CONFIG_ISR_REQ;
+		break;
+	case STATE_TX_SEND_CONFIG_ISR_REQ:
+		delay(1);
+		sendl2cap_ConfigRequest(device_connection_handle_, connection_rxid_, interrupt_scid_);
+		pending_control_tx_ = 0;
+		break;
 	}
 }
 
@@ -1185,15 +1196,22 @@ void  BluetoothController::process_l2cap_connection_request(uint8_t *data) {
 
 	uint16_t psm = data[4]+((uint16_t)data[5] << 8); 
 	uint16_t scid = data[6]+((uint16_t)data[7] << 8);
-	DBGPrintf("    L2CAP Connection Request: ID: %d, PSM: %x, SCID: %x\n", data[1], psm, scid);
+	connection_rxid_ = data[1];
+	DBGPrintf("    L2CAP Connection Request: ID: %d, PSM: %x, SCID: %x\n",connection_rxid_, psm, scid);
 
 	// Assuming not pair mode Send response like:
 	//      RXID Len  LEN  DCID DCID  SCID SCID RES 0     0    0
 	// 0x03 0x02 0x08 0x00 0x70 0x00 0x43 0x00 0x01 0x00 0x00 0x00
-	control_scid_ = scid;
-	connection_rxid_ = data[1];
-	sendl2cap_ConnectionResponse(device_connection_handle_, connection_rxid_, control_dcid_, control_scid_, PENDING);
-	pending_control_tx_ = STATE_TX_SEND_CONECT_RSP_SUCCESS;
+	if (psm == HID_CTRL_PSM) {
+		control_scid_ = scid;
+		sendl2cap_ConnectionResponse(device_connection_handle_, connection_rxid_, control_dcid_, control_scid_, PENDING);
+		pending_control_tx_ = STATE_TX_SEND_CONECT_RSP_SUCCESS;		
+	} else if (psm == HID_INTR_PSM) {
+		interrupt_scid_ = scid;
+		sendl2cap_ConnectionResponse(device_connection_handle_, connection_rxid_, interrupt_dcid_, interrupt_scid_, PENDING);
+		pending_control_tx_ = STATE_TX_SEND_CONECT_ISR_RSP_SUCCESS;		
+
+	}
 }
 
 // Process the l2cap_connection_response...
@@ -1210,6 +1228,7 @@ void BluetoothController::process_l2cap_connection_response(uint8_t *data) {
 	if (dcid == interrupt_dcid_) {
 		interrupt_scid_ = scid;
 		DBGPrintf("      Interrupt Response\n");
+		connection_rxid_++;
 		sendl2cap_ConfigRequest(device_connection_handle_, connection_rxid_, scid);
 	} else if (dcid == control_dcid_) {
 		control_scid_ = scid;
@@ -1244,10 +1263,10 @@ void BluetoothController::process_l2cap_config_response(uint8_t *data) {
 		// Set HID Boot mode
 		setHIDProtocol(HID_BOOT_PROTOCOL);  //
 		//setHIDProtocol(HID_RPT_PROTOCOL);  //HID_RPT_PROTOCOL
-		//if (do_pair_device_) {
-			// Tell system we will next need to setup connection for the interrupt
+		if (do_pair_device_)
 			pending_control_tx_ = STATE_TX_SEND_CONNECT_INT;
-		//}
+		else
+			pending_control_ = 0;
 	} else if (scid == interrupt_dcid_) {
 		// Enable SCan to page mode
 		sendHCIWriteScanEnable(2);
