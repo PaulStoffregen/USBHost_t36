@@ -29,8 +29,9 @@
 
 #define print   USBHost::print_
 #define println USBHost::println_//#define DEBUG_BT
+
 //#define DEBUG_BT
-#define DEBUG_BT_VERBOSE
+//#define DEBUG_BT_VERBOSE
 
 #ifndef DEBUG_BT
 #undef DEBUG_BT_VERBOSE
@@ -701,6 +702,11 @@ void BluetoothController::handle_hci_connection_complete() {
 	if (do_pair_device_) {
 		sendHCIAuthenticationRequested();
 		pending_control_ = PC_AUTHENTICATION_REQUESTED;
+	} else if (device_driver_ && device_driver_->needs_connect_to_device) {
+		DBGPrintf("   Needs connect to device(PS4?)\n");
+		// The PS4 requires a connection request to it. 
+		delay(1);
+		sendl2cap_ConnectionRequest(device_connection_handle_, connection_rxid_, control_dcid_, HID_CTRL_PSM);
 	}
 }
 
@@ -1128,6 +1134,7 @@ void BluetoothController::tx_data(const Transfer_t *transfer)
 #endif
 	switch (pending_control_tx_) {
 		case STATE_TX_SEND_CONNECT_INT:
+		delay(1);
 		connection_rxid_++;
 		sendl2cap_ConnectionRequest(device_connection_handle_, connection_rxid_, interrupt_dcid_, HID_INTR_PSM);
 		pending_control_tx_ = 0;
@@ -1263,10 +1270,15 @@ void BluetoothController::process_l2cap_config_response(uint8_t *data) {
 		// Set HID Boot mode
 		setHIDProtocol(HID_BOOT_PROTOCOL);  //
 		//setHIDProtocol(HID_RPT_PROTOCOL);  //HID_RPT_PROTOCOL
-		if (do_pair_device_)
+		if (do_pair_device_) {
 			pending_control_tx_ = STATE_TX_SEND_CONNECT_INT;
-		else
+		} else if (device_driver_ && device_driver_->needs_connect_to_device) {
+			DBGPrintf("   Needs connect to device INT(PS4?)\n");
+			// The PS4 requires a connection request to it. 
+			pending_control_tx_ = STATE_TX_SEND_CONNECT_INT;
+		} else {
 			pending_control_ = 0;
+		}
 	} else if (scid == interrupt_dcid_) {
 		// Enable SCan to page mode
 		sendHCIWriteScanEnable(2);

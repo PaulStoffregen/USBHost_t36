@@ -235,7 +235,7 @@ bool JoystickController::transmitPS4UserFeedbackMsg() {
 
 	    // 9, 10 flash ON, OFF times in 100ths of sedond?  2.5 seconds = 255
 	    USBHDBGSerial.printf("Joystick update Rumble/LEDs\n");
-     	btdriver_->sendL2CapCommand(packet, sizeof(packet), 0x42, 0x00);
+     	btdriver_->sendL2CapCommand(packet, sizeof(packet), 0x41, 0x00);
 
      	return true;
 	}
@@ -702,7 +702,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 			axis[i] = data[i];
 		} 
 		mask <<= 1;	// shift down the mask.
-		//USBHDBGSerial.printf("%02x ", axisPS4[i]);
+		//USBHDBGSerial.printf("%02x ", axis[i]);
 	}
 	//USBHDBGSerial.printf("\n");
     joystickEvent = true;
@@ -717,6 +717,7 @@ void JoystickController::remoteNameComplete(const uint8_t *remoteName)
 
 	if (strncmp((const char *)remoteName, "Wireless Controller", 19) == 0) {
 		USBHDBGSerial.printf("  JoystickController::remoteNameComplete %s - set to PS4\n", remoteName);
+		needs_connect_to_device = true; 		// We need to force this. 
 		joystickType = PS4;
 	}
 
@@ -727,6 +728,7 @@ void JoystickController::release_bluetooth()
 	btdevice = nullptr;	// remember this way 
 	btdriver_ = nullptr;
 	connected_ = false;
+	needs_connect_to_device = false;
 
 }
 

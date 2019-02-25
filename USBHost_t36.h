@@ -555,8 +555,9 @@ private:
 	BTHIDInput *next = NULL;
 	friend class BluetoothController;
 protected:
-	strbuf_t *btstrbuf;
+	uint8_t  needs_connect_to_device = false;
 	Device_t *btdevice = NULL;
+
 };
 
 
@@ -1637,10 +1638,9 @@ public:
 	// BUGBUG version to allow some of the controlled objects to call?
 
     void sendL2CapCommand(uint8_t* data, uint8_t nbytes, uint8_t channelLow = 0x01, uint8_t channelHigh = 0x00) {
-    	//sendL2CapCommand(device_connection_handle_, data, nbytes, control_scid_ & 0xff, control_scid_ >> 8);
-
+    	USBHDBGSerial.printf("sendL2CapCommand: %x %d %x %x : control: %x\n", (uint32_t)data, nbytes, channelLow, channelHigh, control_scid_);
     	sendL2CapCommand (device_connection_handle_, data, nbytes, channelLow, channelHigh);
-    }
+      }
 
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
