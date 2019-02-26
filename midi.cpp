@@ -126,6 +126,9 @@ bool MIDIDevice::claim(Device_t *dev, int type, const uint8_t *descriptors, uint
 			} else if (subtype == 4) {
 				// Element Descriptor, midi 1.0, page 23-24
 				println("    MIDI Element (ignored)");
+			} else if (subtype == 0xF1 && p[3] == 2) {
+				// see Linux sound/usb/quirks.c create_roland_midi_quirk()
+				println("    Roland vendor-specific (ignored)");
 			} else {
 				return false; // unknown
 			}
