@@ -30,8 +30,8 @@
 #define print   USBHost::print_
 #define println USBHost::println_//#define DEBUG_BT
 
-//#define DEBUG_BT
-//#define DEBUG_BT_VERBOSE
+#define DEBUG_BT
+#define DEBUG_BT_VERBOSE
 
 #ifndef DEBUG_BT
 #undef DEBUG_BT_VERBOSE
@@ -707,6 +707,15 @@ void BluetoothController::handle_hci_connection_complete() {
 		// The PS4 requires a connection request to it. 
 		delay(1);
 		sendl2cap_ConnectionRequest(device_connection_handle_, connection_rxid_, control_dcid_, HID_CTRL_PSM);
+		
+		delay(1);
+		
+		uint8_t packet[2];
+	    memset(packet, 0, sizeof(packet));
+	    packet[0] = 0x43; 
+	    packet[1] = 0x02;      // Report ID
+	    USBHDBGSerial.printf("SixAxis Command Issued!\r\n");
+     	sendL2CapCommand(packet, sizeof(packet), 0x40, 0x00);	
 	}
 }
 
@@ -1076,7 +1085,7 @@ void BluetoothController::sendl2cap_ConnectionRequest(uint16_t handle, uint8_t r
     l2capbuf[6] = scid & 0xff; // Source CID
     l2capbuf[7] = (scid >> 8) & 0xff;
 
-	DBGPrintf("`ConnectionRequest called(");
+	DBGPrintf("ConnectionRequest called(");
     sendL2CapCommand(handle, l2capbuf, sizeof(l2capbuf));
 }
 

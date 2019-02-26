@@ -233,9 +233,9 @@ bool JoystickController::transmitPS4UserFeedbackMsg() {
 	    packet[10] = leds_[1]; 
 	    packet[11] = leds_[2];
 
-	    // 9, 10 flash ON, OFF times in 100ths of sedond?  2.5 seconds = 255
+	    // 12, 13 flash ON, OFF times in 100ths of sedond?  2.5 seconds = 255
 	    USBHDBGSerial.printf("Joystick update Rumble/LEDs\n");
-     	btdriver_->sendL2CapCommand(packet, sizeof(packet), 0x41, 0x00);
+     	btdriver_->sendL2CapCommand(packet, sizeof(packet), 0x40, 0x00);
 
      	return true;
 	}
@@ -687,27 +687,76 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 	//   LX LY RX RY BT BT PS LT RT
 	//USBHDBGSerial.printf("JoystickController::process_bluetooth_HID_data\n");
 	// May have to look at this one with other controllers...
-	if (data[0] != 1) return false;
-	
-	//print("  Joystick Data: ");
-	//print_hexbytes(data, length);
-	//USBHDBGSerial.printf("  Joystick Data: ");
-	uint64_t mask = 0x1;
-	axis_mask_ = 0;
-	axis_changed_mask_ = 0;
-	for (uint16_t i = 0; i < length; i++ ) {
-		axis_mask_ |= mask;
-		if(data[i] != axis[i]) { 
-			axis_changed_mask_ |= mask;
-			axis[i] = data[i];
-		} 
-		mask <<= 1;	// shift down the mask.
-		//USBHDBGSerial.printf("%02x ", axis[i]);
+	if (data[0] == 1) {
+		//print("  Joystick Data: ");
+		//print_hexbytes(data, length);
+		USBHDBGSerial.printf("  Joystick Data: ");
+		uint64_t mask = 0x1;
+		axis_mask_ = 0;
+		axis_changed_mask_ = 0;
+		for (uint16_t i = 0; i < length; i++ ) {
+			axis_mask_ |= mask;
+			if(data[i] != axis[i]) { 
+				axis_changed_mask_ |= mask;
+				axis[i] = data[i];
+			} 
+			mask <<= 1;	// shift down the mask.
+			USBHDBGSerial.printf("%02x ", axis[i]);
+		}
+		USBHDBGSerial.printf("\n");
+		joystickEvent = true;
+		connected_ = true;
+		return true;
+	} else if(data[0] == 0x11){
+		USBHDBGSerial.printf("  Joystick Data: ");
+		uint64_t mask = 0x1;
+		axis_mask_ = 0;
+		axis_changed_mask_ = 0;
+		
+		//This moves data to be equivalent to what we see for
+		//data[0] = 0x01
+		uint8_t tmp_data[length-2];
+		for (uint16_t i = 0; i < (length-2); i++ ) {
+			tmp_data[i] = data[i+2];
+		}
+		
+		/*
+		 * [1] LX, [2] = LY, [3] = RX, [4] = RY
+		 * [5] combo, tri, cir, x, sqr, D-PAD (4bits, 0-3
+		 * [6] R3,L3, opt, share, R2, L2, R1, L1
+		 * [7] Counter (bit7-2), T-PAD, PS
+		 * [8] Left Trigger, [9] Right Trigger
+		 * [10-11] Timestamp
+		 * [12] Battery (0 to 0xff)
+		 * [13-14] acceleration x
+		 * [15-16] acceleration y
+		 * [17-18] acceleration z
+		 * [19-20] gyro x
+		 * [21-22] gyro y
+		 * [23-24] gyro z
+		 * [25-29] unknown
+		 * [30] 0x00,phone,mic, usb, battery level (4bits)
+		 * rest is trackpad?  to do implement?
+		 */
+		//PS Bit
+		tmp_data[7] = (tmp_data[7] >> 0) & 1;
+		//set arrow buttons to axis[0]
+		tmp_data[0] = tmp_data[5] & ((1 << 4) - 1);
+		//set buttons for last 4bits in the axis[5]
+		tmp_data[5] = tmp_data[5] >> 4;		
+		for (uint16_t i = 0; i < (length-2); i++ ) {
+			if(tmp_data[i] != axis[i]) { 
+				axis_changed_mask_ |= mask;
+				axis[i] = tmp_data[i];
+			} 
+			mask <<= 1;	// shift down the mask.
+			USBHDBGSerial.printf("%02x ", axis[i]);
+		}
+		USBHDBGSerial.printf("\n");
+		joystickEvent = true;
+		connected_ = true;
 	}
-	//USBHDBGSerial.printf("\n");
-    joystickEvent = true;
-	connected_ = true;
-	return true;
+	return false;
 }
 
 void JoystickController::remoteNameComplete(const uint8_t *remoteName) 
@@ -718,7 +767,7 @@ void JoystickController::remoteNameComplete(const uint8_t *remoteName)
 	if (strncmp((const char *)remoteName, "Wireless Controller", 19) == 0) {
 		USBHDBGSerial.printf("  JoystickController::remoteNameComplete %s - set to PS4\n", remoteName);
 		needs_connect_to_device = true; 		// We need to force this. 
-		joystickType = PS4;
+		joystickType = PS4;	
 	}
 
 }
