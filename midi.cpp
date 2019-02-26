@@ -96,10 +96,18 @@ bool MIDIDevice::claim(Device_t *dev, int type, const uint8_t *descriptors, uint
 	if (p[0] != 9 || p[1] != 4) return false; // interface descriptor
 	//println("  bInterfaceClass=", p[5]);
 	//println("  bInterfaceSubClass=", p[6]);
-	if (p[5] != 1) return false; // bInterfaceClass: 1 = Audio class
-	if (p[6] != 3) return false; // bInterfaceSubClass: 3 = MIDI
+	bool ismidi = false;
+	if (p[5] == 1 && p[6] == 3) {
+		println("  Interface is MIDI"); // p[5] is bInterfaceClass: 1 = Audio class
+		ismidi = true;                  // p[6] is bInterfaceSubClass: 3 = MIDI
+	} else {
+		if (p[5] >= 2 && p[5] <= 18) return false; // definitely not MIDI
+		// Yamaha uses vendor specific class, but can be
+		// identified as MIDI from CS_INTERFACE descriptors.
+		//  https://forum.pjrc.com/threads/55142?p=199162&viewfull=1#post199162
+		println("  Interface is unknown (might be Yahama)");
+	}
 	p += 9;
-	println("  Interface is MIDI");
 	rx_ep = 0;
 	tx_ep = 0;
 
@@ -117,19 +125,25 @@ bool MIDIDevice::claim(Device_t *dev, int type, const uint8_t *descriptors, uint
 			if (subtype == 1) {
 				// Interface Header, midi 1.0, page 21
 				println("    MIDI Header (ignored)");
+				ismidi = true;
 			} else if (subtype == 2) {
 				// MIDI IN Jack, midi 1.0, page 22
 				println("    MIDI IN Jack (ignored)");
+				ismidi = true;
 			} else if (subtype == 3) {
 				// MIDI OUT Jack, midi 1.0, page 22
 				println("    MIDI OUT Jack (ignored)");
+				ismidi = true;
 			} else if (subtype == 4) {
 				// Element Descriptor, midi 1.0, page 23-24
 				println("    MIDI Element (ignored)");
+				ismidi = true;
 			} else if (subtype == 0xF1 && p[3] == 2) {
 				// see Linux sound/usb/quirks.c create_roland_midi_quirk()
 				println("    Roland vendor-specific (ignored)");
+				ismidi = true;
 			} else {
+				println("    Unknown MIDI CS_INTERFACE descriptor!");
 				return false; // unknown
 			}
 		} else if (type == 5) {
@@ -163,9 +177,14 @@ bool MIDIDevice::claim(Device_t *dev, int type, const uint8_t *descriptors, uint
 			// MIDI endpoint info, midi 1.0: 6.2.2, page 26
 			println("    MIDI Endpoint Jack Association (ignored)");
 		} else {
+			println("    Unknown descriptor, type=", type);
 			return false; // unknown
 		}
 		p += len;
+	}
+	if (!ismidi) {
+		println("This interface is not MIDI");
+		return false;
 	}
 	// if an IN endpoint was found, create its pipe
 	if (rx_ep && rx_size <= MAX_PACKET_SIZE) {
