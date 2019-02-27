@@ -27,7 +27,7 @@
 #define print   USBHost::print_
 #define println USBHost::println_
 
-void MIDIDevice::init()
+void MIDIDeviceBase::init()
 {
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
 	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
@@ -83,7 +83,7 @@ void MIDIDevice::init()
 //   EP_CONTROL_UNDEFINED 0x00
 //   ASSOCIATION_CONTROL  0x01
 
-bool MIDIDevice::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
+bool MIDIDeviceBase::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
 {
 	// only claim at interface level
 	if (type != 1) return false;
@@ -187,7 +187,7 @@ bool MIDIDevice::claim(Device_t *dev, int type, const uint8_t *descriptors, uint
 		return false;
 	}
 	// if an IN endpoint was found, create its pipe
-	if (rx_ep && rx_size <= MAX_PACKET_SIZE) {
+	if (rx_ep && rx_size <= max_packet_size) {
 		rxpipe = new_Pipe(dev, rx_ep_type, rx_ep, 1, rx_size);
 		if (rxpipe) {
 			rxpipe->callback_function = rx_callback;
@@ -198,7 +198,7 @@ bool MIDIDevice::claim(Device_t *dev, int type, const uint8_t *descriptors, uint
 		rxpipe = NULL;
 	}
 	// if an OUT endpoint was found, create its pipe
-	if (tx_ep && tx_size <= MAX_PACKET_SIZE) {
+	if (tx_ep && tx_size <= max_packet_size) {
 		txpipe = new_Pipe(dev, tx_ep_type, tx_ep, 0, tx_size);
 		if (txpipe) {
 			txpipe->callback_function = tx_callback;
@@ -219,21 +219,21 @@ bool MIDIDevice::claim(Device_t *dev, int type, const uint8_t *descriptors, uint
 	return (rxpipe || txpipe);
 }
 
-void MIDIDevice::rx_callback(const Transfer_t *transfer)
+void MIDIDeviceBase::rx_callback(const Transfer_t *transfer)
 {
 	if (transfer->driver) {
 		((MIDIDevice *)(transfer->driver))->rx_data(transfer);
 	}
 }
 
-void MIDIDevice::tx_callback(const Transfer_t *transfer)
+void MIDIDeviceBase::tx_callback(const Transfer_t *transfer)
 {
 	if (transfer->driver) {
 		((MIDIDevice *)(transfer->driver))->tx_data(transfer);
 	}
 }
 
-void MIDIDevice::rx_data(const Transfer_t *transfer)
+void MIDIDeviceBase::rx_data(const Transfer_t *transfer)
 {
 	println("MIDIDevice Receive");
 	print("  MIDI Data: ");
@@ -244,13 +244,13 @@ void MIDIDevice::rx_data(const Transfer_t *transfer)
 	for (uint32_t i=0; i < len; i++) {
 		uint32_t msg = rx_buffer[i];
 		if (msg) {
-			if (++head >= RX_QUEUE_SIZE) head = 0;
+			if (++head >= rx_queue_size) head = 0;
 			rx_queue[head] = msg;
 		}
 	}
 	rx_head = head;
 	rx_tail = tail;
-	uint32_t avail = (head < tail) ? tail - head - 1 : RX_QUEUE_SIZE - 1 - head + tail;
+	uint32_t avail = (head < tail) ? tail - head - 1 : rx_queue_size - 1 - head + tail;
 	//println("rx_size = ", rx_size);
 	println("avail = ", avail);
 	if (avail >= (uint32_t)(rx_size>>2)) {
@@ -266,7 +266,7 @@ void MIDIDevice::rx_data(const Transfer_t *transfer)
 	}
 }
 
-void MIDIDevice::tx_data(const Transfer_t *transfer)
+void MIDIDeviceBase::tx_data(const Transfer_t *transfer)
 {
 	println("MIDIDevice transmit complete");
 	print("  MIDI Data: ");
@@ -279,7 +279,7 @@ void MIDIDevice::tx_data(const Transfer_t *transfer)
 }
 
 
-void MIDIDevice::disconnect()
+void MIDIDeviceBase::disconnect()
 {
 	// should rx_queue be cleared?
 	// as-is, the user can still read MIDI messages
@@ -289,7 +289,7 @@ void MIDIDevice::disconnect()
 }
 
 
-void MIDIDevice::write_packed(uint32_t data)
+void MIDIDeviceBase::write_packed(uint32_t data)
 {
 	if (!txpipe) return;
 	uint32_t tx_max = tx_size / 4;
@@ -327,7 +327,7 @@ void MIDIDevice::write_packed(uint32_t data)
 	}
 }
 
-void MIDIDevice::send_sysex_buffer_has_term(const uint8_t *data, uint32_t length, uint8_t cable)
+void MIDIDeviceBase::send_sysex_buffer_has_term(const uint8_t *data, uint32_t length, uint8_t cable)
 {
 	cable = (cable & 0x0F) << 4;
 	while (length > 3) {
@@ -344,7 +344,7 @@ void MIDIDevice::send_sysex_buffer_has_term(const uint8_t *data, uint32_t length
 	}
 }
 
-void MIDIDevice::send_sysex_add_term_bytes(const uint8_t *data, uint32_t length, uint8_t cable)
+void MIDIDeviceBase::send_sysex_add_term_bytes(const uint8_t *data, uint32_t length, uint8_t cable)
 {
 	cable = (cable & 0x0F) << 4;
 
@@ -376,18 +376,18 @@ void MIDIDevice::send_sysex_add_term_bytes(const uint8_t *data, uint32_t length,
 
 
 
-bool MIDIDevice::read(uint8_t channel)
+bool MIDIDeviceBase::read(uint8_t channel)
 {
 	uint32_t n, head, tail, avail, ch, type1, type2, b1;
 
 	head = rx_head;
 	tail = rx_tail;
 	if (head == tail) return false;
-	if (++tail >= RX_QUEUE_SIZE) tail = 0;
+	if (++tail >= rx_queue_size) tail = 0;
 	n = rx_queue[tail];
 	rx_tail = tail;
 	if (!rx_packet_queued && rxpipe) {
-	        avail = (head < tail) ? tail - head - 1 : RX_QUEUE_SIZE - 1 - head + tail;
+	        avail = (head < tail) ? tail - head - 1 : rx_queue_size - 1 - head + tail;
 		if (avail >= (uint32_t)(rx_size>>2)) {
 			__disable_irq();
 			queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
@@ -574,7 +574,7 @@ bool MIDIDevice::read(uint8_t channel)
 	return false;
 }
 
-void MIDIDevice::sysex_byte(uint8_t b)
+void MIDIDeviceBase::sysex_byte(uint8_t b)
 {
 	if (handleSysExPartial && msg_sysex_len >= SYSEX_MAX_LEN) {
 		// when buffer is full, send another chunk to partial handler.
