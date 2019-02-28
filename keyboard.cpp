@@ -497,7 +497,7 @@ bool KeyboardController::claim_bluetooth(BluetoothController *driver, uint32_t b
 {
 	USBHDBGSerial.printf("Keyboard Controller::claim_bluetooth - Class %x\n", bluetooth_class);
 	if ((((bluetooth_class & 0xff00) == 0x2500) || (((bluetooth_class & 0xff00) == 0x500))) && (bluetooth_class & 0x40)) {
-		if (remoteName && (strncmp((const char *)remoteName, "PLAYSTATION(R)3 Controller", 26) == 0)) {
+		if (remoteName && (strncmp((const char *)remoteName, "PLAYSTATION(R)3", 15) == 0)) {
 			USBHDBGSerial.printf("KeyboardController::claim_bluetooth Reject PS3 hack\n");
 			return false;
 		}
@@ -511,7 +511,7 @@ bool KeyboardController::claim_bluetooth(BluetoothController *driver, uint32_t b
 bool KeyboardController::remoteNameComplete(const uint8_t *remoteName) 
 {
 	// Real Hack some PS3 controllers bluetoot class is keyboard... 
-	if (strncmp((const char *)remoteName, "PLAYSTATION(R)3 Controller", 26) == 0) {
+	if (strncmp((const char *)remoteName, "PLAYSTATION(R)3", 15) == 0) {
 		USBHDBGSerial.printf("  KeyboardController::remoteNameComplete %s - Oops PS3 unclaim\n", remoteName);
 		return false;
 	}

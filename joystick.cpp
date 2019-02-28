@@ -698,7 +698,7 @@ bool JoystickController::claim_bluetooth(BluetoothController *driver, uint32_t b
 		btdevice = (Device_t*)driver;	// remember this way 
 		return true;
 	}
-	if (remoteName && (strncmp((const char *)remoteName, "PLAYSTATION(R)3 Controller", 26) == 0)) {
+	if (remoteName && (strncmp((const char *)remoteName, "PLAYSTATION(R)3", 15) == 0)) {
 		DBGPrintf("JoystickController::claim_bluetooth TRUE PS3 hack...\n");
 		btdriver_ = driver;
 		btdevice = (Device_t*)driver;	// remember this way 
@@ -799,7 +799,7 @@ bool JoystickController::remoteNameComplete(const uint8_t *remoteName)
 		DBGPrintf("  JoystickController::remoteNameComplete %s - set to PS4\n", remoteName);
 		special_process_required = SP_NEED_CONNECT; 		// We need to force this. 
 		joystickType = PS4;
-	} else if (strncmp((const char *)remoteName, "PLAYSTATION(R)3 Controller", 26) == 0) {
+	} else if (strncmp((const char *)remoteName, "PLAYSTATION(R)3", 15) == 0) {
 		DBGPrintf("  JoystickController::remoteNameComplete %s - set to PS3\n", remoteName);
 		special_process_required = SP_PS3_IDS; 		// PS3 maybe needs different IDS. 
 		joystickType = PS3;
