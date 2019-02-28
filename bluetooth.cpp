@@ -30,8 +30,8 @@
 #define print   USBHost::print_
 #define println USBHost::println_//#define DEBUG_BT
 
-//#define DEBUG_BT
-//#define DEBUG_BT_VERBOSE
+#define DEBUG_BT
+#define DEBUG_BT_VERBOSE
 
 #ifndef DEBUG_BT
 #undef DEBUG_BT_VERBOSE
@@ -171,13 +171,13 @@ void BluetoothController::driver_ready_for_bluetooth(BTHIDInput *driver)
 // When a new top level collection is found, this function asks drivers
 // if they wish to claim it.  The driver taking ownership of the
 // collection is returned, or NULL if no driver wants it.
-BTHIDInput * BluetoothController::find_driver(uint32_t device_type)
+BTHIDInput * BluetoothController::find_driver(uint32_t device_type, uint8_t *remoteName)
 {
 	USBHDBGSerial.printf("BluetoothController::find_driver");
 	BTHIDInput *driver = available_bthid_drivers_list;
 	while (driver) {
 		USBHDBGSerial.printf("  driver %x\n", (uint32_t)driver);
-		if (driver->claim_bluetooth(this, device_type)) {
+		if (driver->claim_bluetooth(this, device_type, remoteName)) {
 			USBHDBGSerial.printf("    *** Claimed ***\n");
 			return driver;
 		}
@@ -824,8 +824,19 @@ void BluetoothController::handle_hci_remote_name_complete() {
 		for (uint8_t *psz = &rxbuf_[9]; *psz; psz++) DBGPrintf("%c", *psz);
 		DBGPrintf("\n");
 	}
+	// Lets try to allocate a string buffer to store the name out...
 	if (device_driver_) {
-		device_driver_->remoteNameComplete(&rxbuf_[9]);
+		if (!device_driver_->remoteNameComplete(&rxbuf_[9])) {
+			device_driver_->release_bluetooth();
+			device_driver_ = nullptr;
+		}
+	}	
+	if (!device_driver_) {
+		device_driver_ = find_driver(device_class_, &rxbuf_[9]);
+		// not sure I should call remote name again, but they already process...
+
+	}
+	if (device_driver_) {
 		if (device_driver_->special_process_required & BTHIDInput::SP_PS3_IDS) {
 			// Real hack see if PS3... 
 	    	control_dcid_ = 0x40;
@@ -1315,8 +1326,8 @@ void BluetoothController::process_l2cap_config_response(uint8_t *data) {
 		}
 	} else if (scid == interrupt_dcid_) {
 		// Enable SCan to page mode
-		sendHCIWriteScanEnable(2);
 		connection_complete_ = true;
+		sendHCIWriteScanEnable(2);
 	}
 }
 

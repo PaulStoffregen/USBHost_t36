@@ -547,10 +547,10 @@ public:
 	const uint8_t *serialNumber()
 		{  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
 private:
-	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class) {return false;}
+	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName) {return false;}
 	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length) {return false;}
 	virtual void release_bluetooth() {};
-	virtual void remoteNameComplete(const uint8_t *remoteName) {};
+	virtual bool remoteNameComplete(const uint8_t *remoteName) {return true;}
 	virtual void connectionComplete(void) {};
 	void add_to_list();
 	BTHIDInput *next = NULL;
@@ -559,6 +559,7 @@ protected:
 	enum {SP_NEED_CONNECT=0x1, SP_PS3_IDS=0x2};
 	uint8_t  special_process_required = 0;
 	Device_t *btdevice = NULL;
+	strbuf_t *btstrbuf = NULL;
 
 };
 
@@ -764,8 +765,9 @@ protected:
 	void init();
 
 	// Bluetooth data
-	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class);
+	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName);
 	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
+	virtual bool remoteNameComplete(const uint8_t *remoteName);
 	virtual void release_bluetooth();
 
 
@@ -827,7 +829,7 @@ protected:
 	virtual void disconnect_collection(Device_t *dev);
 
 	// Bluetooth data
-	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class);
+	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName);
 	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
 	virtual void release_bluetooth();
 
@@ -893,10 +895,10 @@ protected:
 	virtual bool hid_process_out_data(const Transfer_t *transfer);
 
 		// Bluetooth data
-	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class);
+	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName);
 	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
 	virtual void release_bluetooth();
-	virtual void remoteNameComplete(const uint8_t *remoteName);
+	virtual bool remoteNameComplete(const uint8_t *remoteName);
 	virtual void connectionComplete(void);
 
 private:
@@ -1648,7 +1650,7 @@ protected:
 	virtual void disconnect();
 	virtual void timer_event(USBDriverTimer *whichTimer);
 
-	BTHIDInput * find_driver(uint32_t device_type);
+	BTHIDInput * find_driver(uint32_t device_type, uint8_t *remoteName=nullptr);
 
 	// Hack to allow PS3 to maybe change values
     uint16_t		connection_rxid_ = 0;

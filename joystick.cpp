@@ -690,12 +690,20 @@ void JoystickController::disconnect()
 	// TODO: free resources
 }
 
-bool JoystickController::claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class) 
+bool JoystickController::claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName) 
 {
 	if ((((bluetooth_class & 0xff00) == 0x2500) || (((bluetooth_class & 0xff00) == 0x500))) && ((bluetooth_class & 0x3C) == 0x08)) {
 		DBGPrintf("JoystickController::claim_bluetooth TRUE\n");
 		btdriver_ = driver;
 		btdevice = (Device_t*)driver;	// remember this way 
+		return true;
+	}
+	if (remoteName && (strncmp((const char *)remoteName, "PLAYSTATION(R)3 Controller", 26) == 0)) {
+		DBGPrintf("JoystickController::claim_bluetooth TRUE PS3 hack...\n");
+		btdriver_ = driver;
+		btdevice = (Device_t*)driver;	// remember this way 
+		special_process_required = SP_PS3_IDS; 		// PS3 maybe needs different IDS. 
+		joystickType = PS3;
 		return true;
 	}
 	return false;
@@ -784,11 +792,9 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 	return false;
 }
 
-void JoystickController::remoteNameComplete(const uint8_t *remoteName) 
+bool JoystickController::remoteNameComplete(const uint8_t *remoteName) 
 {
 	// Sort of a hack, but try to map the name given from remote to a type...
-	if (!remoteName) return;
-
 	if (strncmp((const char *)remoteName, "Wireless Controller", 19) == 0) {
 		DBGPrintf("  JoystickController::remoteNameComplete %s - set to PS4\n", remoteName);
 		special_process_required = SP_NEED_CONNECT; 		// We need to force this. 
@@ -797,13 +803,10 @@ void JoystickController::remoteNameComplete(const uint8_t *remoteName)
 		DBGPrintf("  JoystickController::remoteNameComplete %s - set to PS3\n", remoteName);
 		special_process_required = SP_PS3_IDS; 		// PS3 maybe needs different IDS. 
 		joystickType = PS3;
-
-		// Hack to see if setting control/interrupt ids will help on PS3...
-//    	btdriver_->control_dcid_ = 0x40;
- //   	btdriver_->interrupt_dcid_ = 0x41;
-
+	} else {
+		DBGPrintf("  JoystickController::remoteNameComplete %s - Unknown\n", remoteName);
 	}
-
+	return true;
 }
 
 void JoystickController::connectionComplete() 

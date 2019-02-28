@@ -107,7 +107,7 @@ void MouseController::mouseDataClear() {
 }
 
 
-bool MouseController::claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class) 
+bool MouseController::claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName) 
 {
 	// How to handle combo devices? 
 	USBHDBGSerial.printf("MouseController Controller::claim_bluetooth - Class %x\n", bluetooth_class);
