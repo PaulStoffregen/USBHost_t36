@@ -30,18 +30,18 @@
 #define print   USBHost::print_
 #define println USBHost::println_//#define DEBUG_BT
 
-#define DEBUG_BT
-#define DEBUG_BT_VERBOSE
+//#define DEBUG_BT
+//#define DEBUG_BT_VERBOSE
 
 #ifndef DEBUG_BT
 #undef DEBUG_BT_VERBOSE
-void DBGPrintf(...) {};
+void inline DBGPrintf(...) {};
 #else
 #define DBGPrintf USBHDBGSerial.printf
 #endif
 
 #ifndef DEBUG_BT_VERBOSE
-void VDBGPrintf(...) {};
+void inline VDBGPrintf(...) {};
 #else
 #define VDBGPrintf USBHDBGSerial.printf
 #endif
@@ -323,8 +323,13 @@ void BluetoothController::disconnect()
 		device_driver_->release_bluetooth();
 		device_driver_ = nullptr;
 	}
+	connection_complete_ = false;
 }
 
+void BluetoothController::timer_event(USBDriverTimer *whichTimer)
+{
+	
+}
 
 
 void BluetoothController::control(const Transfer_t *transfer)
@@ -544,9 +549,10 @@ void BluetoothController::handle_hci_command_complete()
 			break;
 		case HCI_WRITE_SCAN_ENABLE:				//0x0c1a
 			DBGPrintf("Write_Scan_enable Completed\n");
-			if (device_connection_handle_) {
-				// Lets see if we can get the remote information
-				//sendHCIRemoteVersionInfoRequest();
+
+			if (device_driver_ && connection_complete_) {	// We have a driver call their 
+				device_driver_->connectionComplete();
+				connection_complete_ = false;	// only call once
 			}
 			break;
 		case HCI_WRITE_SSP_MODE:					//0x0c56
@@ -702,7 +708,7 @@ void BluetoothController::handle_hci_connection_complete() {
 	if (do_pair_device_) {
 		sendHCIAuthenticationRequested();
 		pending_control_ = PC_AUTHENTICATION_REQUESTED;
-	} else if (device_driver_ && device_driver_->needs_connect_to_device) {
+	} else if (device_driver_ && (device_driver_->special_process_required & BTHIDInput::SP_NEED_CONNECT)) {
 		DBGPrintf("   Needs connect to device(PS4?)\n");
 		// The PS4 requires a connection request to it. 
 		delay(1);
@@ -715,7 +721,7 @@ void BluetoothController::handle_hci_connection_complete() {
 	    packet[0] = 0x43; 
 	    packet[1] = 0x02;      // Report ID
 	    USBHDBGSerial.printf("SixAxis Command Issued!\r\n");
-     	sendL2CapCommand(packet, sizeof(packet), 0x40, 0x00);	
+     	sendL2CapCommand(packet, sizeof(packet), 0x40);	
 	}
 }
 
@@ -787,6 +793,10 @@ void BluetoothController::handle_hci_disconnect_complete()
 	if (device_driver_) {
 		device_driver_->release_bluetooth();
 		device_driver_ = nullptr;
+    	
+    	// Restore to normal... 
+    	control_dcid_ = 0x70;
+    	interrupt_dcid_ = 0x71;
 	}
 	// Probably should clear out connection data. 
 	device_connection_handle_ = 0;
@@ -815,15 +825,12 @@ void BluetoothController::handle_hci_remote_name_complete() {
 		DBGPrintf("\n");
 	}
 	if (device_driver_) {
-	/*
-		if (!device_driver_->btstrbuf) {
-			device_driver_->btstrbuf = USBHost::allocate_string_buffer();
-			if (device_driver_->btstrbuf) {
-
-			}
-		}
-	*/
 		device_driver_->remoteNameComplete(&rxbuf_[9]);
+		if (device_driver_->special_process_required & BTHIDInput::SP_PS3_IDS) {
+			// Real hack see if PS3... 
+	    	control_dcid_ = 0x40;
+	    	interrupt_dcid_ = 0x41;
+	    }
 	}
 
 	// Lets now try to accept the connection. 
@@ -1184,6 +1191,21 @@ void BluetoothController::tx_data(const Transfer_t *transfer)
 /************************************************************/
 /*                    L2CAP Commands                        */
 
+// Public wrrapper function
+void BluetoothController::sendL2CapCommand(uint8_t* data, uint8_t nbytes, int channel) {
+	uint16_t channel_out;
+	switch (channel) {
+		case CONTROL_SCID:
+			channel_out = control_scid_;
+			break;
+		default:
+			channel_out = (uint16_t)channel;
+	}
+	DBGPrintf("sendL2CapCommand: %x %d %x\n", (uint32_t)data, nbytes, channel, channel_out);
+	sendL2CapCommand (device_connection_handle_, data, nbytes, channel_out & 0xff, (channel_out >> 8) & 0xff);
+}
+
+
 void BluetoothController::sendL2CapCommand(uint16_t handle, uint8_t* data, uint8_t nbytes, uint8_t channelLow, uint8_t channelHigh)
 {
     txbuf_[0] = handle & 0xff; // HCI handle with PB,BC flag
@@ -1277,11 +1299,14 @@ void BluetoothController::process_l2cap_config_response(uint8_t *data) {
 		data[8]+((uint16_t)data[9] << 8), data[10]+((uint16_t)data[11] << 8));
 	if (scid == control_dcid_) {
 		// Set HID Boot mode
-		setHIDProtocol(HID_BOOT_PROTOCOL);  //
+		// Don't do if PS3...
+		if (!(device_driver_->special_process_required & BTHIDInput::SP_PS3_IDS)) {
+			setHIDProtocol(HID_BOOT_PROTOCOL);  //
+		}
 		//setHIDProtocol(HID_RPT_PROTOCOL);  //HID_RPT_PROTOCOL
 		if (do_pair_device_) {
 			pending_control_tx_ = STATE_TX_SEND_CONNECT_INT;
-		} else if (device_driver_ && device_driver_->needs_connect_to_device) {
+		} else if (device_driver_ && (device_driver_->special_process_required & BTHIDInput::SP_NEED_CONNECT)) {
 			DBGPrintf("   Needs connect to device INT(PS4?)\n");
 			// The PS4 requires a connection request to it. 
 			pending_control_tx_ = STATE_TX_SEND_CONNECT_INT;
@@ -1291,6 +1316,7 @@ void BluetoothController::process_l2cap_config_response(uint8_t *data) {
 	} else if (scid == interrupt_dcid_) {
 		// Enable SCan to page mode
 		sendHCIWriteScanEnable(2);
+		connection_complete_ = true;
 	}
 }
 

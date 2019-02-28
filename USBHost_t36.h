@@ -551,11 +551,13 @@ private:
 	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length) {return false;}
 	virtual void release_bluetooth() {};
 	virtual void remoteNameComplete(const uint8_t *remoteName) {};
+	virtual void connectionComplete(void) {};
 	void add_to_list();
 	BTHIDInput *next = NULL;
 	friend class BluetoothController;
 protected:
-	uint8_t  needs_connect_to_device = false;
+	enum {SP_NEED_CONNECT=0x1, SP_PS3_IDS=0x2};
+	uint8_t  special_process_required = 0;
 	Device_t *btdevice = NULL;
 
 };
@@ -895,6 +897,7 @@ protected:
 	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
 	virtual void release_bluetooth();
 	virtual void remoteNameComplete(const uint8_t *remoteName);
+	virtual void connectionComplete(void);
 
 private:
 
@@ -1626,7 +1629,7 @@ private:
 
 class BluetoothController: public USBDriver {
 public:
-	BluetoothController(USBHost &host, bool pair = false, const char *pin = "0000") : do_pair_device_(pair), pair_pincode_(pin) 
+	BluetoothController(USBHost &host, bool pair = false, const char *pin = "0000") : do_pair_device_(pair), pair_pincode_(pin), delayTimer_(this) 
 			 { init(); }
 
 	enum {MAX_ENDPOINTS=4, NUM_SERVICES=4, };  // Max number of Bluetooth services - if you need more than 4 simply increase this number
@@ -1636,19 +1639,25 @@ public:
     const uint8_t* 	myBDAddr(void) {return my_bdaddr_;}
 
 	// BUGBUG version to allow some of the controlled objects to call?
-
-    void sendL2CapCommand(uint8_t* data, uint8_t nbytes, uint8_t channelLow = 0x01, uint8_t channelHigh = 0x00) {
-    	USBHDBGSerial.printf("sendL2CapCommand: %x %d %x %x : control: %x\n", (uint32_t)data, nbytes, channelLow, channelHigh, control_scid_);
-    	sendL2CapCommand (device_connection_handle_, data, nbytes, channelLow, channelHigh);
-      }
+    enum {CONTROL_SCID=-1};
+    void sendL2CapCommand(uint8_t* data, uint8_t nbytes, int channel = (int)0x0001);
 
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
 	virtual void disconnect();
-	//virtual void timer_event(USBDriverTimer *whichTimer);
+	virtual void timer_event(USBDriverTimer *whichTimer);
 
 	BTHIDInput * find_driver(uint32_t device_type);
+
+	// Hack to allow PS3 to maybe change values
+    uint16_t		connection_rxid_ = 0;
+    uint16_t		control_dcid_ = 0x70;
+    uint16_t		interrupt_dcid_ = 0x71;
+    uint16_t		interrupt_scid_;
+    uint16_t		control_scid_;
+
+
 private:
 	friend class BTHIDInput;
 	static void rx_callback(const Transfer_t *transfer);
@@ -1731,6 +1740,7 @@ private:
 
 	bool 			do_pair_device_;	// Should we do a pair for a new device?
 	const char		*pair_pincode_;	// What pin code to use for the pairing
+	USBDriverTimer 	delayTimer_;
     uint8_t 		my_bdaddr_[6];	// The bluetooth dongles Bluetooth address.
     uint8_t			features[8];	// remember our local features.
     BTHIDInput * 	device_driver_ = nullptr;;
@@ -1739,14 +1749,10 @@ private:
     uint8_t			device_clock_offset_[2];
     uint32_t		device_class_;	// class of device. 
     uint16_t		device_connection_handle_;	// handle to connection 
-    uint16_t		connection_rxid_ = 0;
-    uint16_t		control_dcid_ = 0x70;
-    uint16_t		interrupt_dcid_ = 0x71;
-    uint16_t		interrupt_scid_;
-    uint16_t		control_scid_;
 	uint8_t    		remote_ver_;
 	uint16_t		remote_man_;
 	uint8_t			remote_subv_;
+	uint8_t			connection_complete_ = false;	//
 
 	typedef struct {
 		uint16_t 	idVendor;
