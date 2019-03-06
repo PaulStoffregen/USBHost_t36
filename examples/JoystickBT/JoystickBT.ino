@@ -166,12 +166,10 @@ void loop()
           psAxis[i] = joystick1.getAxis(i);
       }
       switch (joystick1.joystickType()) {
-/*
         case JoystickController::UNKNOWN:
         case JoystickController::PS4:
           displayPS4Data();
           break;
-  */
         case JoystickController::PS3:
           displayPS3Data();
           break;
