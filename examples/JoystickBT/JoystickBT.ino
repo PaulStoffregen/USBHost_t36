@@ -59,7 +59,7 @@ void setup()
   Serial4.println("\n" __FILE__ " " __DATE__ " " __TIME__);
   Serial4.println("\n********\n T4 connected Serial4 *******\n");
 */
-Serial1.begin(2000000);
+Serial1.begin(1843200);
   while (!Serial) ; // wait for Arduino Serial Monitor
   //debTraceShow_tt( -2, "", "", "" );
   //Serial4.println("\n" __FILE__ " " __DATE__ " " __TIME__);
@@ -184,7 +184,7 @@ void loop()
       //}
       //Serial.println();
         
-
+     delay(100);
      joystick1.joystickDataClear();
   }
 
@@ -205,19 +205,19 @@ void loop()
 
 void displayPS4Data()
 {
-  Serial.printf("LX: %d, LY: %d, RX: %d, RY: %d \r\n", psAxis[1], psAxis[2], psAxis[3], psAxis[4]);
-  Serial.printf("L-Trig: %d, R-Trig: %d, Trig-Button: %d \r\n", psAxis[8], psAxis[9], psAxis[6]);
-  Serial.printf("Buttons: %d, PS: %d\r\n", psAxis[5], psAxis[7]);
-  Serial.printf("Arrows: %d\r\n", psAxis[0]);
-  Serial.printf("Battery level percentage: %2f.0 \r\n", (((float) psAxis[12])/255.0f)*100.0f);
-
+  buttons = joystick1.getButtons();
+  Serial.printf("LX: %d, LY: %d, RX: %d, RY: %d \r\n", psAxis[0], psAxis[1], psAxis[2], psAxis[5]);
+  Serial.printf("L-Trig: %d, R-Trig: %d\r\n", psAxis[3], psAxis[4]);
+  Serial.printf("Buttons: %x\r\n", buttons);
+  Serial.printf("Battery Status: %d\n", ((psAxis[30] & (1 << 4)) - 1)*10);
+  printAngles();
   Serial.println();
 
   uint8_t ltv;
   uint8_t rtv;
 
-    ltv = psAxis[8];
-    rtv = psAxis[9];
+    ltv = psAxis[3];
+    rtv = psAxis[4];
 
     if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
       joystick_left_trigger_value = ltv;
@@ -225,13 +225,13 @@ void displayPS4Data()
       Serial.printf("Rumbling: %d, %d\r\n", ltv, rtv);
       joystick1.setRumble(ltv, rtv);
     }
-    
+   
   /* Arrow Buttons (psAxis[0]):
    *    0x08 is released, 
    *    0=N, 1=NE, 2=E, 3=SE, 4=S, 
    *    5=SW, 6=W, 7=NW)
    */
-
+/*
   if (psAxis[5] != buttons_prev) {
       uint8_t lr = (psAxis[5] & 1) ? 0xff : 0;   //Srq
       uint8_t lg = (psAxis[5] & 4) ? 0xff : 0;   //Cir
@@ -241,10 +241,10 @@ void displayPS4Data()
       Serial.print(lr); Serial.print(", "); 
       Serial.print(lg); Serial.print(", "); 
       Serial.println(lb); 
-
       joystick1.setLEDs(lr, lg, lb);
-      buttons_prev =psAxis[5];
+      buttons_prev =psAxis[5];  
   }
+*/
 }
 
 void displayPS3Data()
