@@ -100,6 +100,7 @@ const uint8_t *JoystickController::product()
 {
 	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_PROD]];
 	if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; 
+	if (btdevice != nullptr) return remote_name_;
 	return nullptr;
 }
 
@@ -119,7 +120,7 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
 	rumble_rValue_ = rValue;
 	rumble_timeout_ = timeout;
 
-	switch (joystickType) {
+	switch (joystickType_) {
 		default:
 			break;
 		case PS3:
@@ -175,7 +176,7 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
 		leds_[1] = lg;
 		leds_[2] = lb;
 
-		switch (joystickType) {
+		switch (joystickType_) {
 			case PS3:
 				return transmitPS3UserFeedbackMsg();
 			case PS4:
@@ -311,8 +312,9 @@ hidclaim_t JoystickController::claim_collection(USBHIDParser *driver, Device_t *
 	connected_ = true;		// remember that hardware is actually connected...
 
 	// Lets see if we know what type of joystick this is. That is, is it a PS3 or PS4 or ...
-	joystickType = mapVIDPIDtoJoystickType(mydevice->idVendor, mydevice->idProduct, false);
-	switch (joystickType) {
+	joystickType_ = mapVIDPIDtoJoystickType(mydevice->idVendor, mydevice->idProduct, false);
+	DBGPrintf("JoystickController::claim_collection joystickType_=%d\n", joystickType_);
+	switch (joystickType_) {
 		case PS3:
 			additional_axis_usage_page_ = 0x1;
 			additional_axis_usage_start_ = 0x100;
@@ -526,7 +528,8 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 		connected_ = 0;		// remember that hardware is actually connected...
 	}
 	memset(axis, 0, sizeof(axis));	// clear out any data. 
-	joystickType = jtype;		// remember we are an XBox One. 
+	joystickType_ = jtype;		// remember we are an XBox One. 
+	DBGPrintf("   JoystickController::claim joystickType_ %d\n", joystickType_);
 	return true;
 }
 
@@ -599,7 +602,7 @@ void JoystickController::rx_data(const Transfer_t *transfer)
 	print("JoystickController::rx_data: ");
 	print_hexbytes((uint8_t*)transfer->buffer, transfer->length);
 
-	if (joystickType == XBOXONE) {
+	if (joystickType_ == XBOXONE) {
 		// Process XBOX One data
 		axis_mask_ = 0x3f;	
 		axis_changed_mask_ = 0;	// assume none for now
@@ -622,7 +625,7 @@ void JoystickController::rx_data(const Transfer_t *transfer)
 			joystickEvent = true;
 		}
 
-	} else if (joystickType == XBOX360) {
+	} else if (joystickType_ == XBOX360) {
 		// First byte appears to status - if the byte is 0x8 it is a connect or disconnect of the controller. 
 		xbox360data_t  *xb360d = (xbox360data_t *)transfer->buffer;
 		if (xb360d->state == 0x08) {
@@ -703,7 +706,7 @@ bool JoystickController::claim_bluetooth(BluetoothController *driver, uint32_t b
 		btdriver_ = driver;
 		btdevice = (Device_t*)driver;	// remember this way 
 		special_process_required = SP_PS3_IDS; 		// PS3 maybe needs different IDS. 
-		joystickType = PS3;
+		joystickType_ = PS3;
 		return true;
 	}
 	return false;
@@ -721,24 +724,61 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 		//print("  Joystick Data: ");
 		//print_hexbytes(data, length);
 //		DBGPrintf("  Joystick Data: ");
-		uint64_t mask = 0x1;
-		axis_mask_ = 0;
-		axis_changed_mask_ = 0;
-
 		if (length > TOTAL_AXIS_COUNT) length = TOTAL_AXIS_COUNT;	// don't overflow arrays...
-		for (uint16_t i = 0; i < length; i++ ) {
-			axis_mask_ |= mask;
-			if(data[i] != axis[i]) { 
-				axis_changed_mask_ |= mask;
-				axis[i] = data[i];
-			} 
-			mask <<= 1;	// shift down the mask.
-//			DBGPrintf("%02x ", axis[i]);
+		if (joystickType_ == PS3) {
+			// Quick and dirty hack to match PS3 HID data
+			uint32_t cur_buttons = data[2] | ((uint16_t)data[3] << 8) | ((uint32_t)data[4] << 16); 
+			if (cur_buttons != buttons) {
+				buttons = cur_buttons;
+				joystickEvent = true;	// something changed.
+			}
+
+			uint64_t mask = 0x1;
+			axis_mask_ = 0x27;	// assume bits 0, 1, 2, 5
+			for (uint16_t i = 0; i < 3; i++) {
+				if (axis[i] != data[i+6]) {
+					axis_changed_mask_ |= mask;
+					axis[i] = data[i+6];
+				}
+				mask <<= 1;	// shift down the mask.
+			}
+			if (axis[5] != data[9]) {
+				axis_changed_mask_ |= (1<<5);
+				axis[5] = data[9];
+			}
+
+			// Then rest of data
+			mask = 0x1 << 10;	// setup for other bits
+			for (uint16_t i = 10; i < length; i++ ) {
+				axis_mask_ |= mask;
+				if(data[i] != axis[i]) { 
+					axis_changed_mask_ |= mask;
+					axis[i] = data[i];
+				} 
+				mask <<= 1;	// shift down the mask.
+			}
+
+		} else {
+			uint64_t mask = 0x1;
+			axis_mask_ = 0;
+
+			for (uint16_t i = 0; i < length; i++ ) {
+				axis_mask_ |= mask;
+				if(data[i] != axis[i]) { 
+					axis_changed_mask_ |= mask;
+					axis[i] = data[i];
+				} 
+				mask <<= 1;	// shift down the mask.
+//				DBGPrintf("%02x ", axis[i]);
+			}
+
 		}
-//		DBGPrintf("\n");
-		joystickEvent = true;
+
+		if (axis_changed_mask_ & axis_change_notify_mask_)
+			joystickEvent = true;
 		connected_ = true;
 		return true;
+
 	} else if(data[0] == 0x11){
 		DBGPrintf("  Joystick Data: ");
 		uint64_t mask = 0x1;
@@ -750,8 +790,9 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 		uint8_t tmp_data[length-2];
 		for (uint16_t i = 0; i < (length-2); i++ ) {
 			tmp_data[i] = data[i+2];
+			DBGPrintf("%02x ",tmp_data[i]);
 		}
-		
+		DBGPrintf("\n");		
 		/*
 		 * [1] LX, [2] = LY, [3] = RX, [4] = RY
 		 * [5] combo, tri, cir, x, sqr, D-PAD (4bits, 0-3
@@ -783,9 +824,9 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 				axis[i] = tmp_data[i];
 			} 
 			mask <<= 1;	// shift down the mask.
-			DBGPrintf("%02x ", axis[i]);
+			//DBGPrintf("%02x ", axis[i]);
 		}
-		DBGPrintf("\n");
+		//DBGPrintf("\n");
 		joystickEvent = true;
 		connected_ = true;
 	}
@@ -798,21 +839,22 @@ bool JoystickController::remoteNameComplete(const uint8_t *remoteName)
 	if (strncmp((const char *)remoteName, "Wireless Controller", 19) == 0) {
 		DBGPrintf("  JoystickController::remoteNameComplete %s - set to PS4\n", remoteName);
 		special_process_required = SP_NEED_CONNECT; 		// We need to force this. 
-		joystickType = PS4;
+		joystickType_ = PS4;
 	} else if (strncmp((const char *)remoteName, "PLAYSTATION(R)3", 15) == 0) {
-		DBGPrintf("  JoystickController::remoteNameComplete %s - set to PS3\n", remoteName);
+		DBGPrintf("  JoystickController::remoteNameComplete %x %s - set to PS3\n", (uint32_t)this, remoteName);
 		special_process_required = SP_PS3_IDS; 		// PS3 maybe needs different IDS. 
-		joystickType = PS3;
+		joystickType_ = PS3;
 	} else {
 		DBGPrintf("  JoystickController::remoteNameComplete %s - Unknown\n", remoteName);
 	}
+	DBGPrintf("  Joystick Type: %d\n", joystickType_);
 	return true;
 }
 
 void JoystickController::connectionComplete() 
 {
-	DBGPrintf("  JoystickController::connectionComplete joystick type %d\n", joystickType);
-	if (joystickType == PS4) {
+	DBGPrintf("  JoystickController::connectionComplete %x joystick type %d\n", (uint32_t)this, joystickType_);
+	if (joystickType_ == PS4) {
 		uint8_t packet[2];
 		packet[0] = 0x43; // HID BT Get_report (0x40) | Report Type (Feature 0x03)
 		packet[1] = 0x02; // Report ID
@@ -820,7 +862,7 @@ void JoystickController::connectionComplete()
 		delay(1);
 		btdriver_->sendL2CapCommand(packet, sizeof(packet), 0x40);
 
-	} else if (joystickType == PS3) {
+	} else if (joystickType_ == PS3) {
 	uint8_t packet[6];
 		packet[0] = 0x53; // HID BT Set_report (0x50) | Report Type (Feature 0x03)
 		packet[1] = 0xF4; // Report ID
@@ -845,3 +887,17 @@ void JoystickController::release_bluetooth()
 
 }
 
+
+bool JoystickController::PS3Pair(uint8_t* bdaddr) {
+ 	if ((joystickType_ != PS3) || !driver_) return false; // not a PS2 nor plugged into USB...
+
+    /* Set the internal Bluetooth address */
+    txbuf_[0] = 0x01;
+    txbuf_[1] = 0x00;
+
+    for(uint8_t i = 0; i < 6; i++)
+            txbuf_[i + 2] = bdaddr[5 - i]; // Copy into buffer, has to be written reversed, so it is MSB first
+
+    // bmRequest = Host to device (0x00) | Class (0x20) | Interface (0x01) = 0x21, bRequest = Set Report (0x09), Report ID (0xF5), Report Type (Feature 0x03), interface (0x00), datalength, datalength, data
+	return driver_->sendControlPacket(0x21, 9, 0x3f5, 0, 8, txbuf_); 
+}

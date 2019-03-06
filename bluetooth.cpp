@@ -321,6 +321,7 @@ void BluetoothController::disconnect()
 	USBHDBGSerial.printf("Bluetooth Disconnect");
 	if (device_driver_) {
 		device_driver_->release_bluetooth();
+		device_driver_->remote_name_[0] = 0;
 		device_driver_ = nullptr;
 	}
 	connection_complete_ = false;
@@ -549,10 +550,16 @@ void BluetoothController::handle_hci_command_complete()
 			break;
 		case HCI_WRITE_SCAN_ENABLE:				//0x0c1a
 			DBGPrintf("Write_Scan_enable Completed\n");
-
+			// See if we have driver and a remote
 			if (device_driver_ && connection_complete_) {	// We have a driver call their 
-				device_driver_->connectionComplete();
-				connection_complete_ = false;	// only call once
+
+				// Now see if we have the remote name or not?
+				if (device_driver_->remote_name_[0]) {
+					device_driver_->connectionComplete();
+					connection_complete_ = false;	// only call once
+				} else {
+					sendHCIRemoteNameRequest();
+				}
 			}
 			break;
 		case HCI_WRITE_SSP_MODE:					//0x0c56
@@ -792,6 +799,7 @@ void BluetoothController::handle_hci_disconnect_complete()
 		rxbuf_[3]+(rxbuf_[4]<<8), rxbuf_[5]);
 	if (device_driver_) {
 		device_driver_->release_bluetooth();
+		device_driver_->remote_name_[0] = 0;
 		device_driver_ = nullptr;
     	
     	// Restore to normal... 
@@ -802,7 +810,6 @@ void BluetoothController::handle_hci_disconnect_complete()
 	device_connection_handle_ = 0;
 	device_class_ = 0;	
 	memset(device_bdaddr_, 0, sizeof(device_bdaddr_));
-	//... 
 }
 
 void BluetoothController::handle_hci_authentication_complete()
@@ -815,6 +822,8 @@ void BluetoothController::handle_hci_authentication_complete()
 	sendl2cap_ConnectionRequest(device_connection_handle_, connection_rxid_, control_dcid_, HID_CTRL_PSM);
 }
 
+
+
 void BluetoothController::handle_hci_remote_name_complete() {
 	//           STAT bd   bd   bd   bd    bd  bd
 	// 0x07 0xFF 0x00 0x79 0x22 0x23 0x0A 0xC5 0xCC 0x42 0x6C 0x75 0x65 0x74 0x6F 0x6F ...
@@ -824,7 +833,7 @@ void BluetoothController::handle_hci_remote_name_complete() {
 		for (uint8_t *psz = &rxbuf_[9]; *psz; psz++) DBGPrintf("%c", *psz);
 		DBGPrintf("\n");
 	}
-	// Lets try to allocate a string buffer to store the name out...
+
 	if (device_driver_) {
 		if (!device_driver_->remoteNameComplete(&rxbuf_[9])) {
 			device_driver_->release_bluetooth();
@@ -834,9 +843,19 @@ void BluetoothController::handle_hci_remote_name_complete() {
 	if (!device_driver_) {
 		device_driver_ = find_driver(device_class_, &rxbuf_[9]);
 		// not sure I should call remote name again, but they already process...
-
+		if (device_driver_) {
+			device_driver_->remoteNameComplete(&rxbuf_[9]);
+		}
 	}
 	if (device_driver_) {
+		// lets allocate a string object
+		uint8_t buffer_index;
+		for (buffer_index = 0; buffer_index < BTHIDInput::REMOTE_NAME_SIZE-1; buffer_index++) {
+			device_driver_->remote_name_[buffer_index] = rxbuf_[9+buffer_index];
+			if (!device_driver_->remote_name_[buffer_index]) break;
+		}
+		device_driver_->remote_name_[buffer_index] = 0;	// make sure null terminated
+
 		if (device_driver_->special_process_required & BTHIDInput::SP_PS3_IDS) {
 			// Real hack see if PS3... 
 	    	control_dcid_ = 0x40;
@@ -844,8 +863,16 @@ void BluetoothController::handle_hci_remote_name_complete() {
 	    }
 	}
 
-	// Lets now try to accept the connection. 
-	sendHCIAcceptConnectionRequest();
+	// If we are in the connection complete mode, then this is a pairing state and needed to call
+	// get remote name later. 
+	if (connection_complete_) {	
+		if (device_driver_) {	// We have a driver call their 
+			device_driver_->connectionComplete();
+			connection_complete_ = false;	// only call once
+		}
+	} else {
+		sendHCIAcceptConnectionRequest();		
+	} 
 }
 
 void BluetoothController::handle_hci_remote_version_information_complete() {

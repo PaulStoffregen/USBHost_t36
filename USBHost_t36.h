@@ -543,7 +543,7 @@ public:
 	const uint8_t *manufacturer()
 		{  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; }
 	const uint8_t *product()
-		{  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; }
+		{  return  remote_name_; }
 	const uint8_t *serialNumber()
 		{  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
 private:
@@ -557,9 +557,10 @@ private:
 	friend class BluetoothController;
 protected:
 	enum {SP_NEED_CONNECT=0x1, SP_PS3_IDS=0x2};
+	enum {REMOTE_NAME_SIZE=32};
 	uint8_t  special_process_required = 0;
 	Device_t *btdevice = NULL;
-	strbuf_t *btstrbuf = NULL;
+	uint8_t remote_name_[REMOTE_NAME_SIZE] = {0};
 
 };
 
@@ -877,7 +878,11 @@ public:
     bool setLEDs(uint8_t lr, uint8_t lg=0, uint8_t lb=0);  // sets Leds, 
 	enum { STANDARD_AXIS_COUNT = 10, ADDITIONAL_AXIS_COUNT = 54, TOTAL_AXIS_COUNT = (STANDARD_AXIS_COUNT+ADDITIONAL_AXIS_COUNT) };
 	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360} joytype_t;
-	joytype_t joystickType = UNKNOWN;
+	joytype_t joystickType() {return joystickType_;} 
+
+	// PS3 pair function. hack, requires that it be connect4ed by USB and we have the address of the Bluetooth dongle...
+	bool PS3Pair(uint8_t* bdaddr);
+
 	
 	
 protected:
@@ -901,6 +906,7 @@ protected:
 	virtual bool remoteNameComplete(const uint8_t *remoteName);
 	virtual void connectionComplete(void);
 
+	joytype_t joystickType_ = UNKNOWN;
 private:
 
 	// Class specific

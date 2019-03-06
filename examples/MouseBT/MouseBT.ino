@@ -178,7 +178,7 @@ void loop()
     }
     uint8_t ltv;
     uint8_t rtv;
-    switch (joystick1.joystickType) {
+    switch (joystick1.joystickType()) {
       default:
         break;
       case JoystickController::PS4:
@@ -214,7 +214,7 @@ void loop()
         break;
     }
     if (buttons != buttons_prev) {
-      if (joystick1.joystickType == JoystickController::PS3) {
+      if (joystick1.joystickType() == JoystickController::PS3) {
         joystick1.setLEDs((buttons >> 12) & 0xf); //  try to get to TRI/CIR/X/SQuare
       } else {
         uint8_t lr = (buttons & 1) ? 0xff : 0;
