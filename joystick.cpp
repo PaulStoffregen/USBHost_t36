@@ -746,7 +746,17 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 				axis_changed_mask_ |= (1<<5);
 				axis[5] = data[9];
 			}
-
+			
+			if (axis[3] != data[18]) {
+				axis_changed_mask_ |= (1<<3);
+				axis[3] = data[18];
+			}
+			
+			if (axis[4] != data[19]) {
+				axis_changed_mask_ |= (1<<4);
+				axis[4] = data[19];
+			}
+			
 			// Then rest of data
 			mask = 0x1 << 10;	// setup for other bits
 			for (uint16_t i = 10; i < length; i++ ) {
@@ -780,55 +790,116 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 		return true;
 
 	} else if(data[0] == 0x11){
-		DBGPrintf("  Joystick Data: ");
-		uint64_t mask = 0x1;
-		axis_mask_ = 0;
-		axis_changed_mask_ = 0;
-		
-		//This moves data to be equivalent to what we see for
-		//data[0] = 0x01
-		uint8_t tmp_data[length-2];
-		for (uint16_t i = 0; i < (length-2); i++ ) {
-			tmp_data[i] = data[i+2];
-			DBGPrintf("%02x ",tmp_data[i]);
-		}
-		DBGPrintf("\n");		
-		/*
-		 * [1] LX, [2] = LY, [3] = RX, [4] = RY
-		 * [5] combo, tri, cir, x, sqr, D-PAD (4bits, 0-3
-		 * [6] R3,L3, opt, share, R2, L2, R1, L1
-		 * [7] Counter (bit7-2), T-PAD, PS
-		 * [8] Left Trigger, [9] Right Trigger
-		 * [10-11] Timestamp
-		 * [12] Battery (0 to 0xff)
-		 * [13-14] acceleration x
-		 * [15-16] acceleration y
-		 * [17-18] acceleration z
-		 * [19-20] gyro x
-		 * [21-22] gyro y
-		 * [23-24] gyro z
-		 * [25-29] unknown
-		 * [30] 0x00,phone,mic, usb, battery level (4bits)
-		 * rest is trackpad?  to do implement?
-		 */
-		//PS Bit
-		tmp_data[7] = (tmp_data[7] >> 0) & 1;
-		//set arrow buttons to axis[0]
-		tmp_data[0] = tmp_data[5] & ((1 << 4) - 1);
-		//set buttons for last 4bits in the axis[5]
-		tmp_data[5] = tmp_data[5] >> 4;
+		if (data[0] == 1) {
+			//print("  Joystick Data: ");
+			//print_hexbytes(data, length);
+	//		DBGPrintf("  Joystick Data: ");
+			uint64_t mask = 0x1;
+			axis_mask_ = 0;
+			axis_changed_mask_ = 0;
 
-		for (uint16_t i = 0; i < (length-2); i++ ) {
-			if(tmp_data[i] != axis[i]) { 
-				axis_changed_mask_ |= mask;
-				axis[i] = tmp_data[i];
-			} 
-			mask <<= 1;	// shift down the mask.
-			//DBGPrintf("%02x ", axis[i]);
+			if (length > TOTAL_AXIS_COUNT) length = TOTAL_AXIS_COUNT;	// don't overflow arrays...
+			for (uint16_t i = 0; i < length; i++ ) {
+				axis_mask_ |= mask;
+				if(data[i] != axis[i]) { 
+					axis_changed_mask_ |= mask;
+					axis[i] = data[i];
+				} 
+				mask <<= 1;	// shift down the mask.
+	//			DBGPrintf("%02x ", axis[i]);
+			}
+	//		DBGPrintf("\n");
+			joystickEvent = true;
+			connected_ = true;
+			return true;
+		} else if(data[0] == 0x11){
+			DBGPrintf("\n  Joystick Data: ");
+			uint64_t mask = 0x1;
+			axis_mask_ = 0;
+			axis_changed_mask_ = 0;
+			
+			//This moves data to be equivalent to what we see for
+			//data[0] = 0x01
+			uint8_t tmp_data[length-2];
+			
+			for (uint16_t i = 0; i < (length-2); i++ ) {
+				tmp_data[i] = 0;
+				tmp_data[i] = data[i+2];
+			}
+			
+			/*
+			 * [1] LX, [2] = LY, [3] = RX, [4] = RY
+			 * [5] combo, tri, cir, x, sqr, D-PAD (4bits, 0-3
+			 * [6] R3,L3, opt, share, R2, L2, R1, L1
+			 * [7] Counter (bit7-2), T-PAD, PS
+			 * [8] Left Trigger, [9] Right Trigger
+			 * [10-11] Timestamp
+			 * [12] Battery (0 to 0xff)
+			 * [13-14] acceleration x
+			 * [15-16] acceleration y
+			 * [17-18] acceleration z
+			 * [19-20] gyro x
+			 * [21-22] gyro y
+			 * [23-24] gyro z
+			 * [25-29] unknown
+			 * [30] 0x00,phone,mic, usb, battery level (4bits)
+			 * rest is trackpad?  to do implement?
+			 */
+			//PS Bit
+			tmp_data[7] = (tmp_data[7] >> 0) & 1;
+			//set arrow buttons to axis[0]
+			tmp_data[10] = tmp_data[5] & ((1 << 4) - 1);
+			//set buttons for last 4bits in the axis[5]
+			tmp_data[5] = tmp_data[5] >> 4;
+			
+		
+			// Quick and dirty hack to match PS4 HID data
+			uint32_t cur_buttons = tmp_data[7] | (tmp_data[10]) | ((tmp_data[6]*10)) | ((uint16_t)tmp_data[5] << 16) ; 
+			if (cur_buttons != buttons) {
+				buttons = cur_buttons;
+				joystickEvent = true;	// something changed.
+			}
+			
+			mask = 0x1;
+			axis_mask_ = 0x27;	// assume bits 0, 1, 2, 5
+			for (uint16_t i = 0; i < 3; i++) {
+				if (axis[i] != tmp_data[i+1]) {
+					axis_changed_mask_ |= mask;
+					axis[i] = tmp_data[i+1];
+				}
+				mask <<= 1;	// shift down the mask.
+			}
+			if (axis[5] != tmp_data[4]) {
+				axis_changed_mask_ |= (1<<5);
+				axis[5] = tmp_data[4];
+			}
+			
+			if (axis[3] != tmp_data[8]) {
+				axis_changed_mask_ |= (1<<3);
+				axis[3] = tmp_data[8];
+			}
+			
+			if (axis[4] != tmp_data[9]) {
+				axis_changed_mask_ |= (1<<4);
+				axis[4] = tmp_data[9];
+			}
+			
+			//limit for masking
+			mask = 0x1;
+			for (uint16_t i = 6; i < (64); i++ ) {
+				axis_mask_ |= mask;
+				if(tmp_data[i] != axis[i]) { 
+					axis_changed_mask_ |= mask;
+					axis[i] = tmp_data[i];
+				}
+				mask <<= 1;	// shift down the mask.
+				DBGPrintf("%02x ", axis[i]);
+			}
+			DBGPrintf("\n");
+			//DBGPrintf("Axis Mask (axis_mask_, axis_changed_mask_; %d, %d\n", axis_mask_,axis_changed_mask_);
+			joystickEvent = true;
+			connected_ = true;
 		}
-		//DBGPrintf("\n");
-		joystickEvent = true;
-		connected_ = true;
 	}
 	return false;
 }
