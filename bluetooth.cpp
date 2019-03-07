@@ -675,7 +675,7 @@ void BluetoothController::handle_hci_inquiry_result()
 			rxbuf_[index_bd],rxbuf_[index_bd+1],rxbuf_[index_bd+2],rxbuf_[index_bd+3],rxbuf_[index_bd+4],rxbuf_[index_bd+5],
 			rxbuf_[index_ps], bluetooth_class);
 		// See if we know the class 
-		if ((bluetooth_class & 0xff00) == 0x2500) {
+		if (((bluetooth_class & 0xff00) == 0x2500) || ((bluetooth_class & 0xff00) == 0x500)) {
 			DBGPrintf("      Peripheral device\n");
 			if (bluetooth_class & 0x80) DBGPrintf("        Mouse\n");
 			if (bluetooth_class & 0x40) DBGPrintf("        Keyboard\n"); 
