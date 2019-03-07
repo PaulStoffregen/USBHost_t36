@@ -562,6 +562,8 @@ void JoystickController::tx_callback(const Transfer_t *transfer)
 // Information came from several places on the web including: 
 // https://github.com/quantus/xbox-one-controller-protocol
 /************************************************************/
+// 20 00 C5 0E 00 00 00 00 00 00 F0 06 AD FB 7A 0A DD F7 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+// 20 00 E0 0E 40 00 00 00 00 00 F0 06 AD FB 7A 0A DD F7 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 typedef struct {
 	uint8_t type;
 	uint8_t const_0;
@@ -595,11 +597,12 @@ typedef struct {
 	int16_t	axis[4];
 } xbox360data_t;
 
-static const uint8_t xbox_axis_order_mapping[] = {4, 5, 0, 1, 2, 3};
+static const uint8_t xbox_axis_order_mapping[] = {3, 4, 0, 1, 2, 5};
 
 void JoystickController::rx_data(const Transfer_t *transfer)
 {
-	print("JoystickController::rx_data: ");
+	print("JoystickController::rx_data (", joystickType_, DEC);
+	print("): ");
 	print_hexbytes((uint8_t*)transfer->buffer, transfer->length);
 
 	if (joystickType_ == XBOXONE) {
@@ -612,6 +615,8 @@ void JoystickController::rx_data(const Transfer_t *transfer)
 			if (xb1d->buttons != buttons) {
 				buttons = xb1d->buttons;
 				anychange = true;
+				joystickEvent = true;
+				println("  Button Change: ", buttons, HEX);
 			}
 			for (uint8_t i = 0; i < sizeof (xbox_axis_order_mapping); i++) {
 				// The first two values were unsigned. 
