@@ -211,7 +211,7 @@ void displayPS4Data()
   Serial.printf("LX: %d, LY: %d, RX: %d, RY: %d \r\n", psAxis[0], psAxis[1], psAxis[2], psAxis[5]);
   Serial.printf("L-Trig: %d, R-Trig: %d\r\n", psAxis[3], psAxis[4]);
   Serial.printf("Buttons: %x\r\n", buttons);
-  Serial.printf("Battery Status: %d\n", ((psAxis[30] & (1 << 4)) - 1) * 10);
+  Serial.printf("Battery Status: %d\n", ((psAxis[30] & (1 << 4) - 1)*10));
   printAngles();
   Serial.println();
 
@@ -227,26 +227,30 @@ void displayPS4Data()
     Serial.printf("Rumbling: %d, %d\r\n", ltv, rtv);
     joystick1.setRumble(ltv, rtv);
   }
+   
 
-  /* Arrow Buttons (psAxis[0]):
-        0x08 is released,
-        0=N, 1=NE, 2=E, 3=SE, 4=S,
-        5=SW, 6=W, 7=NW)
-  */
-  /*
-    if (psAxis[5] != buttons_prev) {
-        uint8_t lr = (psAxis[5] & 1) ? 0xff : 0;   //Srq
-        uint8_t lg = (psAxis[5] & 4) ? 0xff : 0;   //Cir
-        uint8_t lb = (psAxis[5] & 8) ? 0xff : 0;   //Tri
-                                                   //Cross = 2
-        Serial.print(psAxis[5]); Serial.print(", ");
-        Serial.print(lr); Serial.print(", ");
-        Serial.print(lg); Serial.print(", ");
-        Serial.println(lb);
-        joystick1.setLEDs(lr, lg, lb);
-        buttons_prev =psAxis[5];
-    }
-  */
+  if (buttons != buttons_prev) {
+      uint8_t lr = 0;
+      uint8_t lg = 0;
+      uint8_t lb = 0;
+      if(buttons == 0x10008){//Srq
+        lr = 0xff;
+      }
+      if(buttons == 0x40008){//Circ
+        lg = 0xff;
+      }
+      if(buttons == 0x80008){//Tri
+        lb = 0xff;
+      }
+      
+      Serial.print(buttons,HEX); Serial.print(", ");
+      Serial.print(lr); Serial.print(", "); 
+      Serial.print(lg); Serial.print(", "); 
+      Serial.println(lb); 
+      joystick1.setLEDs(lr, lg, lb);
+      buttons_prev = buttons;  
+  }
+
 }
 
 void displayPS3Data()
@@ -283,14 +287,14 @@ void displayPS3Data()
     displayRawData();
   } else {
     Serial.printf("LX: %d, LY: %d, RX: %d, RY: %d \r\n", psAxis[0], psAxis[1], psAxis[2], psAxis[5]);
-    Serial.printf("L-Trig: %d, R-Trig: %d\r\n", psAxis[18], psAxis[19]);
+    Serial.printf("L-Trig: %d, R-Trig: %d\r\n", psAxis[3], psAxis[4]);
     Serial.printf("Buttons: %x\r\n", buttons);
   }
   uint8_t ltv;
   uint8_t rtv;
 
-  ltv = psAxis[18];
-  rtv = psAxis[19];
+  ltv = psAxis[3];
+  rtv = psAxis[4];
 
   if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
     joystick_left_trigger_value = ltv;
