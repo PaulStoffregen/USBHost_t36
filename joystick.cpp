@@ -704,15 +704,18 @@ bool JoystickController::claim_bluetooth(BluetoothController *driver, uint32_t b
 		DBGPrintf("JoystickController::claim_bluetooth TRUE\n");
 		btdriver_ = driver;
 		btdevice = (Device_t*)driver;	// remember this way 
+		if (remoteName) mapNameToJoystickType(remoteName);
 		return true;
 	}
-	if (remoteName && (strncmp((const char *)remoteName, "PLAYSTATION(R)3", 15) == 0)) {
-		DBGPrintf("JoystickController::claim_bluetooth TRUE PS3 hack...\n");
-		btdriver_ = driver;
-		btdevice = (Device_t*)driver;	// remember this way 
-		special_process_required = SP_PS3_IDS; 		// PS3 maybe needs different IDS. 
-		joystickType_ = PS3;
-		return true;
+
+	if (remoteName && mapNameToJoystickType(remoteName)) {
+		if (joystickType_ == PS3) {
+			DBGPrintf("JoystickController::claim_bluetooth TRUE PS3 hack...\n");
+			btdriver_ = driver;
+			btdevice = (Device_t*)driver;	// remember this way 
+			special_process_required = SP_PS3_IDS; 		// PS3 maybe needs different IDS. 
+			return true;
+		}
 	}
 	return false;
 }
@@ -909,21 +912,37 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 	return false;
 }
 
-bool JoystickController::remoteNameComplete(const uint8_t *remoteName) 
+bool JoystickController::mapNameToJoystickType(const uint8_t *remoteName)
 {
 	// Sort of a hack, but try to map the name given from remote to a type...
 	if (strncmp((const char *)remoteName, "Wireless Controller", 19) == 0) {
-		DBGPrintf("  JoystickController::remoteNameComplete %s - set to PS4\n", remoteName);
-		special_process_required = SP_NEED_CONNECT; 		// We need to force this. 
+		DBGPrintf("  JoystickController::mapNameToJoystickType %s - set to PS4\n", remoteName);
 		joystickType_ = PS4;
 	} else if (strncmp((const char *)remoteName, "PLAYSTATION(R)3", 15) == 0) {
-		DBGPrintf("  JoystickController::remoteNameComplete %x %s - set to PS3\n", (uint32_t)this, remoteName);
-		special_process_required = SP_PS3_IDS; 		// PS3 maybe needs different IDS. 
+		DBGPrintf("  JoystickController::mapNameToJoystickType %x %s - set to PS3\n", (uint32_t)this, remoteName);
 		joystickType_ = PS3;
+	} else if (strncmp((const char *)remoteName, "Xbox Wireless", 13) == 0) {
+		DBGPrintf("  JoystickController::mapNameToJoystickType %x %s - set to XBOXONE\n", (uint32_t)this, remoteName);
+		joystickType_ = XBOXONE;
 	} else {
-		DBGPrintf("  JoystickController::remoteNameComplete %s - Unknown\n", remoteName);
+		DBGPrintf("  JoystickController::mapNameToJoystickType %s - Unknown\n", remoteName);
 	}
 	DBGPrintf("  Joystick Type: %d\n", joystickType_);
+	return true;
+}
+
+
+bool JoystickController::remoteNameComplete(const uint8_t *remoteName) 
+{
+	// Sort of a hack, but try to map the name given from remote to a type...
+	if (mapNameToJoystickType(remoteName)) {
+		switch (joystickType_) {
+			case PS4: special_process_required = SP_NEED_CONNECT; break;
+			case PS3: special_process_required = SP_PS3_IDS; break;
+			default: 
+				break;
+		}
+	}
 	return true;
 }
 
