@@ -917,6 +917,7 @@ private:
 	joytype_t mapVIDPIDtoJoystickType(uint16_t idVendor, uint16_t idProduct, bool exclude_hid_devices);
 	bool transmitPS4UserFeedbackMsg();
 	bool transmitPS3UserFeedbackMsg();
+	bool mapNameToJoystickType(const uint8_t *remoteName);
 
 	bool anychange = false;
 	volatile bool joystickEvent = false;
@@ -1692,12 +1693,15 @@ private:
 	void inline sendHCIReadBDAddr();
 	void inline sendHCIReadLocalVersionInfo();
 	void inline sendHCIWriteScanEnable(uint8_t scan_op);
+	void inline sendHCIHCIWriteInquiryMode(uint8_t inquiry_mode);
+	void inline sendHCISetEventMask();
 
 	void inline sendHCIRemoteNameRequest();
 	void inline sendHCIRemoteVersionInfoRequest();
 	void handle_hci_command_complete();
 	void handle_hci_command_status();
 	void handle_hci_inquiry_result();
+	void handle_hci_extended_inquiry_result();
 	void handle_hci_inquiry_complete();
 	void handle_hci_incoming_connect();
 	void handle_hci_connection_complete();

@@ -134,14 +134,15 @@ void inline VDBGPrintf(...) {};
 		,EV_AUTHENTICATION_COMPLETE= 0x06,EV_REMOTE_NAME_COMPLETE= 0x07,EV_ENCRYPTION_CHANGE= 0x08,EV_CHANGE_CONNECTION_LINK= 0x09,EV_ROLE_CHANGED= 0x12
 		,EV_NUM_COMPLETE_PKT= 0x13,EV_PIN_CODE_REQUEST= 0x16,EV_LINK_KEY_REQUEST= 0x17,EV_LINK_KEY_NOTIFICATION= 0x18,EV_DATA_BUFFER_OVERFLOW= 0x1A
 		,EV_MAX_SLOTS_CHANGE= 0x1B,EV_READ_REMOTE_VERSION_INFORMATION_COMPLETE= 0x0C,EV_QOS_SETUP_COMPLETE= 0x0D,EV_COMMAND_COMPLETE= 0x0E,EV_COMMAND_STATUS= 0x0F
-		,EV_LOOPBACK_COMMAND= 0x19,EV_PAGE_SCAN_REP_MODE= 0x20 };
+		,EV_LOOPBACK_COMMAND= 0x19,EV_PAGE_SCAN_REP_MODE= 0x20, HCI_Extended_Inquiry_Result=0x2F };
 
 
 
 
 // different modes
 enum {PC_RESET = 1, PC_WRITE_CLASS_DEVICE, PC_READ_BDADDR, PC_READ_LOCAL_VERSION, 
-			PC_SEND_INQUIRE, PC_INQUIRE_CANCEL=100, PC_AUTHENTICATION_REQUESTED=110, PC_LINK_KEY_NEGATIVE=120, PC_PIN_CODE_REPLY=130,
+			PC_SEND_WRITE_INQUIRE_MODE, PC_SEND_SET_EVENT_MASK, PC_SEND_INQUIRE, 
+			PC_INQUIRE_CANCEL=100, PC_AUTHENTICATION_REQUESTED=110, PC_LINK_KEY_NEGATIVE=120, PC_PIN_CODE_REPLY=130,
 			PC_WRITE_SCAN_PAGE=200};
 //////////////
 
@@ -428,6 +429,10 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
 				break;
 			case EV_LINK_KEY_NOTIFICATION: // 0x18
 				handle_hci_link_key_notification();	
+				break;
+			case HCI_Extended_Inquiry_Result:
+				handle_hci_extended_inquiry_result();
+				break;
 			default:
 				break;
 	    }
@@ -513,7 +518,7 @@ void BluetoothController::handle_hci_command_complete()
 		case HCI_Read_Local_Version_Information:	//0x1001
 			hciVersion = rxbuf_[6];		// Should do error checking above... 
 			DBGPrintf("    Local Version: %x\n", hciVersion);
-			pending_control_ = (do_pair_device_)? PC_SEND_INQUIRE : PC_WRITE_SCAN_PAGE;
+			pending_control_ = (do_pair_device_)? PC_SEND_WRITE_INQUIRE_MODE : PC_WRITE_SCAN_PAGE;
 			break;
 		case HCI_Read_Local_Supported_Commands:	//0x1002
 			break;
@@ -552,14 +557,8 @@ void BluetoothController::handle_hci_command_complete()
 			DBGPrintf("Write_Scan_enable Completed\n");
 			// See if we have driver and a remote
 			if (device_driver_ && connection_complete_) {	// We have a driver call their 
-
-				// Now see if we have the remote name or not?
-				if (device_driver_->remote_name_[0]) {
-					device_driver_->connectionComplete();
-					connection_complete_ = false;	// only call once
-				} else {
-					sendHCIRemoteNameRequest();
-				}
+				device_driver_->connectionComplete();
+				connection_complete_ = false;	// only call once
 			}
 			break;
 		case HCI_WRITE_SSP_MODE:					//0x0c56
@@ -599,6 +598,16 @@ void BluetoothController::queue_next_hci_command()
 			break;
 
 		// These are used when we are pairing. 	
+	    case PC_SEND_WRITE_INQUIRE_MODE:
+			sendHCIHCIWriteInquiryMode(2);  // lets set into extended inquire mode
+			pending_control_++;
+			break;
+
+	    case PC_SEND_SET_EVENT_MASK:
+			sendHCISetEventMask();  // Set the event mask to include extend inquire event
+			pending_control_++;
+			break;
+
 		case PC_SEND_INQUIRE:
 			sendHCI_INQUIRY();
 			pending_control_++;
@@ -702,6 +711,78 @@ void BluetoothController::handle_hci_inquiry_result()
 	}
 }
 
+void BluetoothController::handle_hci_extended_inquiry_result()
+{	
+	DBGPrintf("    Extended Inquiry Result - Count: %d\n", rxbuf_[2]);
+	// Should always be only one result here. 
+	uint8_t index_bd = 3;
+	uint8_t index_ps = 9;
+	uint8_t index_class = 11;
+	uint8_t index_clock_offset = 14;
+	//uint8_t index_rssi = 16;
+	uint8_t index_eir_data = 17;
+	uint8_t index_local_name = 0;
+	uint8_t size_local_name = 0;
+	uint32_t bluetooth_class = rxbuf_[index_class] + ((uint32_t)rxbuf_[index_class+1] << 8) + ((uint32_t)rxbuf_[index_class+2] << 16);
+	DBGPrintf("      BD:%x:%x:%x:%x:%x:%x, PS:%d, class: %x\n", 
+		rxbuf_[index_bd],rxbuf_[index_bd+1],rxbuf_[index_bd+2],rxbuf_[index_bd+3],rxbuf_[index_bd+4],rxbuf_[index_bd+5],
+		rxbuf_[index_ps], bluetooth_class);
+	// Lets see if we can find a name
+	while (index_eir_data < 256) {
+		if (rxbuf_[index_eir_data] == 0) break; // no more data
+		switch (rxbuf_[index_eir_data+1]) {
+			case 0x08: // Shortened local name
+			case 0x09: // complete local name
+				index_local_name = index_eir_data+2;
+				size_local_name = rxbuf_[index_eir_data]-1;
+				break;
+		}
+		index_eir_data += rxbuf_[index_eir_data] + 1;	// point to the next item
+
+	}
+	if (index_local_name && size_local_name) {
+		// Hack lets null teminate the string
+		rxbuf_[index_local_name+size_local_name] = 0;
+
+		DBGPrintf("      Local Name: %s\n", &rxbuf_[index_local_name]);
+	}
+
+	// See if we know the class 
+	if (((bluetooth_class & 0xff00) == 0x2500) || ((bluetooth_class & 0xff00) == 0x500)) {
+		DBGPrintf("      Peripheral device\n");
+		if (bluetooth_class & 0x80) DBGPrintf("        Mouse\n");
+		if (bluetooth_class & 0x40) DBGPrintf("        Keyboard\n"); 
+		switch(bluetooth_class & 0x3c) {
+			case 4: DBGPrintf("        Joystick\n"); break;
+			case 8: DBGPrintf("        Gamepad\n"); break;
+			case 0xc: DBGPrintf("        Remote Control\n"); break;
+		}
+
+		// BUGBUG, lets hard code to go to new state...
+		for (uint8_t i = 0; i < 6; i++) device_bdaddr_[i] = rxbuf_[index_bd+i];
+		device_class_ = bluetooth_class;
+		device_driver_ = find_driver(device_class_, index_local_name? &rxbuf_[index_local_name] : nullptr);
+
+		device_ps_repetion_mode_  = rxbuf_[index_ps]; // mode
+		device_clock_offset_[0] = rxbuf_[index_clock_offset];
+		device_clock_offset_[1] = rxbuf_[index_clock_offset+1];
+
+		// and if we found a driver, save away the name 
+		if (device_driver_ && index_local_name && size_local_name) {
+			uint8_t buffer_index;
+			for (buffer_index = 0; size_local_name && (buffer_index < BTHIDInput::REMOTE_NAME_SIZE-1); buffer_index++) {
+				device_driver_->remote_name_[buffer_index] = rxbuf_[index_local_name+buffer_index];
+				size_local_name--;
+			}
+			device_driver_->remote_name_[buffer_index] = 0;	// make sure null terminated
+		}
+
+		// Now we need to bail from inquiry and setup to try to connect...
+		sendHCIInquiryCancel();
+		pending_control_ = PC_INQUIRE_CANCEL;
+	}
+}
+
 void BluetoothController::handle_hci_inquiry_complete() {
 	VDBGPrintf("    Inquiry Complete - status: %d\n", rxbuf_[2]);
 }
@@ -720,7 +801,7 @@ void BluetoothController::handle_hci_connection_complete() {
 		// The PS4 requires a connection request to it. 
 		delay(1);
 		sendl2cap_ConnectionRequest(device_connection_handle_, connection_rxid_, control_dcid_, HID_CTRL_PSM);
-		
+#if 0		
 		delay(1);
 		
 		uint8_t packet[2];
@@ -729,6 +810,7 @@ void BluetoothController::handle_hci_connection_complete() {
 	    packet[1] = 0x02;      // Report ID
 	    USBHDBGSerial.printf("SixAxis Command Issued!\r\n");
      	sendL2CapCommand(packet, sizeof(packet), 0x40);	
+#endif     	
 	}
 }
 
@@ -848,7 +930,7 @@ void BluetoothController::handle_hci_remote_name_complete() {
 		}
 	}
 	if (device_driver_) {
-		// lets allocate a string object
+		// lets save away the string. 
 		uint8_t buffer_index;
 		for (buffer_index = 0; buffer_index < BTHIDInput::REMOTE_NAME_SIZE-1; buffer_index++) {
 			device_driver_->remote_name_[buffer_index] = rxbuf_[9+buffer_index];
@@ -954,6 +1036,22 @@ void BluetoothController::sendHCICommand(uint16_t hciCommand, uint16_t cParams, 
 	DBGPrintf(")\n");
 	mk_setup(setup, 0x20, 0x0, 0, 0, nbytes);
 	queue_Control_Transfer(device, &setup, txbuf_, this);
+}
+
+//---------------------------------------------
+void  BluetoothController::sendHCIHCIWriteInquiryMode(uint8_t inquiry_mode) {
+	// Setup Inquiry mode 
+	DBGPrintf("HCI_WRITE_INQUIRY_MODE called (");
+	sendHCICommand(HCI_WRITE_INQUIRY_MODE, 1, &inquiry_mode);	
+}
+
+void BluetoothController::sendHCISetEventMask() {
+	// Setup Inquiry mode 
+	DBGPrintf("HCI_Set_Event_Mask called (");
+	static const uint8_t hci_event_mask_data[8] = {
+		// Default: 0x0000 1FFF FFFF FFFF 
+		0xff,0xff, 0xff,0xff, 0xff,0x5f, 0x00,0x00};  // default plus extended inquiry mode
+	sendHCICommand(HCI_Set_Event_Mask, sizeof(hci_event_mask_data), hci_event_mask_data);	
 }
 
 //---------------------------------------------
