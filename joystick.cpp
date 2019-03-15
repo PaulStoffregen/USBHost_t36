@@ -328,9 +328,9 @@ hidclaim_t JoystickController::claim_collection(USBHIDParser *driver, Device_t *
 			axis_change_notify_mask_ = (uint64_t)0xfffffffffffff3ffl;	// Start off assume all bits - 10 and 11
 			break;
 		default: 
-			additional_axis_usage_page_ = 0;
-			additional_axis_usage_start_ = 0;
-			additional_axis_usage_count_ = 0;
+			additional_axis_usage_page_ = 0x09;
+			additional_axis_usage_start_ = 0x21;
+			additional_axis_usage_count_ = 5;
 			axis_change_notify_mask_ = 0x3ff;	// Start off assume only the 10 bits...
 	}
 	DBGPrintf("Claim Additional axis: %x %x %d\n", additional_axis_usage_page_, additional_axis_usage_start_, additional_axis_usage_count_);
@@ -354,7 +354,7 @@ void JoystickController::hid_input_begin(uint32_t topusage, uint32_t type, int l
 
 void JoystickController::hid_input_data(uint32_t usage, int32_t value)
 {
-	//DBGPrintf("Joystick: usage=%X, value=%d\n", usage, value);
+	DBGPrintf("Joystick: usage=%X, value=%d\n", usage, value);
 	uint32_t usage_page = usage >> 16;
 	usage &= 0xFFFF;
 	if (usage_page == 9 && usage >= 1 && usage <= 32) {

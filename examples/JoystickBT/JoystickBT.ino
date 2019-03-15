@@ -51,19 +51,10 @@ uint8_t last_bdaddr[6] = {0, 0, 0, 0, 0, 0};
 
 void setup()
 {
-  /*  Serial4.begin( 1843200 );
-    debBegin_tt( &Serial4, LED_BUILTIN, 12);
-    debTraceShow_tt( -1, "", "", "" );
-    Serial4.println("\n" __FILE__ " " __DATE__ " " __TIME__);
-    Serial4.println("\n********\n T4 connected Serial1 *******\n");
-    Serial4.println("\n" __FILE__ " " __DATE__ " " __TIME__);
-    Serial4.println("\n********\n T4 connected Serial4 *******\n");
-  */
+
   Serial1.begin(2000000);
   while (!Serial) ; // wait for Arduino Serial Monitor
-  //debTraceShow_tt( -2, "", "", "" );
-  //Serial4.println("\n" __FILE__ " " __DATE__ " " __TIME__);
-  //Serial1.begin( 1843200 );
+
   Serial.println("\n\nUSB Host Testing");
   Serial.println(sizeof(USBHub), DEC);
   myusb.begin();
