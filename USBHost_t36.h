@@ -556,7 +556,7 @@ private:
 	BTHIDInput *next = NULL;
 	friend class BluetoothController;
 protected:
-	enum {SP_NEED_CONNECT=0x1, SP_PS3_IDS=0x2};
+	enum {SP_NEED_CONNECT=0x1, SP_DONT_NEED_CONNECT=0x02, SP_PS3_IDS=0x4};
 	enum {REMOTE_NAME_SIZE=32};
 	uint8_t  special_process_required = 0;
 	Device_t *btdevice = NULL;
@@ -1700,7 +1700,7 @@ private:
 	void inline sendHCIRemoteVersionInfoRequest();
 	void handle_hci_command_complete();
 	void handle_hci_command_status();
-	void handle_hci_inquiry_result();
+	void handle_hci_inquiry_result(bool fRSSI=false);
 	void handle_hci_extended_inquiry_result();
 	void handle_hci_inquiry_complete();
 	void handle_hci_incoming_connect();
