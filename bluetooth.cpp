@@ -134,7 +134,7 @@ void inline VDBGPrintf(...) {};
 		,EV_AUTHENTICATION_COMPLETE= 0x06,EV_REMOTE_NAME_COMPLETE= 0x07,EV_ENCRYPTION_CHANGE= 0x08,EV_CHANGE_CONNECTION_LINK= 0x09,EV_ROLE_CHANGED= 0x12
 		,EV_NUM_COMPLETE_PKT= 0x13,EV_PIN_CODE_REQUEST= 0x16,EV_LINK_KEY_REQUEST= 0x17,EV_LINK_KEY_NOTIFICATION= 0x18,EV_DATA_BUFFER_OVERFLOW= 0x1A
 		,EV_MAX_SLOTS_CHANGE= 0x1B,EV_READ_REMOTE_VERSION_INFORMATION_COMPLETE= 0x0C,EV_QOS_SETUP_COMPLETE= 0x0D,EV_COMMAND_COMPLETE= 0x0E,EV_COMMAND_STATUS= 0x0F
-		,EV_LOOPBACK_COMMAND= 0x19,EV_PAGE_SCAN_REP_MODE= 0x20, HCI_Extended_Inquiry_Result=0x2F };
+		,EV_LOOPBACK_COMMAND= 0x19,EV_PAGE_SCAN_REP_MODE= 0x20, EV_INQUIRY_RESULTS_WITH_RSSI=0x22, EV_EXTENDED_INQUIRY_RESULT=0x2F };
 
 
 
@@ -400,7 +400,7 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
 				handle_hci_inquiry_complete();
 				break;
 			case EV_INQUIRY_RESULT:	  // 0x02
-				handle_hci_inquiry_result();
+				handle_hci_inquiry_result(false);
 				break;
 			case EV_CONNECT_COMPLETE:	// 0x03
 				handle_hci_connection_complete();
@@ -430,7 +430,10 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
 			case EV_LINK_KEY_NOTIFICATION: // 0x18
 				handle_hci_link_key_notification();	
 				break;
-			case HCI_Extended_Inquiry_Result:
+			case EV_INQUIRY_RESULTS_WITH_RSSI:
+				handle_hci_inquiry_result(true);
+				break;
+			case EV_EXTENDED_INQUIRY_RESULT:
 				handle_hci_extended_inquiry_result();
 				break;
 			default:
@@ -667,18 +670,28 @@ void BluetoothController::handle_hci_command_status()
 #endif
 }
 
-void BluetoothController::handle_hci_inquiry_result() 
+void BluetoothController::handle_hci_inquiry_result(bool fRSSI) 
 {
-	// 2 f 1 79 22 23 a c5 cc 1 2 0 40 25 0 3b 2 
+	// result - versus result with RSSI
+	//                              | Diverge here... 
+	//  2 f 1 79 22 23 a c5 cc 1 2  0 40 25 0 3b 2 
+	// 22 f 1 79 22 23 a c5 cc 1 2 40 25 0 3e 31 d2
+
 	// Wondered if multiple items if all of the BDADDR are first then next field...
 	// looks like it is that way...
 	// Section 7.7.2
-	DBGPrintf("    Inquiry Result - Count: %d\n", rxbuf_[2]);
+	if (fRSSI) DBGPrintf("    Inquiry Result with RSSI - Count: %d\n", rxbuf_[2]);
+	else DBGPrintf("    Inquiry Result - Count: %d\n", rxbuf_[2]);
 	for (uint8_t i=0; i < rxbuf_[2]; i++) {
 		uint8_t index_bd = 3 + (i*6);
 		uint8_t index_ps = 3 + (6*rxbuf_[2]) + i;
 		uint8_t index_class = 3 + (9*rxbuf_[2]) + i;
 		uint8_t index_clock_offset = 3 + (12*rxbuf_[2]) + i;
+		if (fRSSI) {
+			// Handle the differences in offsets here...
+			index_class = 3 + (8*rxbuf_[2]) + i;
+			index_clock_offset = 3 + (11*rxbuf_[2]) + i;
+		} 
 		uint32_t bluetooth_class = rxbuf_[index_class] + ((uint32_t)rxbuf_[index_class+1] << 8) + ((uint32_t)rxbuf_[index_class+2] << 16);
 		DBGPrintf("      BD:%x:%x:%x:%x:%x:%x, PS:%d, class: %x\n", 
 			rxbuf_[index_bd],rxbuf_[index_bd+1],rxbuf_[index_bd+2],rxbuf_[index_bd+3],rxbuf_[index_bd+4],rxbuf_[index_bd+5],
@@ -1440,7 +1453,7 @@ void BluetoothController::process_l2cap_config_response(uint8_t *data) {
 			setHIDProtocol(HID_BOOT_PROTOCOL);  //
 		}
 		//setHIDProtocol(HID_RPT_PROTOCOL);  //HID_RPT_PROTOCOL
-		if (do_pair_device_) {
+		if (do_pair_device_ && !(device_driver_ && (device_driver_->special_process_required & BTHIDInput::SP_DONT_NEED_CONNECT))) {
 			pending_control_tx_ = STATE_TX_SEND_CONNECT_INT;
 		} else if (device_driver_ && (device_driver_->special_process_required & BTHIDInput::SP_NEED_CONNECT)) {
 			DBGPrintf("   Needs connect to device INT(PS4?)\n");
