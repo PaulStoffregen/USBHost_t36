@@ -510,12 +510,8 @@ void BluetoothController::handle_hci_command_complete()
 			break;
 		case HCI_Read_BD_ADDR:	//0x1009
 			{
-	     		DBGPrintf("   BD Addr");
-	            for(uint8_t i = 0; i < 6; i++) {
-	            	my_bdaddr_[i] = rxbuf_[6 + i];
-	            	DBGPrintf(":%x", my_bdaddr_[i]);
-	            }
-				DBGPrintf("\n");
+	            for(uint8_t i = 0; i < 6; i++) my_bdaddr_[i] = rxbuf_[6 + i];
+		      	DBGPrintf("   BD Addr %x:%x:%x:%x:%x:%x\n", my_bdaddr_[5], my_bdaddr_[4], my_bdaddr_[3], my_bdaddr_[2], my_bdaddr_[1], my_bdaddr_[0]);
 			}
 			break;
 		case HCI_Read_Local_Version_Information:	//0x1001
