@@ -30,7 +30,7 @@
 #define print   USBHost::print_
 #define println USBHost::println_//#define DEBUG_BT
 
-#define DEBUG_BT
+//#define DEBUG_BT
 #define DEBUG_BT_VERBOSE
 
 #ifndef DEBUG_BT
@@ -802,7 +802,7 @@ void BluetoothController::handle_hci_connection_complete() {
 	// 03 0b 04 00 00 40 25 00 58 4b 00 01 00 
 	device_connection_handle_ = rxbuf_[3]+ (uint16_t)(rxbuf_[4]<<8);
 	DBGPrintf("    Connection Complete - ST:%x LH:%x\n", rxbuf_[2], device_connection_handle_);
-	if (do_pair_device_) {
+	if (do_pair_device_ && !(device_driver_ && (device_driver_->special_process_required & BTHIDInput::SP_DONT_NEED_CONNECT))) {
 		sendHCIAuthenticationRequested();
 		pending_control_ = PC_AUTHENTICATION_REQUESTED;
 	} else if (device_driver_ && (device_driver_->special_process_required & BTHIDInput::SP_NEED_CONNECT)) {

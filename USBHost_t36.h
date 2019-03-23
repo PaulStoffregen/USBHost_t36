@@ -58,7 +58,7 @@
 
 
 //#define USBHOST_PRINT_DEBUG
-#define USBHDBGSerial	Serial1
+//#define USBHDBGSerial	Serial1
 
 
 #ifndef USBHDBGSerial
