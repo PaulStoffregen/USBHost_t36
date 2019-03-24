@@ -1,6 +1,8 @@
+float pitch, roll;
 float gx, gy, gz;
 uint16_t xc, yc; 
 uint8_t isTouch;
+float ax, ay, az;
 int16_t xc_old, yc_old;
 
 void printAngles(){
@@ -36,13 +38,13 @@ void getCoords(uint16_t &xc, uint16_t &yc, uint8_t &isTouch){
 }
 
 void getAccel( float &ax,  float &ay,  float &az){
-      int accelx = (int16_t)(psAxis[20]<<8) | psAxis[19];
-      int accelz = (int16_t)(psAxis[22]<<8) | psAxis[21];
-      int accely = (int16_t)(psAxis[24]<<8) | psAxis[23];
-  
-      ax = (float) accelx/8192;
-      ay = (float) accely/8192;
-      az = (float) accelz/8192;
+	int accelx = (int16_t)(psAxis[20]<<8) | psAxis[19];
+	int accelz = (int16_t)(psAxis[22]<<8) | psAxis[21];
+	int accely = (int16_t)(psAxis[24]<<8) | psAxis[23];
+
+	ax = (float) accelx/8192;
+	ay = (float) accely/8192;
+	az = (float) accelz/8192;
 }
 
 void getAngles(float &p, float &r){
