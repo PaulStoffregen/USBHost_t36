@@ -2,6 +2,11 @@
 /*                                                                            */
 /*  PACMAN GAME FOR ARDUINO DUE                                               */
 /*                                                                            */
+/* Adapted to Teensy 3.6 and 4.0                                              */
+/* Currently requires the libraries                                           */
+/*    ili9341_t3n that can be located: https://github.com/KurtE/ILI9341_t3n   */
+/*    spin: https://github.com/KurtE/SPIN                                     */
+/*                                                                            */
 /******************************************************************************/
 /*  Copyright (c) 2014  Dr. NCX (mirracle.mxx@gmail.com)                      */
 /*                                                                            */
@@ -18,9 +23,15 @@
 /******************************************************************************/
 /*  ILI9341:                                                                  */
 /*----------------------------------------------------------------------------*/
+/* Teensy 3.6 Pins                                                            */
 /*   8 = RST                                                                  */
 /*   9 = D/C                                                                  */
 /*  10 = CS                                                                   */
+/*                                                                            */
+/* Teensy 4.0 Beta Pins                                                       */
+/*  23 = RST (Marked MCLK on T4 beta breakout)                                */
+/*  10 = D/C (Marked CS)                                                      */
+/*  9 = CS  (Marked MEMCS)                                                    */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*  VGA:                                                                      */
@@ -115,14 +126,23 @@ uint8_t last_bdaddr[6] = {0, 0, 0, 0, 0, 0};
 // SPI Library
 #include <SPI.h>
 
-// ILI9341_due NEW lib by Marek Buriak http://marekburiak.github.io/ILI9341_due/
-#include "ILI9341_due_config.h"
-
 
 // Connection konfiguration of ILI9341 LCD TFT
+#if defined(__MK66FX1M0__) 
 #define TFT_RST 8
+#define TFT_DC 9
+#define TFT_CS 10
+#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
+// On Teensy 4 beta with Paul's breakout out: 
+// Using pins (MOSI, MISO, SCK which are labeled on Audio board breakout location 
+// which are not in the Normal processor positions
+// Also DC=10(CS), CS=9(BCLK) and RST 23(MCLK)
+#define TFT_RST 23
 #define TFT_DC 10
 #define TFT_CS 9
+#else
+#error "This example App will only work with Teensy 3.6 or Teensy 4."
+#endif
 ILI9341_t3n tft = ILI9341_t3n(TFT_CS, TFT_DC, TFT_RST);
 /******************************************************************************/
 /*   Controll KEYPAD LOOP                                                     */
@@ -373,7 +393,7 @@ const byte _opposite[] = { MStopped, MLeft, MUp, MRight, MDown };
 
 const byte _scatterChase[] = { 7, 20, 7, 20, 5, 20, 5, 0 };
 const byte _scatterTargets[] = { 2, 0, 25, 0, 0, 35, 27, 35 }; // inky/clyde scatter targets are backwards
-const char _pinkyTargetOffset[] = { 4, 0, 0, 4, -4, 0, -4, 4 }; // Includes pinky target bug
+const char _pinkyTargetOffset[] = { 4, 0, 0, 4, (char)-4, 0, (char)-4, 4 }; // Includes pinky target bug
 
 #define FRIGHTENEDGHOSTSPRITE 0
 #define GHOSTSPRITE 2
@@ -649,6 +669,7 @@ class Playfield
       if (LEVEL % 5 == 3) return pgm_read_byte(playMap3 + ty * 28 + cx);
       if (LEVEL % 5 == 4) return pgm_read_byte(playMap4 + ty * 28 + cx);
       if (LEVEL % 5 == 0) return pgm_read_byte(playMap5 + ty * 28 + cx);
+      return 0; //
     }
 
     // Draw 1 bit BG into 8 bit tile
@@ -773,9 +794,6 @@ class Playfield
 
       //      Should be a direct Graphics call
 
-      byte n = tile[0];
-      byte i = 0;
-      word color = (word)_paletteW[n];
 
       //------------------------------------------------------------------------------
 #ifdef USE_ILI
@@ -783,6 +801,7 @@ class Playfield
 #endif
       //------------------------------------------------------------------------------
 #ifdef USE_VGA
+      byte n = tile[0];
       for (byte tmpY = 0; tmpY < 8; tmpY++) {
 
         word width = 1;
@@ -960,7 +979,7 @@ class Playfield
       pacman = _sprites + PACMAN;
 
       //  Chase frightened ghosts
-      Sprite* closestGhost = NULL;
+      //Sprite* closestGhost = NULL;
       Sprite* frightenedGhost = NULL;
       Sprite* closestAttackingGhost = NULL;
       Sprite* DeadEyesStateGhost = NULL;
@@ -983,7 +1002,7 @@ class Playfield
             closestAttackingGhost = s;
             closestAttackingDist = d;
           }
-          closestGhost = s;
+          //closestGhost = s;
 
           if ( s->state == DeadEyesState ) DeadEyesStateGhost = s;
 
@@ -1576,7 +1595,6 @@ class Playfield
 
     void Step()
     {
-      int16_t keys = 0;
 
       if (GAMEWIN == 1) {
         LEVEL++;
@@ -1659,6 +1677,9 @@ void setup() {
   tft.setRotation(2); // 180
   delay(100);
   tft.fillScreen(BLACK);
+  tft.setTextColor(ILI9341_YELLOW);
+  tft.setTextSize(2);
+  tft.println("Waiting for Joystick to connect...");
 #endif
   //------------------------------------------------------------------------------
 
@@ -1674,6 +1695,7 @@ Playfield _game;
 void loop() {
   if (joystick1.available()) {
     if (first_joystick_message) {
+      tft.fillScreen(BLACK);
       Serial.printf("*** First Joystick message %x:%x ***\n",
                     joystick1.idVendor(), joystick1.idProduct());
       first_joystick_message = false;
