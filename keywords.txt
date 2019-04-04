@@ -4,6 +4,7 @@ USBHub	KEYWORD1
 USBHIDParser	KEYWORD1
 KeyboardController	KEYWORD1
 MouseController	KEYWORD1
+DigitizerController	KEYWORD1
 MIDIDevice	KEYWORD1
 USBSerial	KEYWORD1
 AntPlus	KEYWORD1

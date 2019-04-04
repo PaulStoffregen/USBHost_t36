@@ -402,6 +402,7 @@ USBHIDInput * USBHIDParser::find_driver(uint32_t topusage)
 		}
 		driver = driver->next;
 	}
+	println("No Driver claimed topusage: ", topusage, HEX);
 	return NULL;
 }
 

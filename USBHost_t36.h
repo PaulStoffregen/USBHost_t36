@@ -58,7 +58,7 @@
 
 
 //#define USBHOST_PRINT_DEBUG
-//#define USBHDBGSerial	Serial1
+#define USBHDBGSerial	Serial1
 
 
 #ifndef USBHDBGSerial
@@ -694,7 +694,7 @@ private:
 	uint16_t in_size;
 	uint16_t out_size;
 	setup_t setup;
-	uint8_t descriptor[512];
+	uint8_t descriptor[800];
 	uint8_t report[64];
 	uint16_t descsize;
 	bool use_report_id;
@@ -848,6 +848,43 @@ private:
 	int     wheel = 0;
 	int     wheelH = 0;
 };
+
+//--------------------------------------------------------------------------
+
+class DigitizerController : public USBHIDInput, public BTHIDInput {
+public:
+	DigitizerController(USBHost &host) { init(); }
+	bool	available() { return digitizerEvent; }
+	void	digitizerDataClear();
+	uint8_t getButtons() { return buttons; }
+	int     getMouseX() { return mouseX; }
+	int     getMouseY() { return mouseY; }
+	int     getWheel() { return wheel; }
+	int     getWheelH() { return wheelH; }
+	int		getAxis(uint32_t index) { return (index < (sizeof(digiAxes)/sizeof(digiAxes[0]))) ? digiAxes[index] : 0; }
+
+protected:
+	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
+	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
+	virtual void hid_input_data(uint32_t usage, int32_t value);
+	virtual void hid_input_end();
+	virtual void disconnect_collection(Device_t *dev);
+
+
+private:
+	void init();
+
+	uint8_t collections_claimed = 0;
+	volatile bool digitizerEvent = false;
+	volatile bool hid_input_begin_ = false;
+	uint8_t buttons = 0;
+	int     mouseX = 0;
+	int     mouseY = 0;
+	int     wheel = 0;
+	int     wheelH = 0;
+	int     digiAxes[16];
+};
+
 
 //--------------------------------------------------------------------------
 
