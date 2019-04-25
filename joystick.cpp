@@ -41,6 +41,8 @@ JoystickController::product_vendor_mapping_t JoystickController::pid_vid_mapping
 	{ 0x045e, 0x02ea, XBOXONE, false },{ 0x045e, 0x02dd, XBOXONE, false },
 	{ 0x045e, 0x0719, XBOX360, false},
 	{ 0x054C, 0x0268, PS3, true}, 
+	{ 0x054C, 0x042F, PS3, true},	// PS3 Navigation controller
+	{ 0x054C, 0x03D5, PS3, true},	// PS3 Motion controller
 	{ 0x054C, 0x05C4, PS4, true}, {0x054C, 0x09CC, PS4, true }
 };
 
@@ -919,6 +921,9 @@ bool JoystickController::mapNameToJoystickType(const uint8_t *remoteName)
 		DBGPrintf("  JoystickController::mapNameToJoystickType %s - set to PS4\n", remoteName);
 		joystickType_ = PS4;
 	} else if (strncmp((const char *)remoteName, "PLAYSTATION(R)3", 15) == 0) {
+		DBGPrintf("  JoystickController::mapNameToJoystickType %x %s - set to PS3\n", (uint32_t)this, remoteName);
+		joystickType_ = PS3;
+	} else if (strncmp((const char *)remoteName, "Navigation Controller", 21) == 0) {
 		DBGPrintf("  JoystickController::mapNameToJoystickType %x %s - set to PS3\n", (uint32_t)this, remoteName);
 		joystickType_ = PS3;
 	} else if (strncmp((const char *)remoteName, "Xbox Wireless", 13) == 0) {

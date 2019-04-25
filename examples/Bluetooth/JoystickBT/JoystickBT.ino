@@ -255,8 +255,9 @@ void displayPS3Data()
   if ((buttons & 0x04) && !(buttons_prev & 0x04)) show_changed_data = !show_changed_data;
 
   // See about maybe pair...
-  if ((buttons & 0x10000) && !(buttons_prev & 0x10000) && (buttons & 0x0001)) {
+  if ((buttons & 0x10000) && !(buttons_prev & 0x10000) && (buttons & 0x0C01)) {
     // PS button just pressed and select button pressed act like PS4 share like...
+    // Note: you can use either R1 or L1 with the PS button, to work with Sony Move Navigation...
     Serial.print("\nPS3 Pairing Request");
     if (!last_bdaddr[0] && !last_bdaddr[1] && !last_bdaddr[2] && !last_bdaddr[3] && !last_bdaddr[4] && !last_bdaddr[5]) {
       Serial.println(" - failed - no Bluetooth adapter has been plugged in");
