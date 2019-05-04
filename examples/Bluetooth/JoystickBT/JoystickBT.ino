@@ -37,6 +37,13 @@ USBHIDInput *hiddrivers[] = {&joystick1, &rawhid1, &rawhid2};
 const char * hid_driver_names[CNT_DEVICES] = {"Joystick1", "RawHid1", "RawHid2"};
 
 bool hid_driver_active[CNT_DEVICES] = {false, false, false};
+
+BTHIDInput *bthiddrivers[] = {&joystick1};
+#define CNT_BTHIDDEVICES (sizeof(bthiddrivers)/sizeof(bthiddrivers[0]))
+const char * bthid_driver_names[CNT_HIDDEVICES] = {"joystick"};
+bool bthid_driver_active[CNT_HIDDEVICES] = {false};
+
+
 bool show_changed_only = false;
 bool show_raw_data = false;
 bool show_changed_data = false;
@@ -49,6 +56,15 @@ int psAxis[64];
 bool first_joystick_message = true;
 uint8_t last_bdaddr[6] = {0, 0, 0, 0, 0, 0};
 
+// ps3 motion on USB does not do much, but see if we can pair it and maybe change
+// color of bulb... 
+uint32_t PS3_MOTION_timer = 0;
+uint8_t  PS3_MOTION_tried_to_pair_state = 0;
+#define PS3_MOTION_PERIOD 2500 // not sure yet what would be good period for this..
+
+//=============================================================================
+// Setup
+//=============================================================================
 void setup()
 {
 
@@ -65,7 +81,9 @@ void setup()
   rawhid2.attachReceive(OnReceiveHidData);
 }
 
-
+//=============================================================================
+// Loop
+//=============================================================================
 void loop()
 {
   myusb.Task();
@@ -90,7 +108,77 @@ void loop()
       }
     }
   }
+  // check to see if the device list has changed:
+  UpdateActiveDeviceInfo();
+  processPS3MotionTimer();
 
+  if (joystick1.available()) {
+    if (first_joystick_message) {
+      Serial.printf("*** First Joystick message %x:%x ***\n",
+                    joystick1.idVendor(), joystick1.idProduct());
+      first_joystick_message = false;
+
+      const uint8_t *psz = joystick1.manufacturer();
+      if (psz && *psz) Serial.printf("  manufacturer: %s\n", psz);
+      psz = joystick1.product();
+      if (psz && *psz) Serial.printf("  product: %s\n", psz);
+      psz = joystick1.serialNumber();
+      if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
+
+      // lets try to reduce number of fields that update
+      joystick1.axisChangeNotifyMask(0xFFFFFl);
+    }
+
+    for (uint8_t i = 0; i < 64; i++) {
+      psAxis[i] = joystick1.getAxis(i);
+    }
+    switch (joystick1.joystickType()) {
+      case JoystickController::UNKNOWN:
+      case JoystickController::PS4:
+        displayPS4Data();
+        break;
+      case JoystickController::PS3:
+        displayPS3Data();
+        break;
+      case JoystickController::PS3_MOTION:
+        displayPS3MotionData();
+        break;
+      case JoystickController::XBOXONE:
+      case JoystickController::XBOX360:
+        displayXBoxData();
+        break;
+      default:
+        displayRawData();
+        break;
+    }
+    //for (uint8_t i = 0; i < 24; i++) {
+    //  Serial.printf(" %d:%d", i, psAxis[i]);
+    //}
+    //Serial.println();
+
+    delay(100);
+    joystick1.joystickDataClear();
+  }
+
+  // See if we have some RAW data
+  if (rawhid1) {
+    int ch;
+    uint8_t buffer[64];
+    uint8_t count_chars = 0;
+    memset(buffer, 0, sizeof(buffer));
+    if (Serial.available()) {
+      while (((ch = Serial.read()) != -1) && (count_chars < sizeof(buffer))) {
+        buffer[count_chars++] = ch;
+      }
+      rawhid1.sendPacket(buffer);
+    }
+  }
+}
+
+//=============================================================================
+// UpdateActiveDeviceInfo
+//=============================================================================
+void UpdateActiveDeviceInfo() {
   for (uint8_t i = 0; i < CNT_DEVICES; i++) {
     if (*drivers[i] != driver_active[i]) {
       if (driver_active[i]) {
@@ -132,77 +220,51 @@ void loop()
         if (psz && *psz) Serial.printf("  product: %s\n", psz);
         psz = hiddrivers[i]->serialNumber();
         if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
+
+        // See if this is our joystick object...
+        if (hiddrivers[i] == &joystick1) {
+          Serial.printf("  Joystick type: %d\n", joystick1.joystickType());
+          if (joystick1.joystickType() == JoystickController::PS3_MOTION) {
+            Serial.println("  PS3 Motion detected");
+            PS3_MOTION_timer = millis();  // set time for last event
+            PS3_MOTION_tried_to_pair_state = 0; 
+          }
+        }
+
       }
     }
   }
+  // Then Bluetooth devices
+  for (uint8_t i = 0; i < CNT_BTHIDDEVICES; i++) {
+    if (*bthiddrivers[i] != bthid_driver_active[i]) {
+      if (bthid_driver_active[i]) {
+        Serial.printf("*** BTHID Device %s - disconnected ***\n", hid_driver_names[i]);
+        bthid_driver_active[i] = false;
+      } else {
+        Serial.printf("*** BTHID Device %s %x:%x - connected ***\n", hid_driver_names[i], hiddrivers[i]->idVendor(), hiddrivers[i]->idProduct());
+        bthid_driver_active[i] = true;
 
-  if (joystick1.available()) {
-    if (first_joystick_message) {
-      Serial.printf("*** First Joystick message %x:%x ***\n",
-                    joystick1.idVendor(), joystick1.idProduct());
-      first_joystick_message = false;
-
-      const uint8_t *psz = joystick1.manufacturer();
-      if (psz && *psz) Serial.printf("  manufacturer: %s\n", psz);
-      psz = joystick1.product();
-      if (psz && *psz) Serial.printf("  product: %s\n", psz);
-      psz = joystick1.serialNumber();
-      if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
-
-      // lets try to reduce number of fields that update
-      joystick1.axisChangeNotifyMask(0xFFFFFl);
-    }
-
-    for (uint8_t i = 0; i < 64; i++) {
-      psAxis[i] = joystick1.getAxis(i);
-    }
-    switch (joystick1.joystickType()) {
-      case JoystickController::UNKNOWN:
-      case JoystickController::PS4:
-        displayPS4Data();
-        break;
-      case JoystickController::PS3:
-        displayPS3Data();
-        break;
-      case JoystickController::XBOXONE:
-      case JoystickController::XBOX360:
-        displayXBoxData();
-        break;
-      default:
-        displayRawData();
-        break;
-    }
-    //for (uint8_t i = 0; i < 24; i++) {
-    //  Serial.printf(" %d:%d", i, psAxis[i]);
-    //}
-    //Serial.println();
-
-    delay(100);
-    joystick1.joystickDataClear();
-  }
-
-  // See if we have some RAW data
-  if (rawhid1) {
-    int ch;
-    uint8_t buffer[64];
-    uint8_t count_chars = 0;
-    memset(buffer, 0, sizeof(buffer));
-    if (Serial.available()) {
-      while (((ch = Serial.read()) != -1) && (count_chars < sizeof(buffer))) {
-        buffer[count_chars++] = ch;
+        const uint8_t *psz = bthiddrivers[i]->manufacturer();
+        if (psz && *psz) Serial.printf("  manufacturer: %s\n", psz);
+        psz = bthiddrivers[i]->product();
+        if (psz && *psz) Serial.printf("  product: %s\n", psz);
+        psz = bthiddrivers[i]->serialNumber();
+        if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
       }
-      rawhid1.sendPacket(buffer);
     }
   }
 }
 
+//=============================================================================
+// displayPS4Data
+//=============================================================================
 void displayPS4Data()
 {
   buttons = joystick1.getButtons();
   Serial.printf("LX: %d, LY: %d, RX: %d, RY: %d \r\n", psAxis[0], psAxis[1], psAxis[2], psAxis[5]);
   Serial.printf("L-Trig: %d, R-Trig: %d\r\n", psAxis[3], psAxis[4]);
   Serial.printf("Buttons: %x\r\n", buttons);
-  Serial.printf("Battery Status: %d\n", ((psAxis[30] & (1 << 4) - 1)*10));
+  Serial.printf("Battery Status: %d\n", ((psAxis[30] & ((1 << 4) - 1))*10));
   printAngles();
   Serial.println();
 
@@ -244,6 +306,9 @@ void displayPS4Data()
 
 }
 
+//=============================================================================
+// displayPS3Data
+//=============================================================================
 void displayPS3Data()
 
 {
@@ -305,7 +370,61 @@ void displayPS3Data()
     buttons_prev = buttons;
   }
 }
+//=============================================================================
+// displayPS3MotionData
+//=============================================================================
+void displayPS3MotionData()
 
+{
+  buttons = joystick1.getButtons();
+
+  // Hard to know what is best here. for now just copy raw data over... 
+  // will do this for now... Format of thought to be data.
+  //  data[1-3] Buttons (mentioned 4 as well but appears to be counter
+  // axis[0-1] data[5] Trigger, Previous trigger value
+  // 2-5 Unknown probably place holders for Axis like data for other PS3
+  // 6 - Time stamp
+  // 7 - Battery
+  // 8-19 - Accel: XL, XH, YL, YH, ZL, ZH, XL2, XH2, YL2, YH2, ZL2, ZH2
+  // 20-31 - Gyro: Xl,Xh,Yl,Yh,Zl,Zh,Xl2,Xh2,Yl2,Yh2,Zl2,Zh2
+  // 32 - Temp High
+  // 33 - Temp Low (4 bits)  Maybe Magneto x High on other?? 
+
+  // Use Select button to choose raw or not
+  if ((buttons & 0x01) && !(buttons_prev & 0x01)) show_raw_data = !show_raw_data;
+  if ((buttons & 0x04) && !(buttons_prev & 0x04)) show_changed_data = !show_changed_data;
+
+  if (show_raw_data)  {
+    displayRawData();
+  } else {
+    uint64_t changed_mask = joystick1.axisChangedMask();
+    Serial.printf("Changed: %08x Buttons: %x: Trig: %d\r\n", (uint32_t)changed_mask, buttons, psAxis[0]);
+    Serial.printf("Battery Status: %d\n", psAxis[7]);
+    printPS3MotionAngles();
+    Serial.println();
+  }
+
+  uint8_t ltv = psAxis[0];
+
+  if ((ltv != joystick_left_trigger_value) ) {
+    joystick_left_trigger_value = ltv;
+    Serial.printf("Rumbling: %d\r\n", ltv);
+    joystick1.setRumble(ltv, 0);
+  }
+
+  if (buttons != buttons_prev) {
+    uint8_t ledsR = (buttons & 0x8000)? 0xff : 0;   //Srq
+    uint8_t ledsG = (buttons & 0x2000)? 0xff : 0;   //Cir
+    uint8_t ledsB = (buttons & 0x1000)? 0xff : 0;   //Tri
+    Serial.printf("Set Leds %x %x %x\r\n", ledsR, ledsG, ledsB );
+    joystick1.setLEDs(ledsR, ledsG, ledsB);
+    buttons_prev = buttons;
+  }
+}
+
+//=============================================================================
+// displayXBoxData
+//=============================================================================
 void displayXBoxData()
 {
   buttons = joystick1.getButtons();
@@ -345,6 +464,9 @@ void displayXBoxData()
   }
 }
 
+//=============================================================================
+// displayRawData
+//=============================================================================
 void displayRawData() {
   uint64_t axis_mask = joystick1.axisMask();
   uint64_t changed_mask = joystick1.axisChangedMask();
@@ -380,6 +502,9 @@ void displayRawData() {
 }
 
 
+//=============================================================================
+// OnReceiveHidData
+//=============================================================================
 bool OnReceiveHidData(uint32_t usage, const uint8_t *data, uint32_t len) {
   // Called for maybe both HIDS for rawhid basic test.  One is for the Teensy
   // to output to Serial. while still having Raw Hid...
@@ -413,4 +538,49 @@ bool OnReceiveHidData(uint32_t usage, const uint8_t *data, uint32_t len) {
   }
 
   return true;
+}
+
+//=============================================================================
+// processPS3MotionTimer
+//=============================================================================
+static const uint32_t PS3_MOTION_colors[] = {0, 0xff, 0xff00, 0xff0000, 0xffff, 0xff00ff, 0xffff00, 0xffffff};
+
+uint8_t PS3_MOTION_colors_index = 0;
+
+void processPS3MotionTimer() {
+  // See if we have a PS3_MOTION connected and we have run for a certain amount of time
+
+  if (PS3_MOTION_timer && ((millis()-PS3_MOTION_timer) >= PS3_MOTION_PERIOD)) {
+    Serial.println("PS3 Motion Timer"); Serial.flush();
+    if (joystick1) {
+      PS3_MOTION_timer = millis(); // joystick not there any more...
+
+      // We will first try to set feedback color for the PS3, maybe alternate colors
+      if (++PS3_MOTION_colors_index >= sizeof(PS3_MOTION_colors)/sizeof(PS3_MOTION_colors[0])) PS3_MOTION_colors_index = 0;
+      joystick1.setLEDs(PS3_MOTION_colors[PS3_MOTION_colors_index]);
+
+      // Next see if we can try to pair.
+      if (PS3_MOTION_tried_to_pair_state == 0) {
+        Serial.println("PS3_MOTION Connected");
+        if (!last_bdaddr[0] && !last_bdaddr[1] && !last_bdaddr[2] && !last_bdaddr[3] && !last_bdaddr[4] && !last_bdaddr[5]) {
+          Serial.println(" - No Bluetooth adapter has been plugged in - so will not try to pair");
+          PS3_MOTION_tried_to_pair_state = 1;
+        }
+      } 
+      if ((PS3_MOTION_tried_to_pair_state < 2)  &&
+          (last_bdaddr[0] || last_bdaddr[1] || last_bdaddr[2] || last_bdaddr[3] || last_bdaddr[4] || last_bdaddr[5])) {
+        Serial.println("  - Bluetooth device detected, will try to pair");
+        // Lets try to pair
+        if (! joystick1.PS3Pair(last_bdaddr)) {
+          Serial.println(" - Pairing call Failed");
+        } else {
+          Serial.println(" - Pairing complete (I hope), make sure Bluetooth adapter is plugged in and try PS3 without USB");
+        }
+        PS3_MOTION_tried_to_pair_state = 2; // don't try again...
+      }
+    }  else {
+      Serial.println("PS3 Motion Joystick no longer detected");
+      PS3_MOTION_timer = 0; // joystick not there any more...
+    }
+  }
 }

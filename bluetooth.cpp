@@ -31,7 +31,7 @@
 #define println USBHost::println_//#define DEBUG_BT
 
 //#define DEBUG_BT
-#define DEBUG_BT_VERBOSE
+//#define DEBUG_BT_VERBOSE
 
 #ifndef DEBUG_BT
 #undef DEBUG_BT_VERBOSE
@@ -1342,6 +1342,9 @@ void BluetoothController::sendL2CapCommand(uint8_t* data, uint8_t nbytes, int ch
 	switch (channel) {
 		case CONTROL_SCID:
 			channel_out = control_scid_;
+			break;
+		case INTERRUPT_SCID:
+			channel_out = interrupt_scid_;
 			break;
 		default:
 			channel_out = (uint16_t)channel;

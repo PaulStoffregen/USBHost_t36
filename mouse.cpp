@@ -35,7 +35,7 @@ void MouseController::init()
 hidclaim_t MouseController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
 {
 	// only claim Desktop/Mouse
-	if (topusage != 0x10002) return CLAIM_NO;
+	if ((topusage != 0x10002) && (topusage != 0x10001)) return CLAIM_NO;
 	// only claim from one physical device
 	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
 	mydevice = dev;

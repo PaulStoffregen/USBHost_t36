@@ -22,7 +22,6 @@ void printAngles(){
 void getCoords(uint16_t &xc, uint16_t &yc, uint8_t &isTouch){
 
 	//uint8_t finger = 0;  //only getting finger 1
-	uint8_t Id = 0;
 
 
   // Trackpad touch 1: id, active, x, y
@@ -62,4 +61,45 @@ void getGyro(float &gx, float &gy, float &gz){
 	gy = (float) gyroy * RAD_TO_DEG/1024;
 	gz = (float) gyroz * RAD_TO_DEG/1024;
 }
+
+
+void printPS3MotionAngles(){
+  //test function calls
+  float gx, gy, gz;
+  getPS3MotionAccel(ax, ay, az);
+  Serial.printf("Accel-g's: %f, %f, %f\n", ax, ay, az);
+  getPS3MotionGyro(gx, gy, gz);
+  Serial.printf("Gyro-deg/sec: %f, %f, %f\n", gx, gy, gz);
+
+  getPS3MotionAngles(pitch, roll);
+  Serial.printf("Pitch/Roll: %f, %f\n", pitch, roll);
+}
+
+
+void getPS3MotionAccel( float &ax,  float &ay,  float &az){
+	int accelx = (int16_t)(psAxis[9]<<8) | psAxis[8];
+	int accely = (int16_t)(psAxis[11]<<8) | psAxis[10];
+	int accelz = (int16_t)(psAxis[13]<<8) | psAxis[12];
+
+	ax = (float) accelx/8192;
+	ay = (float) accely/8192;
+	az = (float) accelz/8192;
+}
+
+void getPS3MotionAngles(float &p, float &r){
+	getAccel( ax,  ay,  az);
+	p = (atan2f(ay, az) + PI) * RAD_TO_DEG;
+	r = (atan2f(ax, az) + PI) * RAD_TO_DEG;
+}
+
+void getPS3MotionGyro(float &gx, float &gy, float &gz){
+	int gyrox = (int16_t)(psAxis[21]<<8) | psAxis[20];
+	int gyroy = (int16_t)(psAxis[23]<<8) | psAxis[22];
+	int gyroz = (int16_t)(psAxis[25]<<8) | psAxis[24];
+
+	gx = (float) gyrox * RAD_TO_DEG/1024;
+	gy = (float) gyroy * RAD_TO_DEG/1024;
+	gz = (float) gyroz * RAD_TO_DEG/1024;
+}
+	
 	

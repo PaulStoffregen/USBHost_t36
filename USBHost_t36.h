@@ -58,7 +58,7 @@
 
 
 //#define USBHOST_PRINT_DEBUG
-#define USBHDBGSerial	Serial1
+//#define USBHDBGSerial	Serial1
 
 
 #ifndef USBHDBGSerial
@@ -911,10 +911,11 @@ public:
 
 	// set functions functionality depends on underlying joystick. 
     bool setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeout=0xff);
-    // setLEDs on PS4(RGB), PS3 simple LED setting (only uses lr)
-    bool setLEDs(uint8_t lr, uint8_t lg=0, uint8_t lb=0);  // sets Leds, 
+    // setLEDs on PS4(RGB), PS3 simple LED setting (only uses lb)
+    bool setLEDs(uint8_t lr, uint8_t lg, uint8_t lb);  // sets Leds, 
+    bool inline setLEDs(uint32_t leds) {return setLEDs((leds >> 16) & 0xff, (leds >> 8) & 0xff, leds & 0xff);}  // sets Leds - passing one arg for all leds 
 	enum { STANDARD_AXIS_COUNT = 10, ADDITIONAL_AXIS_COUNT = 54, TOTAL_AXIS_COUNT = (STANDARD_AXIS_COUNT+ADDITIONAL_AXIS_COUNT) };
-	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360} joytype_t;
+	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360, PS3_MOTION} joytype_t;
 	joytype_t joystickType() {return joystickType_;} 
 
 	// PS3 pair function. hack, requires that it be connect4ed by USB and we have the address of the Bluetooth dongle...
@@ -954,6 +955,7 @@ private:
 	joytype_t mapVIDPIDtoJoystickType(uint16_t idVendor, uint16_t idProduct, bool exclude_hid_devices);
 	bool transmitPS4UserFeedbackMsg();
 	bool transmitPS3UserFeedbackMsg();
+	bool transmitPS3MotionUserFeedbackMsg();
 	bool mapNameToJoystickType(const uint8_t *remoteName);
 
 	bool anychange = false;
@@ -1685,7 +1687,7 @@ public:
     const uint8_t* 	myBDAddr(void) {return my_bdaddr_;}
 
 	// BUGBUG version to allow some of the controlled objects to call?
-    enum {CONTROL_SCID=-1};
+    enum {CONTROL_SCID=-1, INTERRUPT_SCID=-2};
     void sendL2CapCommand(uint8_t* data, uint8_t nbytes, int channel = (int)0x0001);
 
 protected:

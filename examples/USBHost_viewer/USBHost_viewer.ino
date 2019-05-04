@@ -251,7 +251,7 @@ void UpdateActiveDeviceInfo() {
     if (*bthiddrivers[i] != bthid_driver_active[i]) {
       if (bthid_driver_active[i]) {
         Serial.printf("*** BTHID Device %s - disconnected ***\n", hid_driver_names[i]);
-        hid_driver_active[i] = false;
+        bthid_driver_active[i] = false;
       } else {
         new_device_detected = true;
         Serial.printf("*** BTHID Device %s %x:%x - connected ***\n", hid_driver_names[i], hiddrivers[i]->idVendor(), hiddrivers[i]->idProduct());

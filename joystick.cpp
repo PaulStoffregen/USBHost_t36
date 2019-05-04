@@ -42,7 +42,7 @@ JoystickController::product_vendor_mapping_t JoystickController::pid_vid_mapping
 	{ 0x045e, 0x0719, XBOX360, false},
 	{ 0x054C, 0x0268, PS3, true}, 
 	{ 0x054C, 0x042F, PS3, true},	// PS3 Navigation controller
-	{ 0x054C, 0x03D5, PS3, true},	// PS3 Motion controller
+	{ 0x054C, 0x03D5, PS3_MOTION, true},	// PS3 Motion controller
 	{ 0x054C, 0x05C4, PS4, true}, {0x054C, 0x09CC, PS4, true }
 };
 
@@ -127,6 +127,8 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
 			break;
 		case PS3:
 			return transmitPS3UserFeedbackMsg();
+		case PS3_MOTION:
+			return transmitPS3MotionUserFeedbackMsg();
 		case PS4:
 			return transmitPS4UserFeedbackMsg();
 		case XBOXONE:
@@ -169,6 +171,7 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
 	return false;
 }
 
+
 bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
 {
 	// Need to know which joystick we are on.  Start off with XBox support - maybe need to add some enum value for the known
@@ -181,6 +184,8 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
 		switch (joystickType_) {
 			case PS3:
 				return transmitPS3UserFeedbackMsg();
+			case PS3_MOTION:
+				return transmitPS3MotionUserFeedbackMsg();
 			case PS4:
 				return transmitPS4UserFeedbackMsg();
 			case XBOX360:
@@ -272,7 +277,7 @@ bool JoystickController::transmitPS3UserFeedbackMsg() {
 	    txbuf_[2] = rumble_lValue_; // Small Rumble
 	    txbuf_[3] = rumble_rValue_? rumble_timeout_ : 0; 
 	    txbuf_[4] = rumble_rValue_; // Big rumble
-	    txbuf_[9] = leds_[0] << 1; // RGB value 
+	    txbuf_[9] = leds_[2] << 1; // RGB value 	// using third led now...
 	    //DBGPrintf("\nJoystick update Rumble/LEDs %d %d %d %d %d\n",  txbuf_[1], txbuf_[2],  txbuf_[3],  txbuf_[4],  txbuf_[9]);
 		return driver_->sendControlPacket(0x21, 9, 0x201, 0, 48, txbuf_); 
 	} else if (btdriver_) {
@@ -284,9 +289,36 @@ bool JoystickController::transmitPS3UserFeedbackMsg() {
 	    txbuf_[4] = rumble_lValue_; // Small Rumble
 	    txbuf_[5] = rumble_rValue_? rumble_timeout_ : 0; 
 	    txbuf_[6] = rumble_rValue_; // Big rumble
-	    txbuf_[11] = leds_[0] << 1; // RGB value 
+	    txbuf_[11] = leds_[2] << 1; // RGB value 
 	    DBGPrintf("\nJoystick update Rumble/LEDs %d %d %d %d %d\n",  txbuf_[3], txbuf_[4],  txbuf_[5],  txbuf_[6],  txbuf_[11]);
      	btdriver_->sendL2CapCommand(txbuf_, 50, BluetoothController::CONTROL_SCID);
+     	return true;
+	}
+	return false;
+}
+
+#define MOVE_REPORT_BUFFER_SIZE 7
+#define MOVE_HID_BUFFERSIZE 50 // Size of the buffer for the Playstation Motion Controller
+
+bool JoystickController::transmitPS3MotionUserFeedbackMsg() {
+	if (driver_) {
+        txbuf_[0] = 0x02; // Set report ID, this is needed for Move commands to work
+        txbuf_[2] = leds_[0];
+        txbuf_[3] = leds_[1];
+        txbuf_[4] = leds_[2];
+        txbuf_[6] = rumble_lValue_; // Set the rumble value into the write buffer
+
+		//return driver_->sendControlPacket(0x21, 9, 0x201, 0, MOVE_REPORT_BUFFER_SIZE, txbuf_); 
+		return driver_->sendPacket(txbuf_, MOVE_REPORT_BUFFER_SIZE);
+
+	} else if (btdriver_) {
+        txbuf_[0] = 0xA2; // HID BT DATA_request (0xA0) | Report Type (Output 0x02)
+        txbuf_[1] = 0x02; // Report ID
+        txbuf_[3] = leds_[0];
+        txbuf_[4] = leds_[1];
+        txbuf_[5] = leds_[2];
+        txbuf_[7] = rumble_lValue_;
+     	btdriver_->sendL2CapCommand(txbuf_, MOVE_HID_BUFFERSIZE, BluetoothController::INTERRUPT_SCID);
      	return true;
 	}
 	return false;
@@ -318,6 +350,7 @@ hidclaim_t JoystickController::claim_collection(USBHIDParser *driver, Device_t *
 	DBGPrintf("JoystickController::claim_collection joystickType_=%d\n", joystickType_);
 	switch (joystickType_) {
 		case PS3:
+		case PS3_MOTION: // not sure yet
 			additional_axis_usage_page_ = 0x1;
 			additional_axis_usage_start_ = 0x100;
 			additional_axis_usage_count_ = 39;
@@ -711,7 +744,7 @@ bool JoystickController::claim_bluetooth(BluetoothController *driver, uint32_t b
 	}
 
 	if (remoteName && mapNameToJoystickType(remoteName)) {
-		if (joystickType_ == PS3) {
+		if ((joystickType_ == PS3) || (joystickType_ == PS3_MOTION)) {
 			DBGPrintf("JoystickController::claim_bluetooth TRUE PS3 hack...\n");
 			btdriver_ = driver;
 			btdevice = (Device_t*)driver;	// remember this way 
@@ -728,13 +761,15 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 	// Example data from PS4 controller
 	//01 7e 7f 82 84 08 00 00 00 00
 	//   LX LY RX RY BT BT PS LT RT
-	//DBGPrintf("JoystickController::process_bluetooth_HID_data\n");
+	DBGPrintf("JoystickController::process_bluetooth_HID_data: data[0]=%x\n", data[0]);
 	// May have to look at this one with other controllers...
 	if (data[0] == 1) {
 		//print("  Joystick Data: ");
-		//print_hexbytes(data, length);
-//		DBGPrintf("  Joystick Data: ");
+		// print_hexbytes(data, length);
 		if (length > TOTAL_AXIS_COUNT) length = TOTAL_AXIS_COUNT;	// don't overflow arrays...
+		DBGPrintf("  Joystick Data: ");
+		for(uint16_t i =0; i < length; i++) DBGPrintf("%02x ", data[i]);
+		DBGPrintf("\r\n");	
 		if (joystickType_ == PS3) {
 			// Quick and dirty hack to match PS3 HID data
 			uint32_t cur_buttons = data[2] | ((uint16_t)data[3] << 8) | ((uint32_t)data[4] << 16); 
@@ -777,6 +812,37 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 				} 
 				mask <<= 1;	// shift down the mask.
 			}
+		} else if (joystickType_ == PS3_MOTION) {
+			// Quick and dirty PS3_Motion data.
+			uint32_t cur_buttons = data[1] | ((uint16_t)data[2] << 8) | ((uint32_t)data[3] << 16); 
+			if (cur_buttons != buttons) {
+				buttons = cur_buttons;
+				joystickEvent = true;	// something changed.
+			}
+
+			// Hard to know what is best here. for now just copy raw data over... 
+			// will do this for now... Format of thought to be data.
+			//  data[1-3] Buttons (mentioned 4 as well but appears to be counter
+			// axis[0-1] data[5] Trigger, Previous trigger value
+			// 2-5 Unknown probably place holders for Axis like data for other PS3
+			// 6 - Time stamp
+			// 7 - Battery
+			// 8-19 - Accel: XL, XH, YL, YH, ZL, ZH, XL2, XH2, YL2, YH2, ZL2, ZH2
+			// 20-31 - Gyro: Xl,Xh,Yl,Yh,Zl,Zh,Xl2,Xh2,Yl2,Yh2,Zl2,Zh2
+			// 32 - Temp High
+			// 33 - Temp Low (4 bits)  Maybe Magneto x High on other?? 
+			uint64_t mask = 0x1;
+			axis_mask_ = 0;	// assume bits 0, 1, 2, 5
+			// Then rest of data
+			mask = 0x1 << 10;	// setup for other bits
+			for (uint16_t i = 5; i < length; i++ ) {
+				axis_mask_ |= mask;
+				if(data[i] != axis[i-5]) { 
+					axis_changed_mask_ |= mask;
+					axis[i-5] = data[i];
+				} 
+				mask <<= 1;	// shift down the mask.
+			}
 
 		} else {
 			uint64_t mask = 0x1;
@@ -800,116 +866,92 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 		return true;
 
 	} else if(data[0] == 0x11){
-		if (data[0] == 1) {
-			//print("  Joystick Data: ");
-			//print_hexbytes(data, length);
-	//		DBGPrintf("  Joystick Data: ");
-			uint64_t mask = 0x1;
-			axis_mask_ = 0;
-			axis_changed_mask_ = 0;
-
-			if (length > TOTAL_AXIS_COUNT) length = TOTAL_AXIS_COUNT;	// don't overflow arrays...
-			for (uint16_t i = 0; i < length; i++ ) {
-				axis_mask_ |= mask;
-				if(data[i] != axis[i]) { 
-					axis_changed_mask_ |= mask;
-					axis[i] = data[i];
-				} 
-				mask <<= 1;	// shift down the mask.
-	//			DBGPrintf("%02x ", axis[i]);
-			}
-	//		DBGPrintf("\n");
-			joystickEvent = true;
-			connected_ = true;
-			return true;
-		} else if(data[0] == 0x11){
-			DBGPrintf("\n  Joystick Data: ");
-			uint64_t mask = 0x1;
-			axis_mask_ = 0;
-			axis_changed_mask_ = 0;
-			
-			//This moves data to be equivalent to what we see for
-			//data[0] = 0x01
-			uint8_t tmp_data[length-2];
-			
-			for (uint16_t i = 0; i < (length-2); i++ ) {
-				tmp_data[i] = 0;
-				tmp_data[i] = data[i+2];
-			}
-			
-			/*
-			 * [1] LX, [2] = LY, [3] = RX, [4] = RY
-			 * [5] combo, tri, cir, x, sqr, D-PAD (4bits, 0-3
-			 * [6] R3,L3, opt, share, R2, L2, R1, L1
-			 * [7] Counter (bit7-2), T-PAD, PS
-			 * [8] Left Trigger, [9] Right Trigger
-			 * [10-11] Timestamp
-			 * [12] Battery (0 to 0xff)
-			 * [13-14] acceleration x
-			 * [15-16] acceleration y
-			 * [17-18] acceleration z
-			 * [19-20] gyro x
-			 * [21-22] gyro y
-			 * [23-24] gyro z
-			 * [25-29] unknown
-			 * [30] 0x00,phone,mic, usb, battery level (4bits)
-			 * rest is trackpad?  to do implement?
-			 */
-			//PS Bit
-			tmp_data[7] = (tmp_data[7] >> 0) & 1;
-			//set arrow buttons to axis[0]
-			tmp_data[10] = tmp_data[5] & ((1 << 4) - 1);
-			//set buttons for last 4bits in the axis[5]
-			tmp_data[5] = tmp_data[5] >> 4;
-			
+		DBGPrintf("\n  Joystick Data: ");
+		uint64_t mask = 0x1;
+		axis_mask_ = 0;
+		axis_changed_mask_ = 0;
 		
-			// Quick and dirty hack to match PS4 HID data
-			uint32_t cur_buttons = tmp_data[7] | (tmp_data[10]) | ((tmp_data[6]*10)) | ((uint16_t)tmp_data[5] << 16) ; 
-			if (cur_buttons != buttons) {
-				buttons = cur_buttons;
-				joystickEvent = true;	// something changed.
-			}
-			
-			mask = 0x1;
-			axis_mask_ = 0x27;	// assume bits 0, 1, 2, 5
-			for (uint16_t i = 0; i < 3; i++) {
-				if (axis[i] != tmp_data[i+1]) {
-					axis_changed_mask_ |= mask;
-					axis[i] = tmp_data[i+1];
-				}
-				mask <<= 1;	// shift down the mask.
-			}
-			if (axis[5] != tmp_data[4]) {
-				axis_changed_mask_ |= (1<<5);
-				axis[5] = tmp_data[4];
-			}
-			
-			if (axis[3] != tmp_data[8]) {
-				axis_changed_mask_ |= (1<<3);
-				axis[3] = tmp_data[8];
-			}
-			
-			if (axis[4] != tmp_data[9]) {
-				axis_changed_mask_ |= (1<<4);
-				axis[4] = tmp_data[9];
-			}
-			
-			//limit for masking
-			mask = 0x1;
-			for (uint16_t i = 6; i < (64); i++ ) {
-				axis_mask_ |= mask;
-				if(tmp_data[i] != axis[i]) { 
-					axis_changed_mask_ |= mask;
-					axis[i] = tmp_data[i];
-				}
-				mask <<= 1;	// shift down the mask.
-				DBGPrintf("%02x ", axis[i]);
-			}
-			DBGPrintf("\n");
-			//DBGPrintf("Axis Mask (axis_mask_, axis_changed_mask_; %d, %d\n", axis_mask_,axis_changed_mask_);
-			joystickEvent = true;
-			connected_ = true;
+		//This moves data to be equivalent to what we see for
+		//data[0] = 0x01
+		uint8_t tmp_data[length-2];
+		
+		for (uint16_t i = 0; i < (length-2); i++ ) {
+			tmp_data[i] = 0;
+			tmp_data[i] = data[i+2];
 		}
+		
+		/*
+		 * [1] LX, [2] = LY, [3] = RX, [4] = RY
+		 * [5] combo, tri, cir, x, sqr, D-PAD (4bits, 0-3
+		 * [6] R3,L3, opt, share, R2, L2, R1, L1
+		 * [7] Counter (bit7-2), T-PAD, PS
+		 * [8] Left Trigger, [9] Right Trigger
+		 * [10-11] Timestamp
+		 * [12] Battery (0 to 0xff)
+		 * [13-14] acceleration x
+		 * [15-16] acceleration y
+		 * [17-18] acceleration z
+		 * [19-20] gyro x
+		 * [21-22] gyro y
+		 * [23-24] gyro z
+		 * [25-29] unknown
+		 * [30] 0x00,phone,mic, usb, battery level (4bits)
+		 * rest is trackpad?  to do implement?
+		 */
+		//PS Bit
+		tmp_data[7] = (tmp_data[7] >> 0) & 1;
+		//set arrow buttons to axis[0]
+		tmp_data[10] = tmp_data[5] & ((1 << 4) - 1);
+		//set buttons for last 4bits in the axis[5]
+		tmp_data[5] = tmp_data[5] >> 4;
+		
+	
+		// Quick and dirty hack to match PS4 HID data
+		uint32_t cur_buttons = tmp_data[7] | (tmp_data[10]) | ((tmp_data[6]*10)) | ((uint16_t)tmp_data[5] << 16) ; 
+		if (cur_buttons != buttons) {
+			buttons = cur_buttons;
+			joystickEvent = true;	// something changed.
+		}
+		
+		mask = 0x1;
+		axis_mask_ = 0x27;	// assume bits 0, 1, 2, 5
+		for (uint16_t i = 0; i < 3; i++) {
+			if (axis[i] != tmp_data[i+1]) {
+				axis_changed_mask_ |= mask;
+				axis[i] = tmp_data[i+1];
+			}
+			mask <<= 1;	// shift down the mask.
+		}
+		if (axis[5] != tmp_data[4]) {
+			axis_changed_mask_ |= (1<<5);
+			axis[5] = tmp_data[4];
+		}
+		
+		if (axis[3] != tmp_data[8]) {
+			axis_changed_mask_ |= (1<<3);
+			axis[3] = tmp_data[8];
+		}
+		
+		if (axis[4] != tmp_data[9]) {
+			axis_changed_mask_ |= (1<<4);
+			axis[4] = tmp_data[9];
+		}
+		
+		//limit for masking
+		mask = 0x1;
+		for (uint16_t i = 6; i < (64); i++ ) {
+			axis_mask_ |= mask;
+			if(tmp_data[i] != axis[i]) { 
+				axis_changed_mask_ |= mask;
+				axis[i] = tmp_data[i];
+			}
+			mask <<= 1;	// shift down the mask.
+			DBGPrintf("%02x ", axis[i]);
+		}
+		DBGPrintf("\n");
+		//DBGPrintf("Axis Mask (axis_mask_, axis_changed_mask_; %d, %d\n", axis_mask_,axis_changed_mask_);
+		joystickEvent = true;
+		connected_ = true;
 	}
 	return false;
 }
@@ -926,6 +968,9 @@ bool JoystickController::mapNameToJoystickType(const uint8_t *remoteName)
 	} else if (strncmp((const char *)remoteName, "Navigation Controller", 21) == 0) {
 		DBGPrintf("  JoystickController::mapNameToJoystickType %x %s - set to PS3\n", (uint32_t)this, remoteName);
 		joystickType_ = PS3;
+	} else if (strncmp((const char *)remoteName, "Motion Controller", 17) == 0) {
+		DBGPrintf("  JoystickController::mapNameToJoystickType %x %s - set to PS3 Motion\n", (uint32_t)this, remoteName);
+		joystickType_ = PS3_MOTION;
 	} else if (strncmp((const char *)remoteName, "Xbox Wireless", 13) == 0) {
 		DBGPrintf("  JoystickController::mapNameToJoystickType %x %s - set to XBOXONE\n", (uint32_t)this, remoteName);
 		joystickType_ = XBOXONE;
@@ -944,6 +989,7 @@ bool JoystickController::remoteNameComplete(const uint8_t *remoteName)
 		switch (joystickType_) {
 			case PS4: special_process_required = SP_NEED_CONNECT; break;
 			case PS3: special_process_required = SP_PS3_IDS; break;
+			case PS3_MOTION: special_process_required = SP_PS3_IDS; break;
 			default: 
 				break;
 		}
@@ -954,28 +1000,37 @@ bool JoystickController::remoteNameComplete(const uint8_t *remoteName)
 void JoystickController::connectionComplete() 
 {
 	DBGPrintf("  JoystickController::connectionComplete %x joystick type %d\n", (uint32_t)this, joystickType_);
-	if (joystickType_ == PS4) {
-		uint8_t packet[2];
-		packet[0] = 0x43; // HID BT Get_report (0x40) | Report Type (Feature 0x03)
-		packet[1] = 0x02; // Report ID
-		DBGPrintf("Set PS4 report\n");
-		delay(1);
-		btdriver_->sendL2CapCommand(packet, sizeof(packet), 0x40);
+	switch (joystickType_) {
+	case PS4:
+		{
+			uint8_t packet[2];
+			packet[0] = 0x43; // HID BT Get_report (0x40) | Report Type (Feature 0x03)
+			packet[1] = 0x02; // Report ID
+			DBGPrintf("Set PS4 report\n");
+			delay(1);
+			btdriver_->sendL2CapCommand(packet, sizeof(packet), 0x40);			
+		}
+		break;
+	case PS3:
+		{
+			uint8_t packet[6];
+			packet[0] = 0x53; // HID BT Set_report (0x50) | Report Type (Feature 0x03)
+			packet[1] = 0xF4; // Report ID
+			packet[2] = 0x42; // Special PS3 Controller enable commands
+			packet[3] = 0x03;
+			packet[4] = 0x00;
+			packet[5] = 0x00;
 
-	} else if (joystickType_ == PS3) {
-	uint8_t packet[6];
-		packet[0] = 0x53; // HID BT Set_report (0x50) | Report Type (Feature 0x03)
-		packet[1] = 0xF4; // Report ID
-		packet[2] = 0x42; // Special PS3 Controller enable commands
-		packet[3] = 0x03;
-		packet[4] = 0x00;
-		packet[5] = 0x00;
-
-		DBGPrintf("enable six axis\n");
-		delay(1);
-		btdriver_->sendL2CapCommand(packet, sizeof(packet), BluetoothController::CONTROL_SCID);
+			DBGPrintf("enable six axis\n");
+			delay(1);
+			btdriver_->sendL2CapCommand(packet, sizeof(packet), BluetoothController::CONTROL_SCID);
+		}
+		break;
+	case PS3_MOTION:	
+		setLEDs(0, 0xff, 0);	// Maybe try setting to green? 
+	default:
+		break;	
 	}
-
 }
 
 void JoystickController::release_bluetooth() 
@@ -989,15 +1044,29 @@ void JoystickController::release_bluetooth()
 
 
 bool JoystickController::PS3Pair(uint8_t* bdaddr) {
- 	if ((joystickType_ != PS3) || !driver_) return false; // not a PS2 nor plugged into USB...
+	if (!driver_) return false;
+ 	if (joystickType_ == PS3) {
+ 	    /* Set the internal Bluetooth address */
+	    txbuf_[0] = 0x01;
+	    txbuf_[1] = 0x00;
 
-    /* Set the internal Bluetooth address */
-    txbuf_[0] = 0x01;
-    txbuf_[1] = 0x00;
+	    for(uint8_t i = 0; i < 6; i++)
+	            txbuf_[i + 2] = bdaddr[5 - i]; // Copy into buffer, has to be written reversed, so it is MSB first
 
-    for(uint8_t i = 0; i < 6; i++)
-            txbuf_[i + 2] = bdaddr[5 - i]; // Copy into buffer, has to be written reversed, so it is MSB first
+	    // bmRequest = Host to device (0x00) | Class (0x20) | Interface (0x01) = 0x21, bRequest = Set Report (0x09), Report ID (0xF5), Report Type (Feature 0x03), interface (0x00), datalength, datalength, data
+		return driver_->sendControlPacket(0x21, 9, 0x3f5, 0, 8, txbuf_); 
+	} else if (joystickType_ == PS3_MOTION) {
+		// Slightly different than other PS3 units...
+	    txbuf_[0] = 0x05;
+	    for(uint8_t i = 0; i < 6; i++)
+	            txbuf_[i + 1] = bdaddr[i]; // Order different looks like LSB First?
 
-    // bmRequest = Host to device (0x00) | Class (0x20) | Interface (0x01) = 0x21, bRequest = Set Report (0x09), Report ID (0xF5), Report Type (Feature 0x03), interface (0x00), datalength, datalength, data
-	return driver_->sendControlPacket(0x21, 9, 0x3f5, 0, 8, txbuf_); 
+        txbuf_[7] = 0x10;
+        txbuf_[8] = 0x01;
+        txbuf_[9] = 0x02;
+        txbuf_[10] = 0x12;
+	    // bmRequest = Host to device (0x00) | Class (0x20) | Interface (0x01) = 0x21, bRequest = Set Report (0x09), Report ID (0xF5), Report Type (Feature 0x03), interface (0x00), datalength, datalength, data
+		return driver_->sendControlPacket(0x21, 9, 0x305, 0, 11, txbuf_); 
+	}
+	return false;
 }
