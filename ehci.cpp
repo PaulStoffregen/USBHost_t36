@@ -745,21 +745,23 @@ bool USBHost::queue_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBD
 	transfer = allocate_Transfer();
 	if (!transfer) return false;
 	data = transfer;
-	for (count=(len >> 14); count; count--) {
-		next = allocate_Transfer();
-		if (!next) {
-			// free already-allocated qTDs
-			while (1) {
-				next = (Transfer_t *)transfer->qtd.next;
-				free_Transfer(transfer);
-				if (transfer == data) break;
-				transfer = next;
+	if (len) {
+		for (count=((len-1) >> 14); count; count--) {
+			next = allocate_Transfer();
+			if (!next) {
+				// free already-allocated qTDs
+				while (1) {
+					next = (Transfer_t *)transfer->qtd.next;
+					free_Transfer(transfer);
+					if (transfer == data) break;
+					transfer = next;
+				}
+				return false;
 			}
-			return false;
+			data->qtd.next = (uint32_t)next;
+			data = next;
 		}
-		data->qtd.next = (uint32_t)next;
-		data = next;
-	}
+	}	
 	// last qTD needs info for followup
 	data->qtd.next = 1;
 	data->pipe = pipe;
