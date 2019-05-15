@@ -300,6 +300,7 @@ void MIDIDeviceBase::write_packed(uint32_t data)
 			// use tx_buffer1
 			tx_buffer1[tx1++] = data;
 			tx1_count = tx1;
+                        __disable_irq();
 			if (tx1 >= tx_max) {
 				queue_Data_Transfer(txpipe, tx_buffer1, tx_max*4, this);
 			} else {
@@ -308,12 +309,14 @@ void MIDIDeviceBase::write_packed(uint32_t data)
 				tx1_count = tx_max;
 				queue_Data_Transfer(txpipe, tx_buffer1, tx_max*4, this);
 			}
+                        __enable_irq();
 			return;
 		}
 		if (tx2 < tx_max) {
 			// use tx_buffer2
 			tx_buffer2[tx2++] = data;
 			tx2_count = tx2;
+                        __disable_irq();
 			if (tx2 >= tx_max) {
 				queue_Data_Transfer(txpipe, tx_buffer2, tx_max*4, this);
 			} else {
@@ -322,6 +325,7 @@ void MIDIDeviceBase::write_packed(uint32_t data)
 				tx2_count = tx_max;
 				queue_Data_Transfer(txpipe, tx_buffer2, tx_max*4, this);
 			}
+                        __enable_irq();
 			return;
 		}
 	}
