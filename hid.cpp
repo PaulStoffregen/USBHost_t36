@@ -166,7 +166,7 @@ void USBHIDParser::control(const Transfer_t *transfer)
 		parse();
 		queue_Data_Transfer(in_pipe, report, in_size, this);
 		if (device->idVendor == 0x054C && 
-				((device->idProduct == 0x0268) || (device->idProduct == 0x042F) || (device->idProduct == 0x03D5))) {
+				((device->idProduct == 0x0268) || (device->idProduct == 0x042F)/* || (device->idProduct == 0x03D5)*/)) {
 			println("send special PS3 feature command");
 			mk_setup(setup, 0x21, 9, 0x03F4, 0, 4); // ps3 tell to send report 1?
 			static uint8_t ps3_feature_F4_report[] = {0x42, 0x0c, 0x00, 0x00};
