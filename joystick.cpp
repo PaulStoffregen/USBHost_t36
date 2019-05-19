@@ -43,7 +43,9 @@ JoystickController::product_vendor_mapping_t JoystickController::pid_vid_mapping
 	{ 0x054C, 0x0268, PS3, true}, 
 	{ 0x054C, 0x042F, PS3, true},	// PS3 Navigation controller
 	{ 0x054C, 0x03D5, PS3_MOTION, true},	// PS3 Motion controller
-	{ 0x054C, 0x05C4, PS4, true}, {0x054C, 0x09CC, PS4, true }
+	{ 0x054C, 0x05C4, PS4, true}, 	{0x054C, 0x09CC, PS4, true },
+	{ 0x046D, 0xC626, SpaceNav, true},  // 3d Connextion Space Navigator, 0x10008
+	{ 0x046D, 0xC628, SpaceNav, true}  // 3d Connextion Space Navigator, 0x10008
 };
 
 
@@ -331,7 +333,7 @@ bool JoystickController::transmitPS3MotionUserFeedbackMsg() {
 hidclaim_t JoystickController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
 {
 	// only claim Desktop/Joystick and Desktop/Gamepad
-	if (topusage != 0x10004 && topusage != 0x10005) return CLAIM_NO;
+	if (topusage != 0x10004 && topusage != 0x10005 && topusage != 0x10008) return CLAIM_NO;
 	// only claim from one physical device
 	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
 
@@ -389,6 +391,7 @@ void JoystickController::hid_input_begin(uint32_t topusage, uint32_t type, int l
 
 void JoystickController::hid_input_data(uint32_t usage, int32_t value)
 {
+	DBGPrintf("joystickType_=%d\n", joystickType_);
 	DBGPrintf("Joystick: usage=%X, value=%d\n", usage, value);
 	uint32_t usage_page = usage >> 16;
 	usage &= 0xFFFF;

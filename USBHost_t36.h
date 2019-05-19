@@ -27,7 +27,7 @@
 #include <stdint.h>
 
 #if !defined(__MK66FX1M0__) && !defined(__IMXRT1052__) && !defined(__IMXRT1062__)
-#error "USBHost_t36 only works with Teensy 3.6.  Please select it in Tools > Boards"
+#error "USBHost_t36 only works with Teensy 3.6 or Teensy 4.x.  Please select it in Tools > Boards"
 #endif
 #include "utility/imxrt_usbhs.h"
 
@@ -915,7 +915,7 @@ public:
     bool setLEDs(uint8_t lr, uint8_t lg, uint8_t lb);  // sets Leds, 
     bool inline setLEDs(uint32_t leds) {return setLEDs((leds >> 16) & 0xff, (leds >> 8) & 0xff, leds & 0xff);}  // sets Leds - passing one arg for all leds 
 	enum { STANDARD_AXIS_COUNT = 10, ADDITIONAL_AXIS_COUNT = 54, TOTAL_AXIS_COUNT = (STANDARD_AXIS_COUNT+ADDITIONAL_AXIS_COUNT) };
-	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360, PS3_MOTION} joytype_t;
+	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360, PS3_MOTION, SpaceNav} joytype_t;
 	joytype_t joystickType() {return joystickType_;} 
 
 	// PS3 pair function. hack, requires that it be connect4ed by USB and we have the address of the Bluetooth dongle...
