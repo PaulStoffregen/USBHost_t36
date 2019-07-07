@@ -25,11 +25,17 @@
 #include "USBHost_t36.h"  // Read this header first for key info
 
 
+void MouseController::init()
+{
+	USBHIDParser::driver_ready_for_hid_collection(this);
+	BluetoothController::driver_ready_for_bluetooth(this);
+}
+
 
 hidclaim_t MouseController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
 {
 	// only claim Desktop/Mouse
-	if (topusage != 0x10002) return CLAIM_NO;
+	if ((topusage != 0x10002) && (topusage != 0x10001)) return CLAIM_NO;
 	// only claim from one physical device
 	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
 	mydevice = dev;
@@ -52,7 +58,7 @@ void MouseController::hid_input_begin(uint32_t topusage, uint32_t type, int lgmi
 
 void MouseController::hid_input_data(uint32_t usage, int32_t value)
 {
-	//Serial.printf("Mouse: usage=%X, value=%d\n", usage, value);
+	//USBHDBGSerial.printf("Mouse: usage=%X, value=%d\n", usage, value);
 	uint32_t usage_page = usage >> 16;
 	usage &= 0xFFFF;
 	if (usage_page == 9 && usage >= 1 && usage <= 8) {
@@ -101,3 +107,57 @@ void MouseController::mouseDataClear() {
 }
 
 
+bool MouseController::claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName) 
+{
+	// How to handle combo devices? 
+	USBHDBGSerial.printf("MouseController Controller::claim_bluetooth - Class %x\n", bluetooth_class);
+	if ((((bluetooth_class & 0xff00) == 0x2500) || (((bluetooth_class & 0xff00) == 0x500))) && (bluetooth_class & 0x80)) {
+		USBHDBGSerial.printf("MouseController::claim_bluetooth TRUE\n");
+		btdevice = (Device_t*)driver;	// remember this way 
+		return true;
+	}
+	return false;
+}
+
+bool MouseController::process_bluetooth_HID_data(const uint8_t *data, uint16_t length) 
+{
+	// Example DATA from bluetooth keyboard:
+	//                  0  1 2 3 4 5  6 7  8 910 1 2 3 4 5 6 7
+	//                           LEN         D
+	//BT rx2_data(14): b 20 a 0 6 0 71 0 a1 2 0 9 fe 0 
+	//BT rx2_data(14): b 20 a 0 6 0 71 0 a1 2 0 8 fd 0 
+
+	// So Len=9 passed in data starting at report ID=1... 
+	if (length == 0) return false;
+#ifdef USBHOST_PRINT_DEBUG
+	USBHDBGSerial.printf("MouseController::process_bluetooth_HID_data %d\n", length);
+	USBHDBGSerial.printf("  Mouse Data: ");
+	const uint8_t *p = (const uint8_t *)data;
+	uint16_t len = length;
+	do {
+		if (*p < 16) USBHDBGSerial.print('0');
+		USBHDBGSerial.print(*p++, HEX);
+		USBHDBGSerial.print(' ');
+	} while (--len);
+	USBHDBGSerial.println();
+#endif	
+	// Looks like report 2 is for the mouse info.
+	if (data[0] != 2) return false;
+	buttons = data[1];
+	mouseX  = (int8_t)data[2];
+	mouseY  = (int8_t)data[3];
+	if (length >= 5) {
+		wheel   = (int8_t)data[4];
+		if (length >= 6) {
+			wheelH = (int8_t)data[5];
+		}
+	}
+	mouseEvent = true;
+
+	return true;
+}
+
+void MouseController::release_bluetooth() 
+{
+	//btdevice = nullptr;
+}

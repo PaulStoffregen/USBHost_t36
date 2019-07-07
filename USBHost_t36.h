@@ -27,7 +27,7 @@
 #include <stdint.h>
 
 #if !defined(__MK66FX1M0__) && !defined(__IMXRT1052__) && !defined(__IMXRT1062__)
-#error "USBHost_t36 only works with Teensy 3.6.  Please select it in Tools > Boards"
+#error "USBHost_t36 only works with Teensy 3.6 or Teensy 4.x.  Please select it in Tools > Boards"
 #endif
 #include "utility/imxrt_usbhs.h"
 
@@ -58,6 +58,13 @@
 
 
 //#define USBHOST_PRINT_DEBUG
+//#define USBHDBGSerial	Serial1
+
+
+#ifndef USBHDBGSerial
+#define USBHDBGSerial	Serial
+#endif
+
 
 /************************************************/
 /*  Data Types                                  */
@@ -314,35 +321,35 @@ protected:
 	static void print_config_descriptor(const uint8_t *p, uint32_t maxlen);
 	static void print_string_descriptor(const char *name, const uint8_t *p);
 	static void print_hexbytes(const void *ptr, uint32_t len);
-	static void print_(const char *s)	{ Serial.print(s); }
-	static void print_(int n)		{ Serial.print(n); }
-	static void print_(unsigned int n)	{ Serial.print(n); }
-	static void print_(long n)		{ Serial.print(n); }
-	static void print_(unsigned long n)	{ Serial.print(n); }
-	static void println_(const char *s)	{ Serial.println(s); }
-	static void println_(int n)		{ Serial.println(n); }
-	static void println_(unsigned int n)	{ Serial.println(n); }
-	static void println_(long n)		{ Serial.println(n); }
-	static void println_(unsigned long n)	{ Serial.println(n); }
-	static void println_()			{ Serial.println(); }
-	static void print_(uint32_t n, uint8_t b) { Serial.print(n, b); }
-	static void println_(uint32_t n, uint8_t b) { Serial.println(n, b); }
+	static void print_(const char *s)	{ USBHDBGSerial.print(s); }
+	static void print_(int n)		{ USBHDBGSerial.print(n); }
+	static void print_(unsigned int n)	{ USBHDBGSerial.print(n); }
+	static void print_(long n)		{ USBHDBGSerial.print(n); }
+	static void print_(unsigned long n)	{ USBHDBGSerial.print(n); }
+	static void println_(const char *s)	{ USBHDBGSerial.println(s); }
+	static void println_(int n)		{ USBHDBGSerial.println(n); }
+	static void println_(unsigned int n)	{ USBHDBGSerial.println(n); }
+	static void println_(long n)		{ USBHDBGSerial.println(n); }
+	static void println_(unsigned long n)	{ USBHDBGSerial.println(n); }
+	static void println_()			{ USBHDBGSerial.println(); }
+	static void print_(uint32_t n, uint8_t b) { USBHDBGSerial.print(n, b); }
+	static void println_(uint32_t n, uint8_t b) { USBHDBGSerial.println(n, b); }
 	static void print_(const char *s, int n, uint8_t b = DEC) {
-		Serial.print(s); Serial.print(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.print(n, b); }
 	static void print_(const char *s, unsigned int n, uint8_t b = DEC) {
-		Serial.print(s); Serial.print(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.print(n, b); }
 	static void print_(const char *s, long n, uint8_t b = DEC) {
-		Serial.print(s); Serial.print(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.print(n, b); }
 	static void print_(const char *s, unsigned long n, uint8_t b = DEC) {
-		Serial.print(s); Serial.print(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.print(n, b); }
 	static void println_(const char *s, int n, uint8_t b = DEC) {
-		Serial.print(s); Serial.println(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.println(n, b); }
 	static void println_(const char *s, unsigned int n, uint8_t b = DEC) {
-		Serial.print(s); Serial.println(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.println(n, b); }
 	static void println_(const char *s, long n, uint8_t b = DEC) {
-		Serial.print(s); Serial.println(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.println(n, b); }
 	static void println_(const char *s, unsigned long n, uint8_t b = DEC) {
-		Serial.print(s); Serial.println(n, b); }
+		USBHDBGSerial.print(s); USBHDBGSerial.println(n, b); }
 	friend class USBDriverTimer; // for access to print & println
 #else
 	static void print_(const Transfer_t *transfer) {}
@@ -517,11 +524,46 @@ private:
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 	void add_to_list();
-	USBHIDInput *next;
+	USBHIDInput *next = NULL;
 	friend class USBHIDParser;
 protected:
 	Device_t *mydevice = NULL;
 };
+
+
+// Device drivers may inherit from this base class, if they wish to receive
+// HID input like data from Bluetooth HID device. 
+class BluetoothController;
+
+class BTHIDInput {
+public:
+	operator bool() { return (btdevice != nullptr); }
+	uint16_t idVendor() { return (btdevice != nullptr) ? btdevice->idVendor : 0; }
+	uint16_t idProduct() { return (btdevice != nullptr) ? btdevice->idProduct : 0; }
+	const uint8_t *manufacturer()
+		{  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; }
+	const uint8_t *product()
+		{  return  remote_name_; }
+	const uint8_t *serialNumber()
+		{  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
+private:
+	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName) {return false;}
+	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length) {return false;}
+	virtual void release_bluetooth() {};
+	virtual bool remoteNameComplete(const uint8_t *remoteName) {return true;}
+	virtual void connectionComplete(void) {};
+	void add_to_list();
+	BTHIDInput *next = NULL;
+	friend class BluetoothController;
+protected:
+	enum {SP_NEED_CONNECT=0x1, SP_DONT_NEED_CONNECT=0x02, SP_PS3_IDS=0x4};
+	enum {REMOTE_NAME_SIZE=32};
+	uint8_t  special_process_required = 0;
+	Device_t *btdevice = NULL;
+	uint8_t remote_name_[REMOTE_NAME_SIZE] = {0};
+
+};
+
 
 /************************************************/
 /*  USB Device Drivers                          */
@@ -652,7 +694,7 @@ private:
 	uint16_t in_size;
 	uint16_t out_size;
 	setup_t setup;
-	uint8_t descriptor[512];
+	uint8_t descriptor[800];
 	uint8_t report[64];
 	uint16_t descsize;
 	bool use_report_id;
@@ -667,7 +709,7 @@ private:
 
 //--------------------------------------------------------------------------
 
-class KeyboardController : public USBDriver , public USBHIDInput  {
+class KeyboardController : public USBDriver , public USBHIDInput, public BTHIDInput {
 public:
 typedef union {
    struct {
@@ -691,8 +733,7 @@ public:
 	const uint8_t *product();
 	const uint8_t *serialNumber();
 
-	// Some methods are in both public classes so we need to figure out which one to use
-	operator bool() { return (device != nullptr); }
+	operator bool() { return ((device != nullptr) || (btdevice != nullptr)); }
 	// Main boot keyboard functions. 
 	uint16_t getKey() { return keyCode; }
 	uint8_t  getModifiers() { return modifiers; }
@@ -723,6 +764,13 @@ protected:
 	static void callback(const Transfer_t *transfer);
 	void new_data(const Transfer_t *transfer);
 	void init();
+
+	// Bluetooth data
+	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName);
+	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
+	virtual bool remoteNameComplete(const uint8_t *remoteName);
+	virtual void release_bluetooth();
+
 
 protected:	// HID functions for extra keyboard data. 
 	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
@@ -764,9 +812,9 @@ private:
 };
 
 
-class MouseController : public USBHIDInput {
+class MouseController : public USBHIDInput, public BTHIDInput {
 public:
-	MouseController(USBHost &host) { USBHIDParser::driver_ready_for_hid_collection(this); }
+	MouseController(USBHost &host) { init(); }
 	bool	available() { return mouseEvent; }
 	void	mouseDataClear();
 	uint8_t getButtons() { return buttons; }
@@ -780,7 +828,17 @@ protected:
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
+
+	// Bluetooth data
+	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName);
+	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
+	virtual void release_bluetooth();
+
+
 private:
+	void init();
+	BluetoothController *btdriver_ = nullptr;
+
 	uint8_t collections_claimed = 0;
 	volatile bool mouseEvent = false;
 	volatile bool hid_input_begin_ = false;
@@ -793,7 +851,44 @@ private:
 
 //--------------------------------------------------------------------------
 
-class JoystickController : public USBDriver, public USBHIDInput {
+class DigitizerController : public USBHIDInput, public BTHIDInput {
+public:
+	DigitizerController(USBHost &host) { init(); }
+	bool	available() { return digitizerEvent; }
+	void	digitizerDataClear();
+	uint8_t getButtons() { return buttons; }
+	int     getMouseX() { return mouseX; }
+	int     getMouseY() { return mouseY; }
+	int     getWheel() { return wheel; }
+	int     getWheelH() { return wheelH; }
+	int		getAxis(uint32_t index) { return (index < (sizeof(digiAxes)/sizeof(digiAxes[0]))) ? digiAxes[index] : 0; }
+
+protected:
+	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
+	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
+	virtual void hid_input_data(uint32_t usage, int32_t value);
+	virtual void hid_input_end();
+	virtual void disconnect_collection(Device_t *dev);
+
+
+private:
+	void init();
+
+	uint8_t collections_claimed = 0;
+	volatile bool digitizerEvent = false;
+	volatile bool hid_input_begin_ = false;
+	uint8_t buttons = 0;
+	int     mouseX = 0;
+	int     mouseY = 0;
+	int     wheel = 0;
+	int     wheelH = 0;
+	int     digiAxes[16];
+};
+
+
+//--------------------------------------------------------------------------
+
+class JoystickController : public USBDriver, public USBHIDInput, public BTHIDInput {
 public:
 	JoystickController(USBHost &host) { init(); }
 
@@ -803,7 +898,7 @@ public:
 	const uint8_t *manufacturer();
 	const uint8_t *product();
 	const uint8_t *serialNumber();
-	operator bool() { return (((device != nullptr) || (mydevice != nullptr)) && connected_); }	// override as in both USBDriver and in USBHIDInput
+	operator bool() { return (((device != nullptr) || (mydevice != nullptr || (btdevice != nullptr))) && connected_); }	// override as in both USBDriver and in USBHIDInput
 
 	bool    available() { return joystickEvent; }
 	void    joystickDataClear();
@@ -816,11 +911,18 @@ public:
 
 	// set functions functionality depends on underlying joystick. 
     bool setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeout=0xff);
-    // setLEDs on PS4(RGB), PS3 simple LED setting (only uses lr)
-    bool setLEDs(uint8_t lr, uint8_t lg=0, uint8_t lb=0);  // sets Leds, 
+    // setLEDs on PS4(RGB), PS3 simple LED setting (only uses lb)
+    bool setLEDs(uint8_t lr, uint8_t lg, uint8_t lb);  // sets Leds, 
+    bool inline setLEDs(uint32_t leds) {return setLEDs((leds >> 16) & 0xff, (leds >> 8) & 0xff, leds & 0xff);}  // sets Leds - passing one arg for all leds 
 	enum { STANDARD_AXIS_COUNT = 10, ADDITIONAL_AXIS_COUNT = 54, TOTAL_AXIS_COUNT = (STANDARD_AXIS_COUNT+ADDITIONAL_AXIS_COUNT) };
-	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360} joytype_t;
-	joytype_t joystickType = UNKNOWN;
+	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360, PS3_MOTION, SpaceNav} joytype_t;
+	joytype_t joystickType() {return joystickType_;} 
+
+	// PS3 pair function. hack, requires that it be connect4ed by USB and we have the address of the Bluetooth dongle...
+	bool PS3Pair(uint8_t* bdaddr);
+
+	
+	
 protected:
 	// From USBDriver
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
@@ -834,14 +936,27 @@ protected:
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 	virtual bool hid_process_out_data(const Transfer_t *transfer);
+
+		// Bluetooth data
+	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName);
+	virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
+	virtual void release_bluetooth();
+	virtual bool remoteNameComplete(const uint8_t *remoteName);
+	virtual void connectionComplete(void);
+
+	joytype_t joystickType_ = UNKNOWN;
 private:
 
 	// Class specific
 	void init();
 	USBHIDParser *driver_ = nullptr;
+	BluetoothController *btdriver_ = nullptr;
+
 	joytype_t mapVIDPIDtoJoystickType(uint16_t idVendor, uint16_t idProduct, bool exclude_hid_devices);
 	bool transmitPS4UserFeedbackMsg();
 	bool transmitPS3UserFeedbackMsg();
+	bool transmitPS3MotionUserFeedbackMsg();
+	bool mapNameToJoystickType(const uint8_t *remoteName);
 
 	bool anychange = false;
 	volatile bool joystickEvent = false;
@@ -1593,6 +1708,146 @@ private:
 
 	// See if we can contribute transfers
 	Transfer_t mytransfers[2] __attribute__ ((aligned(32)));
+
+};
+
+//--------------------------------------------------------------------------
+
+class BluetoothController: public USBDriver {
+public:
+	BluetoothController(USBHost &host, bool pair = false, const char *pin = "0000") : do_pair_device_(pair), pair_pincode_(pin), delayTimer_(this) 
+			 { init(); }
+
+	enum {MAX_ENDPOINTS=4, NUM_SERVICES=4, };  // Max number of Bluetooth services - if you need more than 4 simply increase this number
+	enum {BT_CLASS_DEVICE= 0x0804}; // Toy - Robot
+	static void driver_ready_for_bluetooth(BTHIDInput *driver);
+
+    const uint8_t* 	myBDAddr(void) {return my_bdaddr_;}
+
+	// BUGBUG version to allow some of the controlled objects to call?
+    enum {CONTROL_SCID=-1, INTERRUPT_SCID=-2};
+    void sendL2CapCommand(uint8_t* data, uint8_t nbytes, int channel = (int)0x0001);
+
+protected:
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
+	virtual void control(const Transfer_t *transfer);
+	virtual void disconnect();
+	virtual void timer_event(USBDriverTimer *whichTimer);
+
+	BTHIDInput * find_driver(uint32_t device_type, uint8_t *remoteName=nullptr);
+
+	// Hack to allow PS3 to maybe change values
+    uint16_t		connection_rxid_ = 0;
+    uint16_t		control_dcid_ = 0x70;
+    uint16_t		interrupt_dcid_ = 0x71;
+    uint16_t		interrupt_scid_;
+    uint16_t		control_scid_;
+
+
+private:
+	friend class BTHIDInput;
+	static void rx_callback(const Transfer_t *transfer);
+	static void rx2_callback(const Transfer_t *transfer);
+	static void tx_callback(const Transfer_t *transfer);
+	void rx_data(const Transfer_t *transfer);
+	void rx2_data(const Transfer_t *transfer);
+	void tx_data(const Transfer_t *transfer);
+
+	void init();
+
+	// HCI support functions...
+	void sendHCICommand(uint16_t hciCommand, uint16_t cParams, const uint8_t* data);
+	//void sendHCIReadLocalSupportedFeatures();
+	void inline sendHCI_INQUIRY();
+	void inline sendHCIInquiryCancel();
+	void inline sendHCICreateConnection();
+	void inline sendHCIAuthenticationRequested();
+	void inline sendHCIAcceptConnectionRequest();
+	void inline sendHCILinkKeyNegativeReply();
+	void inline sendHCIPinCodeReply();
+    void inline sendResetHCI();
+    void inline sendHDCWriteClassOfDev();
+	void inline sendHCIReadBDAddr();
+	void inline sendHCIReadLocalVersionInfo();
+	void inline sendHCIWriteScanEnable(uint8_t scan_op);
+	void inline sendHCIHCIWriteInquiryMode(uint8_t inquiry_mode);
+	void inline sendHCISetEventMask();
+
+	void inline sendHCIRemoteNameRequest();
+	void inline sendHCIRemoteVersionInfoRequest();
+	void handle_hci_command_complete();
+	void handle_hci_command_status();
+	void handle_hci_inquiry_result(bool fRSSI=false);
+	void handle_hci_extended_inquiry_result();
+	void handle_hci_inquiry_complete();
+	void handle_hci_incoming_connect();
+	void handle_hci_connection_complete();
+	void handle_hci_disconnect_complete();
+	void handle_hci_authentication_complete();
+	void handle_hci_remote_name_complete();
+	void handle_hci_remote_version_information_complete();
+	void handle_hci_pin_code_request();
+	void handle_hci_link_key_notification();
+	void handle_hci_link_key_request();
+	void queue_next_hci_command();
+
+	void sendl2cap_ConnectionResponse(uint16_t handle, uint8_t rxid, uint16_t dcid, uint16_t scid, uint8_t result);
+	void sendl2cap_ConnectionRequest(uint16_t handle, uint8_t rxid, uint16_t scid, uint16_t psm);
+	void sendl2cap_ConfigRequest(uint16_t handle, uint8_t rxid, uint16_t dcid);
+	void sendl2cap_ConfigResponse(uint16_t handle, uint8_t rxid, uint16_t scid);
+    void sendL2CapCommand(uint16_t handle, uint8_t* data, uint8_t nbytes, uint8_t channelLow = 0x01, uint8_t channelHigh = 0x00);
+
+	void process_l2cap_connection_request(uint8_t *data);
+	void process_l2cap_connection_response(uint8_t *data);
+	void process_l2cap_config_request(uint8_t *data);
+	void process_l2cap_config_response(uint8_t *data);
+	void process_l2cap_command_reject(uint8_t *data);
+	void process_l2cap_disconnect_request(uint8_t *data);
+
+	void setHIDProtocol(uint8_t protocol);
+	void handleHIDTHDRData(uint8_t *buffer);	// Pass the whole buffer...
+	static BTHIDInput *available_bthid_drivers_list;
+
+
+	setup_t setup;
+	Pipe_t mypipes[4] __attribute__ ((aligned(32)));
+	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
+	strbuf_t mystring_bufs[2];		// 2 string buffers - one for our device - one for remote device...
+	uint16_t 		pending_control_ = 0;
+	uint16_t		pending_control_tx_ = 0;
+	uint16_t 		rx_size_ = 0;
+	uint16_t 		rx2_size_ = 0;
+	uint16_t 		tx_size_ = 0;
+	Pipe_t 			*rxpipe_;
+	Pipe_t 			*rx2pipe_;
+	Pipe_t 			*txpipe_;
+	uint8_t 		rxbuf_[256];	// used to receive data from RX, which may come with several packets...
+	uint8_t 		rx_packet_data_remaining=0; // how much data remaining
+	uint8_t 		rx2buf_[64];	// receive buffer from Bulk end point
+	uint8_t			txbuf_[256];	// buffer to use to send commands to bluetooth 
+	uint8_t			hciVersion;		// what version of HCI do we have?
+
+	bool 			do_pair_device_;	// Should we do a pair for a new device?
+	const char		*pair_pincode_;	// What pin code to use for the pairing
+	USBDriverTimer 	delayTimer_;
+    uint8_t 		my_bdaddr_[6];	// The bluetooth dongles Bluetooth address.
+    uint8_t			features[8];	// remember our local features.
+    BTHIDInput * 	device_driver_ = nullptr;;
+    uint8_t			device_bdaddr_[6];// remember devices address
+    uint8_t			device_ps_repetion_mode_ ; // mode
+    uint8_t			device_clock_offset_[2];
+    uint32_t		device_class_;	// class of device. 
+    uint16_t		device_connection_handle_;	// handle to connection 
+	uint8_t    		remote_ver_;
+	uint16_t		remote_man_;
+	uint8_t			remote_subv_;
+	uint8_t			connection_complete_ = false;	//
+
+	typedef struct {
+		uint16_t 	idVendor;
+		uint16_t 	idProduct;
+	} product_vendor_mapping_t;
+	static product_vendor_mapping_t pid_vid_mapping[];
 
 };
 

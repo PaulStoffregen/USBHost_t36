@@ -102,6 +102,9 @@ static const keyboard_force_boot_protocol_t keyboard_forceBootMode[] = {
 #define print   USBHost::print_
 #define println USBHost::println_
 
+
+
+
 void KeyboardController::init()
 {
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
@@ -109,6 +112,7 @@ void KeyboardController::init()
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
 	driver_ready_for_device(this);
 	USBHIDParser::driver_ready_for_hid_collection(this);
+	BluetoothController::driver_ready_for_bluetooth(this);
 	force_boot_protocol = false;	// start off assuming not
 }
 
@@ -380,8 +384,13 @@ void KeyboardController::LEDS(uint8_t leds) {
 
 void KeyboardController::updateLEDS() {
 	// Now lets tell keyboard new state.
-	mk_setup(setup, 0x21, 9, 0x200, 0, sizeof(leds_.byte)); // hopefully this sets leds
-	queue_Control_Transfer(device, &setup, &leds_.byte, this);
+	if (device != nullptr) {
+		// Only do it this way if we are a standard USB device
+		mk_setup(setup, 0x21, 9, 0x200, 0, sizeof(leds_.byte)); // hopefully this sets leds
+		queue_Control_Transfer(device, &setup, &leds_.byte, this);
+	} else {
+		// Bluetooth, need to setup back channel to Bluetooth controller. 
+	}
 }
 
 //=============================================================================
@@ -394,12 +403,12 @@ void KeyboardController::updateLEDS() {
 hidclaim_t KeyboardController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
 {
 	// Lets try to claim a few specific Keyboard related collection/reports
-	//Serial.printf("KBH Claim %x\n", topusage);
+	//USBHDBGSerial.printf("KBH Claim %x\n", topusage);
 	if ((topusage != TOPUSAGE_SYS_CONTROL) 
 		&& (topusage != TOPUSAGE_CONSUMER_CONTROL)
 		) return CLAIM_NO;
 	// only claim from one physical device
-	//Serial.println("KeyboardController claim collection");
+	//USBHDBGSerial.println("KeyboardController claim collection");
 	// Lets only claim if this is the same device as claimed Keyboard... 
 	if (dev != device) return CLAIM_NO;
 	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
@@ -417,7 +426,7 @@ void KeyboardController::disconnect_collection(Device_t *dev)
 
 void KeyboardController::hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax)
 {
-	//Serial.printf("KPC:hid_input_begin TUSE: %x TYPE: %x Range:%x %x\n", topusage, type, lgmin, lgmax);
+	//USBHDBGSerial.printf("KPC:hid_input_begin TUSE: %x TYPE: %x Range:%x %x\n", topusage, type, lgmin, lgmax);
 	topusage_ = topusage;	// remember which report we are processing. 
 	hid_input_begin_ = true;
 	hid_input_data_ = false;
@@ -427,7 +436,7 @@ void KeyboardController::hid_input_data(uint32_t usage, int32_t value)
 {
 	// Hack ignore 0xff00 high words as these are user values... 
 	if ((usage & 0xffff0000) == 0xff000000) return; 
-	//Serial.printf("KeyboardController: topusage= %x usage=%X, value=%d\n", topusage_, usage, value);
+	//USBHDBGSerial.printf("KeyboardController: topusage= %x usage=%X, value=%d\n", topusage_, usage, value);
 
 	// See if the value is in our keys_down list
 	usage &= 0xffff;		// only keep the actual key
@@ -466,7 +475,7 @@ void KeyboardController::hid_input_data(uint32_t usage, int32_t value)
 
 void KeyboardController::hid_input_end()
 {
-	//Serial.println("KPC:hid_input_end");
+	//USBHDBGSerial.println("KPC:hid_input_end");
 	if (hid_input_begin_) {
 
 		// See if we received any data from parser if not, assume all keys released... 
@@ -484,6 +493,69 @@ void KeyboardController::hid_input_end()
 	}		
 }
 
+bool KeyboardController::claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName) 
+{
+	USBHDBGSerial.printf("Keyboard Controller::claim_bluetooth - Class %x\n", bluetooth_class);
+	if ((((bluetooth_class & 0xff00) == 0x2500) || (((bluetooth_class & 0xff00) == 0x500))) && (bluetooth_class & 0x40)) {
+		if (remoteName && (strncmp((const char *)remoteName, "PLAYSTATION(R)3", 15) == 0)) {
+			USBHDBGSerial.printf("KeyboardController::claim_bluetooth Reject PS3 hack\n");
+			return false;
+		}
+		USBHDBGSerial.printf("KeyboardController::claim_bluetooth TRUE\n");
+		//btdevice = driver;
+		return true;
+	}
+	return false;
+}
+
+bool KeyboardController::remoteNameComplete(const uint8_t *remoteName) 
+{
+	// Real Hack some PS3 controllers bluetoot class is keyboard... 
+	if (strncmp((const char *)remoteName, "PLAYSTATION(R)3", 15) == 0) {
+		USBHDBGSerial.printf("  KeyboardController::remoteNameComplete %s - Oops PS3 unclaim\n", remoteName);
+		return false;
+	}
+	return true;
+}
+
+
+
+
+bool KeyboardController::process_bluetooth_HID_data(const uint8_t *data, uint16_t length) 
+{
+	// Example DATA from bluetooth keyboard:
+	//                  0  1 2 3 4 5  6 7  8 910 1 2 3 4 5 6 7
+	//                           LEN         D
+	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 0 0 0 0 0 0 
+	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 4 0 0 0 0 0 
+	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 0 0 0 0 0 0 
+	// So Len=9 passed in data starting at report ID=1... 
+	USBHDBGSerial.printf("KeyboardController::process_bluetooth_HID_data\n");
+	if (data[0] != 1) return false;
+	print("  KB Data: ");
+	print_hexbytes(data, length);
+	for (int i=2; i < length; i++) {
+		uint32_t key = prev_report[i];
+		if (key >= 4 && !contains(key, report)) {
+			key_release(prev_report[0], key);
+		}
+	}
+	for (int i=2; i < 8; i++) {
+		uint32_t key = data[i];
+		if (key >= 4 && !contains(key, prev_report)) {
+			key_press(data[1], key);
+		}
+	}
+	// Save away the data.. But shift down one byte... Don't need the report number
+	memcpy(prev_report, &data[1], 8);
+	return true;
+}
+
+void KeyboardController::release_bluetooth() 
+{
+	//btdevice = nullptr;
+}
+
 //*****************************************************************************
 // Some simple query functions depend on which interface we are using...
 //*****************************************************************************
@@ -492,6 +564,7 @@ uint16_t KeyboardController::idVendor()
 {
 	if (device != nullptr) return device->idVendor;
 	if (mydevice != nullptr) return mydevice->idVendor;
+	if (btdevice != nullptr) return btdevice->idVendor;
 	return 0;
 }
 
@@ -499,12 +572,14 @@ uint16_t KeyboardController::idProduct()
 {
 	if (device != nullptr) return device->idProduct;
 	if (mydevice != nullptr) return mydevice->idProduct;
+	if (btdevice != nullptr) return btdevice->idProduct;
 	return 0;
 }
 
 const uint8_t *KeyboardController::manufacturer()
 {
 	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_MAN]];
+	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; 
 	if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; 
 	return nullptr;
 }
@@ -513,6 +588,7 @@ const uint8_t *KeyboardController::product()
 {
 	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_PROD]];
 	if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; 
+	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; 
 	return nullptr;
 }
 
@@ -520,6 +596,7 @@ const uint8_t *KeyboardController::serialNumber()
 {
 	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]];
 	if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; 
+	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; 
 	return nullptr;
 }
 

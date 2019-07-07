@@ -468,8 +468,8 @@ void USBDriverTimer::start(uint32_t microseconds)
 		return;
 	}
 	uint32_t remain = USBHS_GPTIMER1CTL & 0xFFFFFF;
-	//Serial.print("remain = ");
-	//Serial.println(remain);
+	//USBHDBGSerial.print("remain = ");
+	//USBHDBGSerial.println(remain);
 	if (microseconds < remain) {
 		// this timer event is before any on the schedule
 		__disable_irq();
@@ -755,8 +755,8 @@ bool USBHost::queue_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBD
 				if (transfer == data) break;
 				transfer = next;
 			}
-			return false;
-		}
+                        return false;
+                }
 		data->qtd.next = (uint32_t)next;
 		data = next;
 	}
