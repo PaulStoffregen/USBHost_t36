@@ -1851,4 +1851,52 @@ private:
 
 };
 
+class ADK: public USBDriver {
+public:
+	ADK(USBHost &host) { init(); }
+	bool ready();
+	void begin(char *adk_manufacturer, char *adk_model, char *adk_desc, char *adk_version, char *adk_uri, char *adk_serial);
+	void end();
+	int available(void);
+	int peek(void);
+	int read(void);
+	size_t write(size_t len, uint8_t *buf);
+protected:
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
+	virtual void disconnect();
+	virtual void control(const Transfer_t *transfer);
+	static void rx_callback(const Transfer_t *transfer);
+	static void tx_callback(const Transfer_t *transfer);
+	void rx_data(const Transfer_t *transfer);
+	void tx_data(const Transfer_t *transfer);
+	void init();
+	void rx_queue_packets(uint32_t head, uint32_t tail);
+	void sendStr(Device_t *dev, uint8_t index, char *str);
+private:
+	int state = 0;
+	Pipe_t *rxpipe;
+	Pipe_t *txpipe;
+	enum { MAX_PACKET_SIZE = 512 };
+	enum { RX_QUEUE_SIZE = 160 }; // must be more than MAX_PACKET_SIZE/4
+	uint32_t rx_buffer[MAX_PACKET_SIZE/4];
+	uint32_t tx_buffer[MAX_PACKET_SIZE/4];
+	uint16_t rx_size;
+	uint16_t tx_size;
+	uint32_t rx_queue[RX_QUEUE_SIZE];
+	bool rx_packet_queued;
+	uint16_t rx_head;
+	uint16_t rx_tail;
+	uint8_t rx_ep;
+	uint8_t tx_ep;
+	char *manufacturer;
+	char *model;
+	char *desc;
+	char *version;
+	char *uri;
+	char *serial;
+	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
+	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
+};
+
+
 #endif
