@@ -1877,12 +1877,12 @@ private:
 	Pipe_t *rxpipe;
 	Pipe_t *txpipe;
 	enum { MAX_PACKET_SIZE = 512 };
-	enum { RX_QUEUE_SIZE = 160 }; // must be more than MAX_PACKET_SIZE/4
+	enum { RX_QUEUE_SIZE = 1024 }; // must be more than MAX_PACKET_SIZE
 	uint32_t rx_buffer[MAX_PACKET_SIZE/4];
 	uint32_t tx_buffer[MAX_PACKET_SIZE/4];
 	uint16_t rx_size;
 	uint16_t tx_size;
-	uint32_t rx_queue[RX_QUEUE_SIZE];
+	uint8_t rx_queue[RX_QUEUE_SIZE];
 	bool rx_packet_queued;
 	uint16_t rx_head;
 	uint16_t rx_tail;

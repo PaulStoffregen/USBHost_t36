@@ -233,7 +233,7 @@ void ADK::sendStr(Device_t *dev, uint8_t index, char *str)
 
 void ADK::control(const Transfer_t *transfer)
 {
-	println("Control callback state=%i",state);
+	println("Control callback state=",state);
 	
 	switch (state)
 	{
@@ -312,13 +312,26 @@ void ADK::rx_data(const Transfer_t *transfer)
 	uint32_t head = rx_head;
 	uint32_t tail = rx_tail;
 	
-	for (uint32_t i=0; i < ceil(len/4); i++) 
+	for (uint32_t i=0; i < len; i++) 
 	{
 		uint32_t msg = rx_buffer[i];
-		if (msg) {
+		if (msg) 
+		{
 			if (++head >= RX_QUEUE_SIZE) 
 				head = 0;
 			rx_queue[head] = msg;
+			
+			if (++head >= RX_QUEUE_SIZE) 
+				head = 0;
+			rx_queue[head] = msg >> 8;
+			
+			if (++head >= RX_QUEUE_SIZE) 
+				head = 0;
+			rx_queue[head] = msg >> 16;
+			
+			if (++head >= RX_QUEUE_SIZE) 
+				head = 0;
+			rx_queue[head] = msg >> 24;
 		}
 	}
 	rx_head = head;
@@ -336,7 +349,8 @@ void ADK::rx_queue_packets(uint32_t head, uint32_t tail)
 	
 	println("rx_size = ", rx_size);
 	println("avail = ", avail);
-	if (avail >= (uint32_t)(rx_size>>2)) {
+	if (avail >= rx_size) 
+	{
 		// enough space to accept another full packet
 		println("queue another receive packet");
 		queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
