@@ -310,34 +310,22 @@ void ADK::rx_data(const Transfer_t *transfer)
 	print_hexbytes(transfer->buffer, len);
 	
 	uint32_t head = rx_head;
-	uint32_t tail = rx_tail;
 	
-	for (uint32_t i=0; i < len; i++) 
+	uint8_t *p = (const uint8_t *)transfer->buffer;
+	if (p != NULL && len != 0)
 	{
-		uint32_t msg = rx_buffer[i];
-		if (msg) 
+		do 
 		{
 			if (++head >= RX_QUEUE_SIZE) 
 				head = 0;
-			rx_queue[head] = msg;
-			
-			if (++head >= RX_QUEUE_SIZE) 
-				head = 0;
-			rx_queue[head] = msg >> 8;
-			
-			if (++head >= RX_QUEUE_SIZE) 
-				head = 0;
-			rx_queue[head] = msg >> 16;
-			
-			if (++head >= RX_QUEUE_SIZE) 
-				head = 0;
-			rx_queue[head] = msg >> 24;
-		}
+		
+			rx_queue[head] = *p++;
+		} while (--len);
 	}
 	rx_head = head;
 	
 	rx_packet_queued = false;
-	rx_queue_packets(head, tail);
+	rx_queue_packets(rx_head, rx_tail);
 }
 
 void ADK::rx_queue_packets(uint32_t head, uint32_t tail)
@@ -353,6 +341,7 @@ void ADK::rx_queue_packets(uint32_t head, uint32_t tail)
 	{
 		// enough space to accept another full packet
 		println("queue another receive packet");
+		
 		queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
 		rx_packet_queued = true;
 	} else {
@@ -453,7 +442,7 @@ size_t ADK::write(size_t len, uint8_t *buf)
 {
 	memcpy(tx_buffer, buf, len);
 	__disable_irq();
-		queue_Data_Transfer(txpipe, tx_buffer, len, this);
+	queue_Data_Transfer(txpipe, tx_buffer, len, this);
 	__enable_irq();
 	
 	return len;
