@@ -677,7 +677,7 @@ void JoystickController::rx_data(const Transfer_t *transfer)
 				if (connected_) {
 					println("XBox360w - Connected type:", connected_, HEX);
 					// rx_ep_ should be 1, 3, 5, 7 for the wireless convert to 2-5 on led
-					setLEDs(2+rx_ep_/2);	// Right now hard coded to first joystick...
+					setLEDs(2+(rx_ep_ & 15)/2);
 
 				} else {
 					println("XBox360w - disconnected");
