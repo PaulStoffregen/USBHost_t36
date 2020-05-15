@@ -197,7 +197,7 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
 			    // ...
 				txbuf_[1] = 0x00;
 				txbuf_[2] = 0x08;
-				txbuf_[3] = 0x40 + lr;
+				txbuf_[3] = 0x40 + lb;
 				txbuf_[4] = 0x00;
 				txbuf_[5] = 0x00;
 				txbuf_[6] = 0x00;
