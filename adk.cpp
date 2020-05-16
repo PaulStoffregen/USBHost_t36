@@ -226,7 +226,7 @@ bool ADK::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t le
 }
 void ADK::sendStr(Device_t *dev, uint8_t index, char *str)
 { 
-	strcpy(adkbuf, (unsigned char*)str);
+	strcpy((char *)adkbuf, str);
 	mk_setup(adksetup, UHS_ADK_bmREQ_SEND, UHS_ADK_SENDSTR, 0, index, strlen(str));
 	queue_Control_Transfer(dev, &adksetup, adkbuf, this);
 }
@@ -311,7 +311,7 @@ void ADK::rx_data(const Transfer_t *transfer)
 	
 	uint32_t head = rx_head;
 	
-	uint8_t *p = (const uint8_t *)transfer->buffer;
+	uint8_t *p = (uint8_t *)transfer->buffer;
 	if (p != NULL && len != 0)
 	{
 		do 
