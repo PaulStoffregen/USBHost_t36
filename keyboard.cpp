@@ -55,23 +55,23 @@ static const keycode_extra_t keycode_extras[] = {
 	{M(KEY_LEFT), KEYD_LEFT },
 	{M(KEY_RIGHT), KEYD_RIGHT },
 	{M(KEY_INSERT), KEYD_INSERT },
-	{M(KEY_DELETE), KEYD_DELETE }, 
+	{M(KEY_DELETE), KEYD_DELETE },
 	{M(KEY_PAGE_UP), KEYD_PAGE_UP },
-	{M(KEY_PAGE_DOWN), KEYD_PAGE_DOWN }, 
+	{M(KEY_PAGE_DOWN), KEYD_PAGE_DOWN },
 	{M(KEY_HOME), KEYD_HOME },
-	{M(KEY_END), KEYD_END },   
+	{M(KEY_END), KEYD_END },
 	{M(KEY_F1), KEYD_F1 },
-	{M(KEY_F2), KEYD_F2 },     
-	{M(KEY_F3), KEYD_F3 },     
-	{M(KEY_F4), KEYD_F4 },     
-	{M(KEY_F5), KEYD_F5 },     
-	{M(KEY_F6), KEYD_F6 },     
-	{M(KEY_F7), KEYD_F7 },     
-	{M(KEY_F8), KEYD_F8 },     
-	{M(KEY_F9), KEYD_F9  },     
-	{M(KEY_F10), KEYD_F10 },    
-	{M(KEY_F11), KEYD_F11 },    
-	{M(KEY_F12), KEYD_F12 }    
+	{M(KEY_F2), KEYD_F2 },
+	{M(KEY_F3), KEYD_F3 },
+	{M(KEY_F4), KEYD_F4 },
+	{M(KEY_F5), KEYD_F5 },
+	{M(KEY_F6), KEYD_F6 },
+	{M(KEY_F7), KEYD_F7 },
+	{M(KEY_F8), KEYD_F8 },
+	{M(KEY_F9), KEYD_F9	},
+	{M(KEY_F10), KEYD_F10 },
+	{M(KEY_F11), KEYD_F11 },
+	{M(KEY_F12), KEYD_F12 }
 };
 
 // Some of these mapped to key + shift.
@@ -143,7 +143,7 @@ bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descripto
 	uint32_t size = descriptors[22] | (descriptors[23] << 8);
 	println("packet size = ", size);
 	if ((size < 8) || (size > 64)) {
-		return false; // Keyboard Boot Protocol is 8 bytes, but maybe others have longer... 
+		return false; // Keyboard Boot Protocol is 8 bytes, but maybe others have longer...
 	}
 #ifdef USBHS_KEYBOARD_INTERVAL 
 	uint32_t interval = USBHS_KEYBOARD_INTERVAL;
@@ -244,6 +244,7 @@ void KeyboardController::new_data(const Transfer_t *transfer)
 	println("KeyboardController Callback (member)");
 	print("  KB Data: ");
 	print_hexbytes(transfer->buffer, 8);
+	if(reportReaderFunction) reportReaderFunction(report);
 	for (int i=2; i < 8; i++) {
 		uint32_t key = prev_report[i];
 		if (key >= 4 && !contains(key, report)) {
@@ -255,6 +256,9 @@ void KeyboardController::new_data(const Transfer_t *transfer)
 		if (key >= 4 && !contains(key, prev_report)) {
 			key_press(report[0], key);
 		}
+	}
+	if(modifiersChangedFunction && (prev_report[0] != report[0])) {
+		modifiersChangedFunction(report[0]);
 	}
 	memcpy(prev_report, report, 8);
 	queue_Data_Transfer(datapipe, report, 8, this);
@@ -288,21 +292,10 @@ void KeyboardController::key_press(uint32_t mod, uint32_t key)
 	println("  press, key=", key);
 	modifiers = mod;
 	keyOEM = key;
-	keyCode = convert_to_unicode(mod, key);
-	println("  unicode = ", keyCode);
-	if (keyPressedFunction) {
-		keyPressedFunction(keyCode);
-	} else {
-		keyPressed();
-	}
-}
 
-void KeyboardController::key_release(uint32_t mod, uint32_t key)
-{
-	// TODO: queue events, perform callback from Task
-	println("  release, key=", key);
-	modifiers = mod;
-	keyOEM = key;
+	if(keyPressedRawFunction) {
+		keyPressedRawFunction(keyOEM, modifiers);
+	}
 
 	// Look for modifier keys
 	if (key == M(KEY_NUM_LOCK)) {
@@ -314,6 +307,26 @@ void KeyboardController::key_release(uint32_t mod, uint32_t key)
 	} else if (key == M(KEY_SCROLL_LOCK)) {
 		scrollLock(!leds_.scrollLock);
 	} else {
+		keyCode = convert_to_unicode(mod, key);
+		println("  unicode = ", keyCode);
+		if (keyPressedFunction) {
+			keyPressedFunction(keyCode);
+		} else {
+			keyPressed();
+		}
+	}
+}
+
+void KeyboardController::key_release(uint32_t mod, uint32_t key)
+{
+	// TODO: queue events, perform callback from Task
+	println("  release, key=", key);
+	modifiers = mod;
+	keyOEM = key;
+	if(keyReleasedRawFunction) {
+		keyReleasedRawFunction(keyOEM, modifiers);
+	}
+	if (key != M(KEY_NUM_LOCK) && key != M(KEY_CAPS_LOCK) && key != M(KEY_SCROLL_LOCK)) {
 		keyCode = convert_to_unicode(mod, key);
 		if (keyReleasedFunction) {
 			keyReleasedFunction(keyCode);

@@ -722,8 +722,24 @@ typedef union {
     uint8_t byte;
 } KBDLeds_t;
 public:
-	KeyboardController(USBHost &host) { init(); }
-	KeyboardController(USBHost *host) { init(); }
+	KeyboardController(USBHost &host) :
+		keyPressedFunction(NULL),
+		keyReleasedFunction(NULL),
+		keyPressedRawFunction(NULL),
+		keyReleasedRawFunction(NULL),
+		modifiersChangedFunction(NULL),
+		extrasKeyPressedFunction(NULL),
+		extrasKeyReleasedFunction(NULL)
+		{ init(); }
+	KeyboardController(USBHost *host)  :
+		keyPressedFunction(NULL),
+		keyReleasedFunction(NULL),
+		keyPressedRawFunction(NULL),
+		keyReleasedRawFunction(NULL),
+		modifiersChangedFunction(NULL),
+		extrasKeyPressedFunction(NULL),
+		extrasKeyReleasedFunction(NULL)
+		{ init(); }
 
 	// need their own versions as both USBDriver and USBHIDInput provide
 	uint16_t idVendor();
@@ -739,6 +755,10 @@ public:
 	uint8_t  getOemKey() { return keyOEM; }
 	void     attachPress(void (*f)(int unicode)) { keyPressedFunction = f; }
 	void     attachRelease(void (*f)(int unicode)) { keyReleasedFunction = f; }
+	void     attachPressRaw(void (*f)(uint8_t oem_key, uint8_t mod)) { keyPressedRawFunction = f; }
+	void     attachReleaseRaw(void (*f)(uint8_t oem_key, uint8_t mod)) { keyReleasedRawFunction = f; }
+	void     attachModifiersChange(void (*f) (uint8_t modifierState)) {modifiersChangedFunction = f; }
+	void     attachReportReader(void (*f)(const uint8_t report[8])) {reportReaderFunction = f; }
 	void     LEDS(uint8_t leds);
 	uint8_t  LEDS() {return leds_.byte;}
 	void     updateLEDS(void);
@@ -785,6 +805,10 @@ private:
 	void key_release(uint32_t mod, uint32_t key);
 	void (*keyPressedFunction)(int unicode);
 	void (*keyReleasedFunction)(int unicode);
+	void (*keyPressedRawFunction)(uint8_t oem_key, uint8_t mod);
+	void (*keyReleasedRawFunction)(uint8_t oem_key, uint8_t mod);
+	void (*modifiersChangedFunction)(uint8_t modifierState);
+	void (*reportReaderFunction)(const uint8_t report[8]);
 	Pipe_t *datapipe;
 	setup_t setup;
 	uint8_t report[8];
