@@ -248,12 +248,37 @@ void KeyboardController::new_data(const Transfer_t *transfer)
 		uint32_t key = prev_report[i];
 		if (key >= 4 && !contains(key, report)) {
 			key_release(prev_report[0], key);
+			if (rawKeyReleasedFunction) {
+				rawKeyReleasedFunction(key);
+			}
+		}
+	}
+	if (rawKeyReleasedFunction) {
+		// each modifier key is represented by a bit in the first byte
+		for (int i = 0; i < 8; ++i)
+		{
+			uint8_t keybit = 1 << i;
+			if ((prev_report[0] & keybit) && !(report[0] & keybit)) {
+				rawKeyReleasedFunction(103 + i);
+			}
 		}
 	}
 	for (int i=2; i < 8; i++) {
 		uint32_t key = report[i];
 		if (key >= 4 && !contains(key, prev_report)) {
 			key_press(report[0], key);
+			if (rawKeyPressedFunction) {
+				rawKeyPressedFunction(key);
+			}
+		}
+	}
+	if (rawKeyPressedFunction) {
+		for (int i = 0; i < 8; ++i)
+		{
+			uint8_t keybit = 1 << i;
+			if (!(prev_report[0] & keybit) && (report[0] & keybit)) {
+				rawKeyPressedFunction(103 + i);
+			}
 		}
 	}
 	memcpy(prev_report, report, 8);
