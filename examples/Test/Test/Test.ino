@@ -18,6 +18,8 @@ void setup()
 	Serial.println("USB Host Testing");
 	myusb.begin();
 	keyboard1.attachPress(OnPress);
+	keyboard1.attachRawPress(OnRawPress);
+	keyboard1.attachRawRelease(OnRawRelease);
 	keyboard2.attachPress(OnPress);
 	midi1.setHandleNoteOff(OnNoteOff);
 	midi1.setHandleNoteOn(OnNoteOn);
@@ -43,6 +45,18 @@ void OnPress(int key)
 	//Serial.print("  ");
 	//Serial.print((char)keyboard2.getKey());
 	//Serial.println();
+}
+
+void OnRawPress(uint8_t keycode)
+{
+	Serial.print("raw key press: ");
+	Serial.println((int)keycode);
+}
+
+void OnRawRelease(uint8_t keycode)
+{
+	Serial.print("raw key release: ");
+	Serial.println((int)keycode);
 }
 
 void OnNoteOn(byte channel, byte note, byte velocity)
