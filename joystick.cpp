@@ -40,6 +40,7 @@
 JoystickController::product_vendor_mapping_t JoystickController::pid_vid_mapping[] = {
 	{ 0x045e, 0x02ea, XBOXONE, false },{ 0x045e, 0x02dd, XBOXONE, false },
 	{ 0x045e, 0x0719, XBOX360, false},
+	{ 0x045e, 0x028E, XBOX360, false},  // Switch? 
 	{ 0x054C, 0x0268, PS3, true}, 
 	{ 0x054C, 0x042F, PS3, true},	// PS3 Navigation controller
 	{ 0x054C, 0x03D5, PS3_MOTION, true},	// PS3 Motion controller
@@ -504,6 +505,14 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
   	// 29 30  1  2  3  4  5  6  7  8  9 40 41 42
 	// 07 05 81 03 20 00 01 07 05 01 03 20 00 08 
 
+	// Switch
+	// 09 04 00 00 02 FF 5D 01 00 
+	// 10 21 10 01 01 24 81 14 03 00 03 13 02 00 03 00 
+	// 07 05 81 03 20 00 08 
+	// 07 05 02 03 20 00 08 
+
+
+
 	if (len < 9+7+7) return false;
 
 	// Some common stuff for both XBoxs
@@ -521,24 +530,28 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 		if (descriptors[descriptor_index] != 0x14) return false; // only support specific versions...
 		descriptor_index += descriptors[descriptor_index]; // XBox360w ignore this unknown setup...
 	}	
-	while (count_end_points-- && ((rx_ep_ == 0) || txep == 0)) {
-		if (descriptors[descriptor_index] != 7) return false; // length 7
-		if (descriptors[descriptor_index+1] != 5) return false; // ep desc
-		if ((descriptors[descriptor_index+3] == 3) 				// Type 3...
-			&& (descriptors[descriptor_index+4] <= 64)
-			&& (descriptors[descriptor_index+5] == 0)) {
-			// have a bulk EP size 
-			if (descriptors[descriptor_index+2] & 0x80 ) {
-				rx_ep_ = descriptors[descriptor_index+2];
-				rx_size_ = descriptors[descriptor_index+4];
-				rx_interval = descriptors[descriptor_index+6];
-			} else {
-				txep = descriptors[descriptor_index+2]; 
-				tx_size_ = descriptors[descriptor_index+4];
-				tx_interval = descriptors[descriptor_index+6];
+	while ((rx_ep_ == 0) || txep == 0) {
+		print("  Index:", descriptor_index, DEC);
+
+		if (descriptor_index >= len) return false;  		// we ran off the end and did not get end points
+		// see if the next data is an end point descript
+		if ((descriptors[descriptor_index] == 7) && (descriptors[descriptor_index+1] == 5)) {
+			if ((descriptors[descriptor_index+3] == 3) 				// Type 3...
+				&& (descriptors[descriptor_index+4] <= 64)
+				&& (descriptors[descriptor_index+5] == 0)) {
+				// have a bulk EP size 
+				if (descriptors[descriptor_index+2] & 0x80 ) {
+					rx_ep_ = descriptors[descriptor_index+2];
+					rx_size_ = descriptors[descriptor_index+4];
+					rx_interval = descriptors[descriptor_index+6];
+				} else {
+					txep = descriptors[descriptor_index+2]; 
+					tx_size_ = descriptors[descriptor_index+4];
+					tx_interval = descriptors[descriptor_index+6];
+				}
 			}
 		}
-		descriptor_index += 7;  // setup to look at next one...
+		descriptor_index += descriptors[descriptor_index];  // setup to look at next one...
 	}
 	if ((rx_ep_ == 0) || (txep == 0)) return false; // did not find two end points.
 	print("JoystickController, rx_ep_=", rx_ep_ & 15);
