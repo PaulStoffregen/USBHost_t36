@@ -57,7 +57,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-//#define USBHOST_PRINT_DEBUG
+#define USBHOST_PRINT_DEBUG
 //#define USBHDBGSerial	Serial1
 
 #ifndef USBHDBGSerial
@@ -918,7 +918,7 @@ public:
     bool setLEDs(uint8_t lr, uint8_t lg, uint8_t lb);  // sets Leds, 
     bool inline setLEDs(uint32_t leds) {return setLEDs((leds >> 16) & 0xff, (leds >> 8) & 0xff, leds & 0xff);}  // sets Leds - passing one arg for all leds 
 	enum { STANDARD_AXIS_COUNT = 10, ADDITIONAL_AXIS_COUNT = 54, TOTAL_AXIS_COUNT = (STANDARD_AXIS_COUNT+ADDITIONAL_AXIS_COUNT) };
-	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360, PS3_MOTION, SpaceNav} joytype_t;
+	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360, PS3_MOTION, SpaceNav, SWITCH} joytype_t;
 	joytype_t joystickType() {return joystickType_;} 
 
 	// PS3 pair function. hack, requires that it be connect4ed by USB and we have the address of the Bluetooth dongle...

@@ -40,7 +40,7 @@
 JoystickController::product_vendor_mapping_t JoystickController::pid_vid_mapping[] = {
 	{ 0x045e, 0x02ea, XBOXONE, false },{ 0x045e, 0x02dd, XBOXONE, false },
 	{ 0x045e, 0x0719, XBOX360, false},
-	{ 0x045e, 0x028E, XBOX360, false},  // Switch? 
+	{ 0x045e, 0x028E, SWITCH, false},  // Switch? 
 	{ 0x054C, 0x0268, PS3, true}, 
 	{ 0x054C, 0x042F, PS3, true},	// PS3 Navigation controller
 	{ 0x054C, 0x03D5, PS3_MOTION, true},	// PS3 Motion controller
@@ -648,13 +648,31 @@ typedef struct {
 	int16_t	axis[4];
 } xbox360data_t;
 
+typedef struct {
+	uint8_t state;
+	uint8_t id_or_type;
+	// From online references button order: 
+	//     sync, dummy, start, back, a, b, x, y
+	//     dpad up, down left, right
+	//	   lb, rb, left stick, right stick
+	// Axis: 
+	//     lt, rt, lx, ly, rx, ry
+	//
+	uint16_t buttons; 
+	uint8_t lt;
+	uint8_t rt;
+	int16_t	axis[4];
+} switchdataUSB_t;
+
 static const uint8_t xbox_axis_order_mapping[] = {3, 4, 0, 1, 2, 5};
 
 void JoystickController::rx_data(const Transfer_t *transfer)
 {
+	#ifdef  DEBUG_JOYSTICK
 	print("JoystickController::rx_data (", joystickType_, DEC);
 	print("): ");
 	print_hexbytes((uint8_t*)transfer->buffer, transfer->length);
+	#endif
 
 	if (joystickType_ == XBOXONE) {
 		// Process XBOX One data
@@ -733,6 +751,36 @@ void JoystickController::rx_data(const Transfer_t *transfer)
 
 			if (anychange) joystickEvent = true;
 		}
+	} else if (joystickType_ == SWITCH) {
+		switchdataUSB_t  *switchd = (switchdataUSB_t *)transfer->buffer;
+        if (buttons != switchd->buttons) {
+        	buttons = switchd->buttons;
+        	anychange = true;
+        }
+		axis_mask_ = 0x3f;	
+		axis_changed_mask_ = 0;	// assume none for now
+
+		for (uint8_t i = 0; i < 4; i++) {
+			if (axis[i] != switchd->axis[i]) {
+				axis[i] = switchd->axis[i];
+				axis_changed_mask_ |= (1 << i);
+				anychange = true;
+			}
+		}
+		// the two triggers show up as 4 and 5
+		if (axis[4] != switchd->lt) {
+			axis[4] = switchd->lt;
+			axis_changed_mask_ |= (1 << 4);
+			anychange = true;
+		}
+
+		if (axis[5] != switchd->rt) {
+			axis[5] = switchd->rt;
+			axis_changed_mask_ |= (1 << 5);
+			anychange = true;
+		}
+
+		if (anychange) joystickEvent = true;
 	}
 
 	queue_Data_Transfer(rxpipe_, rxbuf_, rx_size_, this);

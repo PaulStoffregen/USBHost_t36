@@ -17,7 +17,7 @@
 //
 // This example is in the public domain
 //=============================================================================
-#define USE_ST77XX // define this if you wish to use one of these displays.
+//#define USE_ST77XX // define this if you wish to use one of these displays.
 
 #include "USBHost_t36.h"
 
@@ -489,6 +489,7 @@ void ProcessJoystickData() {
 
       case JoystickController::XBOXONE:
       case JoystickController::XBOX360:
+      case JoystickController::SWITCH:
         ltv = joystick.getAxis(4);
         rtv = joystick.getAxis(5);
         if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
