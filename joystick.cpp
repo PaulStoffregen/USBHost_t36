@@ -117,6 +117,8 @@ const uint8_t *JoystickController::serialNumber()
 }
 
 
+static uint8_t rumble_counter = 0; 
+
 bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeout)
 {
 	// Need to know which joystick we are on.  Start off with XBox support - maybe need to add some enum value for the known
@@ -170,6 +172,38 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
 				println("XBox360 rumble transfer fail");
 			}
 			return true;
+		case SWITCH:
+			memset(txbuf_, 0, 10);	// make sure it is cleared out
+			txbuf_[0] = 0x80;
+			txbuf_[1] = 0x92;
+			txbuf_[3] = 0x31;
+			txbuf_[8] = 0x10;	// Command
+
+			// Now add in subcommand data:
+			// Probably do this better soon
+			txbuf_[9+0] = rumble_counter++;	//
+			txbuf_[9+1] = 0x80;
+    		txbuf_[9+2] = 0x00;
+    		txbuf_[9+3] = 0x40;
+    		txbuf_[9+4] = 0x40;
+    		txbuf_[9+5] = 0x80;
+    		txbuf_[9+6] = 0x00;
+    		txbuf_[9+7] = 0x40;
+    		txbuf_[9+8] = 0x40;
+
+    		if (lValue != 0) {
+	    		txbuf_[9+5] = 0x08;
+	    		txbuf_[9+6] = lValue;
+    		} else if (rValue != 0) {
+	    		txbuf_[9+5] = 0x10;
+	    		txbuf_[9+6] = rValue;
+    		}
+
+			if (!queue_Data_Transfer(txpipe_, txbuf_, 18, this)) {
+				println("switch rumble transfer fail");
+				Serial.printf("Switch Rumble transfer fail\n");
+			}
+			return true;
 	} 
 	return false;
 }
@@ -179,6 +213,7 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
 {
 	// Need to know which joystick we are on.  Start off with XBox support - maybe need to add some enum value for the known
 	// joystick types. 
+	Serial.printf("::setLEDS(%x %x %x)\n", lr, lg, lb);
 	if ((leds_[0] != lr) || (leds_[1] != lg) || (leds_[2] != lb)) {
 		leds_[0] = lr;
 		leds_[1] = lg;
@@ -211,6 +246,33 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
 					println("XBox360 set leds fail");
 				}
 				return true;
+			case SWITCH:
+				memset(txbuf_, 0, 10);	// make sure it is cleared out
+				txbuf_[0] = 0x80;
+				txbuf_[1] = 0x92;
+				txbuf_[3] = 0x31;
+				txbuf_[8] = 0x01;	// Command
+
+				// Now add in subcommand data:
+				// Probably do this better soon
+				txbuf_[9+0] = rumble_counter++;	//
+				txbuf_[9+1] = 0x00;
+        		txbuf_[9+2] = 0x01;
+        		txbuf_[9+3] = 0x40;
+        		txbuf_[9+4] = 0x40;
+        		txbuf_[9+5] = 0x00;
+        		txbuf_[9+6] = 0x01;
+        		txbuf_[9+7] = 0x40;
+        		txbuf_[9+8] = 0x40;
+
+        		txbuf_[9+9] = 0x30;	// LED Command
+        		txbuf_[9+10] = lr;
+       			println("Switch set leds: driver? ", (uint32_t)driver_, HEX);
+				print_hexbytes((uint8_t*)txbuf_, 20);
+				if (!queue_Data_Transfer(txpipe_, txbuf_, 20, this)) {
+					println("switch set leds fail");
+				}
+
 			case XBOXONE:
 			default:
 				return false;
@@ -218,6 +280,7 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
 	}
 	return false;
 }
+
 
 bool JoystickController::transmitPS4UserFeedbackMsg() {
 	if (driver_)  {
@@ -473,7 +536,8 @@ void JoystickController::joystickDataClear() {
 
 static  uint8_t xboxone_start_input[] = {0x05, 0x20, 0x00, 0x01, 0x00};
 static  uint8_t xbox360w_inquire_present[] = {0x08, 0x00, 0x0F, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-
+//static  uint8_t switch_start_input[] = {0x19, 0x01, 0x03, 0x07, 0x00, 0x00, 0x92, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10};
+static  uint8_t switch_start_input[] = {0x80, 0x02};
 bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
 {
 	println("JoystickController claim this=", (uint32_t)this, HEX);
@@ -577,6 +641,9 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 	} else if (jtype == XBOX360) {
 		queue_Data_Transfer(txpipe_, xbox360w_inquire_present, sizeof(xbox360w_inquire_present), this);
 		connected_ = 0;		// remember that hardware is actually connected...
+	} else if (jtype == SWITCH) {
+		queue_Data_Transfer(txpipe_, switch_start_input, sizeof(switch_start_input), this);
+		connected_ = true;		// remember that hardware is actually connected...
 	}
 	memset(axis, 0, sizeof(axis));	// clear out any data. 
 	joystickType_ = jtype;		// remember we are an XBox One. 
@@ -658,7 +725,8 @@ typedef struct {
 	// Axis: 
 	//     lt, rt, lx, ly, rx, ry
 	//
-	uint16_t buttons; 
+	uint8_t buttons_h; 
+	uint8_t buttons_l; 
 	uint8_t lt;
 	uint8_t rt;
 	int16_t	axis[4];
@@ -753,8 +821,9 @@ void JoystickController::rx_data(const Transfer_t *transfer)
 		}
 	} else if (joystickType_ == SWITCH) {
 		switchdataUSB_t  *switchd = (switchdataUSB_t *)transfer->buffer;
-        if (buttons != switchd->buttons) {
-        	buttons = switchd->buttons;
+		uint16_t cur_buttons = (switchd->buttons_h << 8) | switchd->buttons_l;
+        if (buttons != cur_buttons) {
+        	buttons = cur_buttons;
         	anychange = true;
         }
 		axis_mask_ = 0x3f;	
@@ -974,9 +1043,15 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 		//set buttons for last 4bits in the axis[5]
 		tmp_data[5] = tmp_data[5] >> 4;
 		
-	
+		// Lets try mapping the DPAD buttons to high bits 
+		//								              up    up/right  right    R DN      DOWN    L DN      Left    LUP
+		static const uint32_t dpad_to_buttons[] = {0x10000, 0x30000, 0x20000, 0x60000, 0x40000, 0xC0000, 0x80000, 0x90000};
+		
 		// Quick and dirty hack to match PS4 HID data
-		uint32_t cur_buttons = tmp_data[7] | (tmp_data[10]) | ((tmp_data[6]*10)) | ((uint16_t)tmp_data[5] << 16) ; 
+		uint32_t cur_buttons = ((uint32_t)tmp_data[7] << 12) | (((uint32_t)tmp_data[6]*0x10)) | ((uint16_t)tmp_data[5] ) ;
+
+		if (tmp_data[10] < 8) cur_buttons |= dpad_to_buttons[tmp_data[10]];
+
 		if (cur_buttons != buttons) {
 			buttons = cur_buttons;
 			joystickEvent = true;	// something changed.
