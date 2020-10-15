@@ -42,20 +42,21 @@
 /************************************************************/
 //  Define mapping VID/PID - to Serial Device type.
 /************************************************************/
-USBSerial::product_vendor_mapping_t USBSerial::pid_vid_mapping[] = {
+USBSerialBase::product_vendor_mapping_t USBSerialBase::pid_vid_mapping[] = {
 	// FTDI mappings. 
-	{0x0403, 0x6001, USBSerial::FTDI},
+	{0x0403, 0x6001, USBSerialBase::FTDI, 0},
+	{0x0403, 0x8088, USBSerialBase::FTDI, 1},  // 2 devices try to claim at interface level
 
 	// PL2303
-	{0x67B,0x2303, USBSerial::PL2303}, 
+	{0x67B,0x2303, USBSerialBase::PL2303, 0}, 
 
 	// CH341
-	{0x4348, 0x5523, USBSerial::CH341 },
-	{0x1a86, 0x7523, USBSerial::CH341 },
-	{0x1a86, 0x5523, USBSerial::CH341 },
+	{0x4348, 0x5523, USBSerialBase::CH341, 0},
+	{0x1a86, 0x7523, USBSerialBase::CH341, 0 },
+	{0x1a86, 0x5523, USBSerialBase::CH341, 0 },
 
 	// Silex CP210...
-	{0x10c4, 0xea60, USBSerial::CP210X }
+	{0x10c4, 0xea60, USBSerialBase::CP210X, 0 }
 };
 
 
@@ -63,7 +64,7 @@ USBSerial::product_vendor_mapping_t USBSerial::pid_vid_mapping[] = {
 //  Initialization and claiming of devices & interfaces
 /************************************************************/
 
-void USBSerial::init()
+void USBSerialBase::init()
 {
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
 	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
@@ -72,345 +73,325 @@ void USBSerial::init()
 	format_ = USBHOST_SERIAL_8N1;
 }
 
-bool USBSerial::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
+bool USBSerialBase::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
 {
-	// only claim at interface level
-	println("USBSerial claim this=", (uint32_t)this, HEX);
+	print("USBSerial(", _max_rxtx, DEC);
+	println(")claim this=", (uint32_t)this, HEX);
 	print("vid=", dev->idVendor, HEX);
 	print(", pid=", dev->idProduct, HEX);
 	print(", bDeviceClass = ", dev->bDeviceClass);
    	print(", bDeviceSubClass = ", dev->bDeviceSubClass);
    	println(", bDeviceProtocol = ", dev->bDeviceProtocol);
 	print_hexbytes(descriptors, len);
-	if (type == 0) {
-		//---------------------------------------------------------------------
-		// CDCACM
-		if ((dev->bDeviceClass == 2) && (dev->bDeviceSubClass == 0)) {
-			// It is a communication device see if we can extract the data... 
-			// Try some ttyACM types? 
-			// This code may be similar to MIDI code. 
-			// But first pass see if we can simply look at the interface...
-			// Lets walk through end points and see if we 
-			// can find an RX and TX bulk transfer end point.
-			// 0  1  2  3  4  5  6  7  8 *9 10  1  2  3 *4  5  6  7 *8  9 20  1  2 *3  4  5  6  7  8  9*30  1  2  3  4  5  6  7  8 *9 40  1  2  3  4  5 *6  7  8  9 50  1  2 
-			// USB2AX
-			//09 04 00 00 01 02 02 01 00 05 24 00 10 01 04 24 02 06 05 24 06 00 01 07 05 82 03 08 00 FF 09 04 01 00 02 0A 00 00 00 07 05 04 02 10 00 01 07 05 83 02 10 00 01
-			//09 04 01 00 02 0A 00 00 00 07 05 04 02 10 00 01 07 05 83 02 10 00 01 
-		    // Teensy 3.6
-		    //09 04 00 00 01 02 02 01 00 05 24 00 10 01 05 24 01 01 01 04 24 02 06 05 24 06 00 01 07 05 82 03 10 00 40 09 04 01 00 02 0A 00 00 00 07 05 03 02 40 00 00 07 05 84 02 40 00 00  
-		    //09 04 01 00 02 0A 00 00 00 07 05 03 02 40 00 00 07 05 84 02 40 00 00 
-			const uint8_t *p = descriptors;
-			const uint8_t *end = p + len;
 
-			if (p[0] != 9 || p[1] != 4) return false; // interface descriptor
-			//println("  bInterfaceClass=", p[5]);
-			//println("  bInterfaceSubClass=", p[6]);
-			if (p[5] != 2) return false; // bInterfaceClass: 2 Communications
-			if (p[6] != 2) return false; // bInterfaceSubClass: 2 serial 
-			p += 9;
-			println("  Interface is Serial");
-			uint8_t rx_ep = 0;
-			uint8_t tx_ep = 0;
-			uint16_t rx_size = 0;
-			uint16_t tx_size = 0;
-			interface = 0;	// clear out any interface numbers passed in. 
+	//---------------------------------------------------------------------------
+	// Lets try to map CDCACM devices only at device level
+	if ((dev->bDeviceClass == 2) && (dev->bDeviceSubClass == 0)) {
+		if (type != 0) return false;
 
-			while (p < end) {
-				len = *p;
-				if (len < 4) return false; 
-				if (p + len > end) return false; // reject if beyond end of data
-				uint32_t type = p[1];
-				//println("type: ", type);
-				// Unlike Audio, we need to look at Interface as our endpoints are after them...
-				if (type == 4 ) { // Interface - lets remember it's number...
-					interface = p[2];
-					println("    Interface: ", interface);
-				}
-				else if (type == 0x24) {  // 0x24 = CS_INTERFACE, 
-					uint32_t subtype = p[2];
-					print("    CS_INTERFACE - subtype: ", subtype);
-					if (len >= 4) print(" ", p[3], HEX);
-					if (len >= 5) print(" ", p[4], HEX);
-					if (len >= 6) print(" ", p[5], HEX);
-					switch (subtype) {
-						case 0: println(" - Header Functional Descriptor"); break;
-						case 1: println(" - Call Management Functional"); break;
-						case 2: println(" - Abstract Control Management"); break;
-						case 4: println(" - Telephone Ringer"); break;
-						case 6: println("  - union Functional"); break;
-						default: println(" - ??? other"); break; 
-					}
-					// First pass ignore...
-				} else if (type == 5) {
-					// endpoint descriptor
-					if (p[0] < 7) return false; // at least 7 bytes
-					if (p[3] == 2) {  // First try ignore the first one which is interrupt...
-						println("     Endpoint: ", p[2], HEX);
-						switch (p[2] & 0xF0) {
-						case 0x80:
-							// IN endpoint
-							if (rx_ep == 0) {
-								rx_ep = p[2] & 0x0F;
-								rx_size = p[4] | (p[5] << 8);
-								println("      rx_size = ", rx_size);
-							}
-							break;
-						case 0x00:
-							// OUT endpoint
-							if (tx_ep == 0) {
-								tx_ep = p[2];
-								tx_size = p[4] | (p[5] << 8);
-								println("      tx_size = ", tx_size);
-							}
-							break;
-						default:
-							println("  invalid end point: ", p[2]);
-							return false;
-						}
-					}
-				} else {
-					println("  Unknown type: ", type);
-					return false; // unknown
-				}
-				p += len;
-			}
-			print("  exited loop rx:", rx_ep);
-			println(", tx:", tx_ep);
-			if (!rx_ep || !tx_ep) return false; 	// did not get our two end points
-			if (!init_buffers(rx_size, tx_size)) return false;
-			println("  rx buffer size:", rxsize);
-			println("  tx buffer size:", txsize);
-			rxpipe = new_Pipe(dev, 2, rx_ep & 15, 1, rx_size);
-			if (!rxpipe) return false;
-			txpipe = new_Pipe(dev, 2, tx_ep, 0, tx_size);
-			if (!txpipe) {
-				// TODO: free rxpipe
-				return false;
-			}
-			sertype = CDCACM;
-			rxpipe->callback_function = rx_callback;
-			queue_Data_Transfer(rxpipe, rx1, (rx_size < 64)? rx_size : 64, this);
-			rxstate = 1;
-			if (rx_size > 128) {
-				queue_Data_Transfer(rxpipe, rx2, rx_size, this);
-				rxstate = 3;
-			}
-			txstate = 0;
-			txpipe->callback_function = tx_callback;
-			baudrate = 115200;
-			// Wish I could just call Control to do the output... Maybe can defer until the user calls begin()
-			// control requires that device is setup which is not until this call completes...
-			println("Control - CDCACM DTR...");
-			// Need to setup  the data the line coding data
-			mk_setup(setup, 0x21, 0x22, 3, 0, 0);
-			queue_Control_Transfer(dev, &setup, NULL, this);
-			control_queued = true;
-			pending_control = 0x0;	// Maybe don't need to do...
-			return true;
-		}
-
-		// See if the vendor_id:product_id is in our list of products.
-		sertype = UNKNOWN;
-		for (uint8_t i = 0; i < (sizeof(pid_vid_mapping)/sizeof(pid_vid_mapping[0])); i++) {
-			if ((dev->idVendor == pid_vid_mapping[i].idVendor) && (dev->idProduct == pid_vid_mapping[i].idProduct)) {
-				sertype = pid_vid_mapping[i].sertype;
-				break;
-			}
-		}  
-		if (sertype == UNKNOWN) return false; 	// not one of ours
-
-		// Lets try to locate the end points.  Code is common across these devices
-		println("len = ", len);
-		uint8_t count_end_points = descriptors[4];
-		if (count_end_points < 2) return false; // not enough end points
-		if (len < 23) return false;
-		if (descriptors[0] != 9) return false; // length 9
-
+		// It is a communication device see if we can extract the data... 
+		// Try some ttyACM types? 
+		// This code may be similar to MIDI code. 
+		// But first pass see if we can simply look at the interface...
 		// Lets walk through end points and see if we 
 		// can find an RX and TX bulk transfer end point.
-		//Example vid=67B, pid=2303
-		// 0  1  2  3  4  5  6  7  8  9 10  1  2  3  4  5  6  7  8  9 20  1  2  3  4  5  6  7  8  9
-		//09 04 00 00 03 FF 00 00 00 07 05 81 03 0A 00 01 07 05 02 02 40 00 00 07 05 83 02 40 00 00 
-		uint32_t rxep = 0;
-		uint32_t txep = 0;
+		// 0  1  2  3  4  5  6  7  8 *9 10  1  2  3 *4  5  6  7 *8  9 20  1  2 *3  4  5  6  7  8  9*30  1  2  3  4  5  6  7  8 *9 40  1  2  3  4  5 *6  7  8  9 50  1  2 
+		// USB2AX
+		//09 04 00 00 01 02 02 01 00 05 24 00 10 01 04 24 02 06 05 24 06 00 01 07 05 82 03 08 00 FF 09 04 01 00 02 0A 00 00 00 07 05 04 02 10 00 01 07 05 83 02 10 00 01
+		//09 04 01 00 02 0A 00 00 00 07 05 04 02 10 00 01 07 05 83 02 10 00 01 
+	    // Teensy 3.6
+	    //09 04 00 00 01 02 02 01 00 05 24 00 10 01 05 24 01 01 01 04 24 02 06 05 24 06 00 01 07 05 82 03 10 00 40 09 04 01 00 02 0A 00 00 00 07 05 03 02 40 00 00 07 05 84 02 40 00 00  
+	    //09 04 01 00 02 0A 00 00 00 07 05 03 02 40 00 00 07 05 84 02 40 00 00 
+		const uint8_t *p = descriptors;
+		const uint8_t *end = p + len;
+
+		if (p[0] != 9 || p[1] != 4) return false; // interface descriptor
+		//println("  bInterfaceClass=", p[5]);
+		//println("  bInterfaceSubClass=", p[6]);
+		if (p[5] != 2) return false; // bInterfaceClass: 2 Communications
+		if (p[6] != 2) return false; // bInterfaceSubClass: 2 serial 
+		p += 9;
+		println("  Interface is Serial");
+		uint8_t rx_ep = 0;
+		uint8_t tx_ep = 0;
 		uint16_t rx_size = 0;
 		uint16_t tx_size = 0;
-		uint32_t descriptor_index = 9; 
-		while (count_end_points-- && ((rxep == 0) || txep == 0)) {
-			if (descriptors[descriptor_index] != 7) return false; // length 7
-			if (descriptors[descriptor_index+1] != 5) return false; // ep desc
-			if ((descriptors[descriptor_index+3] == 2) 
-				&& (descriptors[descriptor_index+4] <= 64)
-				&& (descriptors[descriptor_index+5] == 0)) {
-				// have a bulk EP size 
-				if (descriptors[descriptor_index+2] & 0x80 ) {
-					rxep = descriptors[descriptor_index+2];
-					rx_size = descriptors[descriptor_index+4];
-				} else {
-					txep = descriptors[descriptor_index+2]; 
-					tx_size = descriptors[descriptor_index+4];
-				}
-			}
-			descriptor_index += 7;  // setup to look at next one...
-		}
-		// Try to verify the end points. 
-		if (!check_rxtx_ep(rxep, txep)) return false;
-		print("USBSerial, rxep=", rxep & 15);
-		print("(", rx_size);
-		print("), txep=", txep);
-		print("(", tx_size);
-		println(")");
+		interface = 0;	// clear out any interface numbers passed in. 
 
+		while (p < end) {
+			len = *p;
+			if (len < 4) return false; 
+			if (p + len > end) return false; // reject if beyond end of data
+			uint32_t type = p[1];
+			//println("type: ", type);
+			// Unlike Audio, we need to look at Interface as our endpoints are after them...
+			if (type == 4 ) { // Interface - lets remember it's number...
+				interface = p[2];
+				println("    Interface: ", interface);
+			}
+			else if (type == 0x24) {  // 0x24 = CS_INTERFACE, 
+				uint32_t subtype = p[2];
+				print("    CS_INTERFACE - subtype: ", subtype);
+				if (len >= 4) print(" ", p[3], HEX);
+				if (len >= 5) print(" ", p[4], HEX);
+				if (len >= 6) print(" ", p[5], HEX);
+				switch (subtype) {
+					case 0: println(" - Header Functional Descriptor"); break;
+					case 1: println(" - Call Management Functional"); break;
+					case 2: println(" - Abstract Control Management"); break;
+					case 4: println(" - Telephone Ringer"); break;
+					case 6: println("  - union Functional"); break;
+					default: println(" - ??? other"); break; 
+				}
+				// First pass ignore...
+			} else if (type == 5) {
+				// endpoint descriptor
+				if (p[0] < 7) return false; // at least 7 bytes
+				if (p[3] == 2) {  // First try ignore the first one which is interrupt...
+					println("     Endpoint: ", p[2], HEX);
+					switch (p[2] & 0xF0) {
+					case 0x80:
+						// IN endpoint
+						if (rx_ep == 0) {
+							rx_ep = p[2] & 0x0F;
+							rx_size = p[4] | (p[5] << 8);
+							println("      rx_size = ", rx_size);
+						}
+						break;
+					case 0x00:
+						// OUT endpoint
+						if (tx_ep == 0) {
+							tx_ep = p[2];
+							tx_size = p[4] | (p[5] << 8);
+							println("      tx_size = ", tx_size);
+						}
+						break;
+					default:
+						println("  invalid end point: ", p[2]);
+						return false;
+					}
+				}
+			} else {
+				println("  Unknown type: ", type);
+				return false; // unknown
+			}
+			p += len;
+		}
+		print("  exited loop rx:", rx_ep);
+		println(", tx:", tx_ep);
+		if (!rx_ep || !tx_ep) return false; 	// did not get our two end points
 		if (!init_buffers(rx_size, tx_size)) return false;
 		println("  rx buffer size:", rxsize);
 		println("  tx buffer size:", txsize);
-
-		rxpipe = new_Pipe(dev, 2, rxep & 15, 1, rx_size);
+		rxpipe = new_Pipe(dev, 2, rx_ep & 15, 1, rx_size);
 		if (!rxpipe) return false;
-		txpipe = new_Pipe(dev, 2, txep, 0, tx_size);
+		txpipe = new_Pipe(dev, 2, tx_ep, 0, tx_size);
 		if (!txpipe) {
-			//free_Pipe(rxpipe);
+			// TODO: free rxpipe
 			return false;
 		}
+		sertype = CDCACM;
 		rxpipe->callback_function = rx_callback;
-		queue_Data_Transfer(rxpipe, rx1, rx_size, this);
+		queue_Data_Transfer(rxpipe, rx1, (rx_size < 64)? rx_size : 64, this);
 		rxstate = 1;
+		if (rx_size > 128) {
+			queue_Data_Transfer(rxpipe, rx2, rx_size, this);
+			rxstate = 3;
+		}
 		txstate = 0;
 		txpipe->callback_function = tx_callback;
 		baudrate = 115200;
+		// Wish I could just call Control to do the output... Maybe can defer until the user calls begin()
+		// control requires that device is setup which is not until this call completes...
+		println("Control - CDCACM DTR...");
+		// Need to setup  the data the line coding data
+		mk_setup(setup, 0x21, 0x22, 3, 0, 0);
+		queue_Control_Transfer(dev, &setup, NULL, this);
+		control_queued = true;
+		pending_control = 0x0;	// Maybe don't need to do...
+		return true;
+	}
 
-		// Now do specific setup per type
-		switch (sertype) {
-		//---------------------------------------------------------------------
-		// FTDI
-		case FTDI:
-			{
-				pending_control = 0x0F;
-				mk_setup(setup, 0x40, 0, 0, 0, 0); // reset port
-				queue_Control_Transfer(dev, &setup, NULL, this);
-				control_queued = true;
-				return true;
+	//---------------------------------------------------------------------------
+	// Else lets see if this is a PID/VID we know something about.
+	// See if the vendor_id:product_id is in our list of products.
+	sertype = UNKNOWN;
+	for (uint8_t i = 0; i < (sizeof(pid_vid_mapping)/sizeof(pid_vid_mapping[0])); i++) {
+		if ((dev->idVendor == pid_vid_mapping[i].idVendor) && (dev->idProduct == pid_vid_mapping[i].idProduct)) {
+			sertype = pid_vid_mapping[i].sertype;
+			if (pid_vid_mapping[i].claim_at_type != type) {
+				println("Serial device wants to map at interface level");
+				return false;
 			}
-		//------------------------------------------------------------------------
-		// Prolific
-		// TODO: Note: there are probably more vendor/product pairs.. Maybe should create table of them
-		case PL2303: 
-			{
-				//  First attempt keep it simple... 
-				println("PL2303: readRegister(0x04)");
-				// Need to setup  the data the line coding data
-				mk_setup(setup, 0xC0, 0x1, 0x8484, 0, 1);  
-				queue_Control_Transfer(dev, &setup, setupdata, this); 
-				control_queued = true;
-				setup_state = 1; 	// We are at step one of setup... 
-				pending_control = 0x3f;
-				return true;
-			}
-		//------------------------------------------------------------------------
-		// CH341
-		case CH341:
-			{
-				println("CH341:  0xC0, 0x5f, 0, 0, 8");
-				// Need to setup  the data the line coding data
-				mk_setup(setup, 0xC0, 0x5f, 0, 0, sizeof(setupdata));  
-				queue_Control_Transfer(dev, &setup, setupdata, this); 
-				control_queued = true;
-				setup_state = 1; 	// We are at step one of setup... 
-				pending_control = 0x7f;	
-				return true;
-			}
-		//------------------------------------------------------------------------
-		// CP210X
-		case CP210X:
-			{
-				println("CP210X:  0x41, 0x11, 0, 0, 0 - reset port");
-				// Need to setup  the data the line coding data
-				mk_setup(setup, 0x41, 0x11, 0, 0, 0);  
-				queue_Control_Transfer(dev, &setup, NULL, this); 
-				control_queued = true;
-				setup_state = 1; 	// We are at step one of setup... 
-				pending_control = 0xf;	
-				return true;
-			}
-		//------------------------------------------------------------------------
-		// PID:VID - not in our product list. 
-		default:
-			return false;
+			break;
 		}
-	} else if (type != 1) return false;
-	// TTYACM: <Composit device> 
-	// 
-	// We first tried to claim a simple ttyACM device like a teensy who is configured
-	// only as Serial at the device level like what was done for midi
-	//
-	// However some devices are a compisit of multiple Interfaces, so see if this Interface
-	// is of the CDC Interface class and 0 for SubClass and protocol
-	// Todo: some of this can maybe be combined with the Whole device code above. 
-	
-	if (descriptors[0] != 9 || descriptors[1] != 4) return false; // interface descriptor
-	if (descriptors[4] < 2) return false; 		// less than 2 end points
-	if (descriptors[5] != 0xA) return false; // bInterfaceClass, 0xa = CDC data
-	if (descriptors[6] != 0) return false; // bInterfaceSubClass
-	if (descriptors[7] != 0) return false; // bInterfaceProtocol
+	}  
+	if (sertype == UNKNOWN) {
+		// Not in our list see if CDCACM type...
+		// only at the Interface level
+		if (type != 1) return false;
+		// TTYACM: <Composit device> 
+		// 
+		// We first tried to claim a simple ttyACM device like a teensy who is configured
+		// only as Serial at the device level like what was done for midi
+		//
+		// However some devices are a compisit of multiple Interfaces, so see if this Interface
+		// is of the CDC Interface class and 0 for SubClass and protocol
+		// Todo: some of this can maybe be combined with the Whole device code above. 
+		
+		if (descriptors[0] != 9 || descriptors[1] != 4) return false; // interface descriptor
+		if (descriptors[4] < 2) return false; 		// less than 2 end points
+		if (descriptors[5] != 0xA) return false; // bInterfaceClass, 0xa = CDC data
+		if (descriptors[6] != 0) return false; // bInterfaceSubClass
+		if (descriptors[7] != 0) return false; // bInterfaceProtocol
+		sertype = CDCACM;
+		// Lets see if we can fold in the ACM stuff here...
+	}
+	// Lets try to locate the end points.  Code is common across these devices
+	println("len = ", len);
+	uint8_t count_end_points = descriptors[4];
+	if (count_end_points < 2) return false; // not enough end points
+	if (len < 23) return false;
+	if (descriptors[0] != 9) return false; // length 9
 
-	if (descriptors[9] != 7) return false; // length 7
-	if (descriptors[10] != 5) return false; // ep desc
-	uint32_t txep = descriptors[11];
-	uint32_t txsize = descriptors[13];
-	if (descriptors[12] != 2) return false; // bulk type
-	if (descriptors[13] > 64) return false; // size 64 Max
-	if (descriptors[14] != 0) return false;
+	// Lets walk through end points and see if we 
+	// can find an RX and TX bulk transfer end point.
+	//Example vid=67B, pid=2303
+	// 0  1  2  3  4  5  6  7  8  9 10  1  2  3  4  5  6  7  8  9 20  1  2  3  4  5  6  7  8  9
+	//09 04 00 00 03 FF 00 00 00 07 05 81 03 0A 00 01 07 05 02 02 40 00 00 07 05 83 02 40 00 00 
 
-	if (descriptors[16] != 7) return false; // length 7
-	if (descriptors[17] != 5) return false; // ep desc
-	uint32_t rxep = descriptors[18];
-	uint32_t rxsize = descriptors[20];
-	if (descriptors[19] != 2) return false; // bulk type
-	if (descriptors[20] > 64) return false; // size 64 Max
-	if (descriptors[21] != 0) return false;
+	// lets see about FTD2232H
+    //09 04 00 00 02 FF FF FF 02 07 05 81 02 00 02 00 07 05 02 02 00 02 00 09 04 01 00 02 FF FF FF 02 07 05 83 02 00 02 00 07 05 04 02 00 02 00 
+	//09 04 01 00 02 FF FF FF 02 07 05 83 02 00 02 00 07 05 04 02 00 02 00 
+
+
+	uint32_t rxep = 0;
+	uint32_t txep = 0;
+	uint16_t rx_size = 0;
+	uint16_t tx_size = 0;
+	uint32_t descriptor_index = 9; 
+	while (count_end_points-- && ((rxep == 0) || txep == 0)) {
+		if (descriptors[descriptor_index] != 7) return false; // length 7
+		if (descriptors[descriptor_index+1] != 5) return false; // ep desc
+		uint16_t ep_size = descriptors[descriptor_index+4] + (uint16_t)(descriptors[descriptor_index+5] << 8);
+		if ((descriptors[descriptor_index+3] == 2) 
+			&& (ep_size <= _max_rxtx) && (ep_size >= _min_rxtx)) {
+			// have a bulk EP size 
+			if (descriptors[descriptor_index+2] & 0x80 ) {
+				rxep = descriptors[descriptor_index+2];
+				rx_size = ep_size;
+			} else {
+				txep = descriptors[descriptor_index+2]; 
+				tx_size = ep_size;
+			}
+		}
+		descriptor_index += 7;  // setup to look at next one...
+	}
+	// Try to verify the end points. 
 	if (!check_rxtx_ep(rxep, txep)) return false;
-	interface = descriptors[2];
+	print("USBSerial, rxep=", rxep & 15);
+	print("(", rx_size);
+	print("), txep=", txep);
+	print("(", tx_size);
+	println(")");
 
-	print("CDC, rxep=", rxep & 15);
-	println(", txep=", txep);
-	if (!init_buffers(rxsize, txsize)) return false;
-	rxpipe = new_Pipe(dev, 2, rxep & 15, 1, rxsize);
+	if (!init_buffers(rx_size, tx_size)) return false;
+	println("  rx buffer size:", rxsize);
+	println("  tx buffer size:", txsize);
+
+	rxpipe = new_Pipe(dev, 2, rxep & 15, 1, rx_size);
 	if (!rxpipe) return false;
-	txpipe = new_Pipe(dev, 2, txep, 0, txsize);
+	txpipe = new_Pipe(dev, 2, txep, 0, tx_size);
 	if (!txpipe) {
-		// TODO: free rxpipe
+		//free_Pipe(rxpipe);
 		return false;
 	}
-	sertype = CDCACM;
 	rxpipe->callback_function = rx_callback;
-	queue_Data_Transfer(rxpipe, rx1, 64, this);
+	queue_Data_Transfer(rxpipe, rx1, rx_size, this);
 	rxstate = 1;
-	if (rxsize > 128) {
-		queue_Data_Transfer(rxpipe, rx2, 64, this);
-		rxstate = 3;
-	}
 	txstate = 0;
 	txpipe->callback_function = tx_callback;
-
-	// See if we can do just the inteface...
 	baudrate = 115200;
-	println("Control - CDCACM LINE_CODING");
-	setupdata[0] = 0;  // Setup baud rate 115200 - 0x1C200
-	setupdata[1] = 0xc2;
-	setupdata[2] = 0x1;
-	setupdata[3] = 0;
-    setupdata[4] = 0; // 0 - 1 stop bit, 1 - 1.5 stop bits, 2 - 2 stop bits
-    setupdata[5] = 0; // 0 - None, 1 - Odd, 2 - Even, 3 - Mark, 4 - Space
-    setupdata[6] = 8; // Data bits (5, 6, 7, 8 or 16)
-	mk_setup(setup, 0x21, 0x20, 0, 0, 7);
-	queue_Control_Transfer(dev, &setup, setupdata, this);
-	pending_control = 0x04;	// Maybe don't need to do...
-	control_queued = true;
-	return true;
+
+	// Now do specific setup per type
+	switch (sertype) {
+	//---------------------------------------------------------------------
+	// FTDI
+	case FTDI:
+		{
+			pending_control = 0x0F;
+			mk_setup(setup, 0x40, 0, 0, 0, 0); // reset port
+			queue_Control_Transfer(dev, &setup, NULL, this);
+			control_queued = true;
+			return true;
+		}
+	//------------------------------------------------------------------------
+	// Prolific
+	// TODO: Note: there are probably more vendor/product pairs.. Maybe should create table of them
+	case PL2303: 
+		{
+			//  First attempt keep it simple... 
+			println("PL2303: readRegister(0x04)");
+			// Need to setup  the data the line coding data
+			mk_setup(setup, 0xC0, 0x1, 0x8484, 0, 1);  
+			queue_Control_Transfer(dev, &setup, setupdata, this); 
+			control_queued = true;
+			setup_state = 1; 	// We are at step one of setup... 
+			pending_control = 0x3f;
+			return true;
+		}
+	//------------------------------------------------------------------------
+	// CH341
+	case CH341:
+		{
+			println("CH341:  0xC0, 0x5f, 0, 0, 8");
+			// Need to setup  the data the line coding data
+			mk_setup(setup, 0xC0, 0x5f, 0, 0, sizeof(setupdata));  
+			queue_Control_Transfer(dev, &setup, setupdata, this); 
+			control_queued = true;
+			setup_state = 1; 	// We are at step one of setup... 
+			pending_control = 0x7f;	
+			return true;
+		}
+	//------------------------------------------------------------------------
+	// CP210X
+	case CP210X:
+		{
+			println("CP210X:  0x41, 0x11, 0, 0, 0 - reset port");
+			// Need to setup  the data the line coding data
+			mk_setup(setup, 0x41, 0x11, 0, 0, 0);  
+			queue_Control_Transfer(dev, &setup, NULL, this); 
+			control_queued = true;
+			setup_state = 1; 	// We are at step one of setup... 
+			pending_control = 0xf;	
+			return true;
+		}
+	case CDCACM:
+		{
+			println("Control - CDCACM LINE_CODING");
+			setupdata[0] = 0;  // Setup baud rate 115200 - 0x1C200
+			setupdata[1] = 0xc2;
+			setupdata[2] = 0x1;
+			setupdata[3] = 0;
+		    setupdata[4] = 0; // 0 - 1 stop bit, 1 - 1.5 stop bits, 2 - 2 stop bits
+		    setupdata[5] = 0; // 0 - None, 1 - Odd, 2 - Even, 3 - Mark, 4 - Space
+		    setupdata[6] = 8; // Data bits (5, 6, 7, 8 or 16)
+			mk_setup(setup, 0x21, 0x20, 0, 0, 7);
+			queue_Control_Transfer(dev, &setup, setupdata, this);
+			pending_control = 0x04;	// Maybe don't need to do...
+			control_queued = true;
+			return true;
+		}		
+	//------------------------------------------------------------------------
+	// PID:VID - not in our product list. 
+	default:
+		break;
+	}
+	return false;
 }
 
 // check if two legal endpoints, 1 receive & 1 transmit
-bool USBSerial::check_rxtx_ep(uint32_t &rxep, uint32_t &txep)
+bool USBSerialBase::check_rxtx_ep(uint32_t &rxep, uint32_t &txep)
 {
 	if ((rxep & 0x0F) == 0) return false;
 	if ((txep & 0x0F) == 0) return false;
@@ -427,18 +408,18 @@ bool USBSerial::check_rxtx_ep(uint32_t &rxep, uint32_t &txep)
 }
 
 // initialize buffer sizes and pointers
-bool USBSerial::init_buffers(uint32_t rsize, uint32_t tsize)
+bool USBSerialBase::init_buffers(uint32_t rsize, uint32_t tsize)
 {
 	// buffer must be able to hold 2 of each packet, plus buffer
 	// space to hold RX and TX data. 
-	if (sizeof(bigbuffer) < (rsize + tsize) * 3 + 2) return false;
-	rx1 = (uint8_t *)bigbuffer;
+	if (_big_buffer_size < (rsize + tsize) * 3 + 2) return false;
+	rx1 = (uint8_t *)_bigBuffer;
 	rx2 = rx1 + rsize;
 	tx1 = rx2 + rsize;
 	tx2 = tx1 + tsize;
 	rxbuf = tx2 + tsize;
 	// FIXME: this assume 50-50 split - not true when rsize != tsize
-	rxsize = (sizeof(bigbuffer) - (rsize + tsize) * 2) / 2;
+	rxsize = (_big_buffer_size - (rsize + tsize) * 2) / 2;
 	txsize = rxsize;
 	txbuf = rxbuf + rxsize;
 	rxhead = 0;
@@ -449,13 +430,13 @@ bool USBSerial::init_buffers(uint32_t rsize, uint32_t tsize)
 	return true;
 }
 
-void USBSerial::disconnect()
+void USBSerialBase::disconnect()
 {
 }
 
 
 
-void USBSerial::control(const Transfer_t *transfer)
+void USBSerialBase::control(const Transfer_t *transfer)
 {
 	println("control callback (serial) ", pending_control, HEX);
 	control_queued = false;
@@ -927,7 +908,7 @@ void USBSerial::control(const Transfer_t *transfer)
 
 #define CH341_BAUDBASE_FACTOR 1532620800
 #define CH341_BAUDBASE_DIVMAX 3
-void USBSerial::ch341_setBaud(uint8_t byte_index) {
+void USBSerialBase::ch341_setBaud(uint8_t byte_index) {
 	if (byte_index == 0) {
 		uint32_t factor;
 		uint16_t divisor;
@@ -962,20 +943,20 @@ void USBSerial::ch341_setBaud(uint8_t byte_index) {
 //  Interrupt-based Data Movement
 /************************************************************/
 
-void USBSerial::rx_callback(const Transfer_t *transfer)
+void USBSerialBase::rx_callback(const Transfer_t *transfer)
 {
 	if (!transfer->driver) return;
 	((USBSerial *)(transfer->driver))->rx_data(transfer);
 }
 
-void USBSerial::tx_callback(const Transfer_t *transfer)
+void USBSerialBase::tx_callback(const Transfer_t *transfer)
 {
 	if (!transfer->driver) return;
 	((USBSerial *)(transfer->driver))->tx_data(transfer);
 }
 
 
-void USBSerial::rx_data(const Transfer_t *transfer)
+void USBSerialBase::rx_data(const Transfer_t *transfer)
 {
 	uint32_t len = transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF);
 
@@ -1035,7 +1016,7 @@ void USBSerial::rx_data(const Transfer_t *transfer)
 }
 
 // re-queue packet buffer(s) if possible
-void USBSerial::rx_queue_packets(uint32_t head, uint32_t tail)
+void USBSerialBase::rx_queue_packets(uint32_t head, uint32_t tail)
 {
 	uint32_t avail;
 	if (head >= tail) {
@@ -1064,7 +1045,7 @@ void USBSerial::rx_queue_packets(uint32_t head, uint32_t tail)
 	}
 }
 
-void USBSerial::tx_data(const Transfer_t *transfer)
+void USBSerialBase::tx_data(const Transfer_t *transfer)
 {
 	uint32_t mask;
 	uint8_t *p = (uint8_t *)transfer->buffer;
@@ -1120,9 +1101,9 @@ void USBSerial::tx_data(const Transfer_t *transfer)
 	debugDigitalWrite(5, LOW);
 }
 
-void USBSerial::flush()
+void USBSerialBase::flush()
 {
-	print("USBSerial::flush");
+	print("USBSerialBase::flush");
  	if (txhead == txtail) {
  		println(" - Empty");
  		return;  // empty.
@@ -1140,7 +1121,7 @@ void USBSerial::flush()
 
 
 
-void USBSerial::timer_event(USBDriverTimer *whichTimer)
+void USBSerialBase::timer_event(USBDriverTimer *whichTimer)
 {
 	debugDigitalWrite(7, HIGH);
 	println("txtimer");
@@ -1205,7 +1186,7 @@ void USBSerial::timer_event(USBDriverTimer *whichTimer)
 //  User Functions - must disable USBHQ IRQ for EHCI access
 /************************************************************/
 
-void USBSerial::begin(uint32_t baud, uint32_t format)
+void USBSerialBase::begin(uint32_t baud, uint32_t format)
 {
 	NVIC_DISABLE_IRQ(IRQ_USBHS);
 	baudrate = baud;
@@ -1227,7 +1208,7 @@ void USBSerial::begin(uint32_t baud, uint32_t format)
 	}
 }
 
-void USBSerial::end(void)
+void USBSerialBase::end(void)
 {
 	NVIC_DISABLE_IRQ(IRQ_USBHS);
 	switch (sertype) {
@@ -1246,7 +1227,7 @@ void USBSerial::end(void)
 	}
 }
 
-int USBSerial::available(void)
+int USBSerialBase::available(void)
 {
 	if (!device) return 0;
 	uint32_t head = rxhead;
@@ -1255,7 +1236,7 @@ int USBSerial::available(void)
 	return rxsize + head - tail;
 }
 
-int USBSerial::peek(void)
+int USBSerialBase::peek(void)
 {
 	if (!device) return -1;
 	uint32_t head = rxhead;
@@ -1265,7 +1246,7 @@ int USBSerial::peek(void)
 	return rxbuf[tail];
 }
 
-int USBSerial::read(void)
+int USBSerialBase::read(void)
 {
 	if (!device) return -1;
 	uint32_t head = rxhead;
@@ -1282,7 +1263,7 @@ int USBSerial::read(void)
 	return c;
 }
 
-int USBSerial::availableForWrite()
+int USBSerialBase::availableForWrite()
 {
 	if (!device) return 0;
 	uint32_t head = txhead;
@@ -1291,7 +1272,7 @@ int USBSerial::availableForWrite()
 	return tail - head - 1;
 }
 
-size_t USBSerial::write(uint8_t c)
+size_t USBSerialBase::write(uint8_t c)
 {
 	if (!device) return 0;
 	uint32_t head = txhead;

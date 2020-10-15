@@ -1382,14 +1382,25 @@ private:
 
 //--------------------------------------------------------------------------
 
-class USBSerial: public USBDriver, public Stream {
+class USBSerialBase: public USBDriver, public Stream {
 	public:
-
 
 	// FIXME: need different USBSerial, with bigger buffers for 480 Mbit & faster speed
 	enum { BUFFER_SIZE = 648 }; // must hold at least 6 max size packets, plus 2 extra bytes
 	enum { DEFAULT_WRITE_TIMEOUT = 3500};
-	USBSerial(USBHost &host) : txtimer(this) { init(); }
+
+	USBSerialBase(USBHost &host, uint32_t *big_buffer, uint16_t buffer_size, 
+		uint16_t min_pipe_rxtx, uint16_t max_pipe_rxtx) :
+			txtimer(this), 
+			_bigBuffer(big_buffer), 
+			_big_buffer_size(buffer_size), 
+			_min_rxtx(min_pipe_rxtx), 
+			_max_rxtx(max_pipe_rxtx) 
+		{ 
+
+			init(); 
+		}
+
 	void begin(uint32_t baud, uint32_t format=USBHOST_SERIAL_8N1);
 	void end(void);
 	uint32_t writeTimeout() {return write_timeout_;}
@@ -1422,7 +1433,12 @@ private:
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
 	USBDriverTimer txtimer;
-	uint32_t bigbuffer[(BUFFER_SIZE+3)/4];
+	uint32_t *_bigBuffer;
+	uint16_t _big_buffer_size;
+	uint16_t  _min_rxtx;
+	uint16_t _max_rxtx;
+
+
 	setup_t setup;
 	uint8_t setupdata[16]; // 
 	uint32_t baudrate;
@@ -1457,9 +1473,31 @@ private:
 		uint16_t 	idVendor;
 		uint16_t 	idProduct;
 		sertype_t 	sertype;
+		int			claim_at_type;
 	} product_vendor_mapping_t;
 	static product_vendor_mapping_t pid_vid_mapping[];
 
+};
+
+class USBSerial : public USBSerialBase {
+public:
+	USBSerial(USBHost &host) :
+		// hard code the normal one to 1 and 64 bytes for most likely most are 64
+		USBSerialBase(host, bigbuffer, sizeof(bigbuffer), 1, 64) {};
+private:
+	enum { BUFFER_SIZE = 648 }; // must hold at least 6 max size packets, plus 2 extra bytes
+	uint32_t bigbuffer[(BUFFER_SIZE+3)/4];
+};
+
+class USBSerial_BigBuffer: public USBSerialBase {
+public:
+	// Default to larger than can be handled by other serial, but can overide
+	USBSerial_BigBuffer(USBHost &host, uint16_t min_rxtx=65) :
+		// hard code the normal one to 1 and 64 bytes for most likely most are 64
+		USBSerialBase(host, bigbuffer, sizeof(bigbuffer), min_rxtx, 512) {};
+private:
+	enum { BUFFER_SIZE = 4096 }; // must hold at least 6 max size packets, plus 2 extra bytes
+	uint32_t bigbuffer[(BUFFER_SIZE+3)/4];
 };
 
 //--------------------------------------------------------------------------

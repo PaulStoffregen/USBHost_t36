@@ -12,7 +12,17 @@ USBHub hub2(myusb);
 USBHIDParser hid1(myusb);
 USBHIDParser hid2(myusb);
 USBHIDParser hid3(myusb);
-USBSerial userial(myusb);
+
+// There is now two versions of the USBSerial class, that are both derived from a common Base class
+// The difference is on how large of transfers that it can handle.  This is controlled by
+// the device descriptor, where up to now we handled those up to 64 byte USB transfers.
+// But there are now new devices that support larger transfer like 512 bytes.  This for example
+// includes the Teensy 4.x boards.  For these we need the big buffer version. 
+// uncomment one of the following defines for userial
+USBSerial userial(myusb);  // works only for those Serial devices who transfer <=64 bytes (like T3.x, FTDI...)
+//USBSerial_BigBuffer userial(myusb, 1); // Handles anything up to 512 bytes
+//USBSerial_BigBuffer userial(myusb); // Handles up to 512 but by default only for those > 64 bytes
+
 
 USBDriver *drivers[] = {&hub1, &hub2, &hid1, &hid2, &hid3, &userial};
 #define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[0]))
