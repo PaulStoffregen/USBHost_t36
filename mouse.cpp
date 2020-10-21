@@ -111,6 +111,9 @@ bool MouseController::claim_bluetooth(BluetoothController *driver, uint32_t blue
 {
 	// How to handle combo devices? 
 	USBHDBGSerial.printf("MouseController Controller::claim_bluetooth - Class %x\n", bluetooth_class);
+	// If we are already in use than don't grab another one.  Likewise don't grab if it is used as USB or HID object
+	if (btdevice && (btdevice != (Device_t*)driver)) return false;
+	if (mydevice != NULL) return false;
 	if ((((bluetooth_class & 0xff00) == 0x2500) || (((bluetooth_class & 0xff00) == 0x500))) && (bluetooth_class & 0x80)) {
 		USBHDBGSerial.printf("MouseController::claim_bluetooth TRUE\n");
 		btdevice = (Device_t*)driver;	// remember this way 
@@ -159,5 +162,5 @@ bool MouseController::process_bluetooth_HID_data(const uint8_t *data, uint16_t l
 
 void MouseController::release_bluetooth() 
 {
-	//btdevice = nullptr;
+	btdevice = nullptr;
 }

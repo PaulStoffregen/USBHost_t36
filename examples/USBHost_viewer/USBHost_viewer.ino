@@ -1,57 +1,62 @@
 //=============================================================================
-// Simple test viewer app for several of the USB devices on ili9341 display
+// Simple test viewer app for several of the USB devices on a display
+// This sketch as well as all others in this library will only work with the
+// Teensy 3.6 and the T4.x boards.
 //
-// Currently requires the libraries
+// The default display is the ILI9341, which uses the ILI9341_t3n library,
+// which is located at:
 //    ili9341_t3n that can be located: https://github.com/KurtE/ILI9341_t3n
-//    spin: https://github.com/KurtE/SPIN
 //
-// Teensy 3.6 Pins
+// Alternate display ST7735 or ST7789 using the ST7735_t3 library which comes
+// with Teensyduino.
+//
+// Default pins
 //   8 = RST
 //   9 = D/C
 //  10 = CS
 //
-// Teensy 4.0 Beta Pins
-//  23 = RST (Marked MCLK on T4 beta breakout)
-//  10 = CS (Marked CS)
-//  9 = DC  (Marked MEMCS)
-//
 // This example is in the public domain
 //=============================================================================
+//#define USE_ST77XX // define this if you wish to use one of these displays.
 
 #include "USBHost_t36.h"
+
+#ifdef USE_ST77XX
+#include <ST7735_t3.h>
+#include <st7735_t3_font_Arial.h>
+#include <ST7789_t3.h>
+#define BLACK ST77XX_BLACK
+#define WHITE ST77XX_WHITE
+#define YELLOW ST77XX_YELLOW
+#define GREEN ST77XX_GREEN
+#define RED ST77XX_RED
+#else
+#include <ILI9341_t3n.h>
 #include <ili9341_t3n_font_Arial.h>
-#define TEENSY64
+#define BLACK ILI9341_BLACK
+#define WHITE ILI9341_WHITE
+#define YELLOW ILI9341_YELLOW
+#define GREEN ILI9341_GREEN
+#define RED ILI9341_RED
+#endif
 
 //=============================================================================
 // Connection configuration of ILI9341 LCD TFT
 //=============================================================================
-DMAMEM uint16_t frame_buffer[ILI9341_TFTWIDTH * ILI9341_TFTHEIGHT];
-#if defined(__MK66FX1M0__) && !defined(TEENSY64)
-#define TFT_RST 255
-#define TFT_DC 20
-#define TFT_CS 21
-ILI9341_t3n tft = ILI9341_t3n(TFT_CS, TFT_DC, TFT_RST);
-#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
-// On Teensy 4 beta with Paul's breakout out:
-// Using pins (MOSI, MISO, SCK which are labeled on Audio board breakout location
-// which are not in the Normal processor positions
-// Also DC=10(CS), CS=9(BCLK) and RST 23(MCLK)
-#define TFT_RST 23
+#define TFT_RST 8
 #define TFT_DC 9
 #define TFT_CS 10
-ILI9341_t3n tft = ILI9341_t3n(TFT_CS, TFT_DC, TFT_RST);
-#elif defined(TEENSY64)
-#define TFT_RST 255
-#define TFT_DC 20
-#define TFT_CS 21
-#define TFT_SCK 14
-#define TFT_MISO 39
-#define TFT_MOSI 28
-ILI9341_t3n tft = ILI9341_t3n(TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCK, TFT_MISO);
-#else
-#error "This example App will only work with Teensy 3.6 or Teensy 4."
-#endif
 
+#ifdef USE_ST77XX
+// define which one you are using
+//DMAMEM uint16_t frame_buffer[ILI9341_TFTWIDTH * ILI9341_TFTHEIGHT];
+// Note there are other options, like defining MOSI, SCK...
+//ST7735_t3 tft = ST7735_t3(cs, dc, rst);
+// For 1.54" TFT with ST7789
+ST7789_t3 tft = ST7789_t3(TFT_CS, TFT_DC, TFT_RST);
+#else
+ILI9341_t3n tft = ILI9341_t3n(TFT_CS, TFT_DC, TFT_RST);
+#endif
 //=============================================================================
 // USB Host Ojbects
 //=============================================================================
@@ -68,8 +73,8 @@ USBHIDParser hid5(myusb);
 MouseController mouse(myusb);
 DigitizerController tablet(myusb);
 JoystickController joystick(myusb);
-BluetoothController bluet(myusb, true, "0000");   // Version does pairing to device
-//BluetoothController bluet(myusb);   // version assumes it already was paired
+//BluetoothController bluet(myusb, true, "0000");   // Version does pairing to device
+BluetoothController bluet(myusb);   // version assumes it already was paired
 RawHIDController rawhid2(myusb);
 
 // Lets only include in the lists The most top level type devices we wish to show information for.
@@ -99,7 +104,7 @@ bool bthid_driver_active[CNT_HIDDEVICES] = {false, false};
 //=============================================================================
 
 // Save away values for buttons, x, y, wheel, wheelh
-int buttons_cur = 0;
+uint32_t buttons_cur = 0;
 int x_cur = 0,
     y_cur = 0,
     z_cur = 0;
@@ -150,15 +155,29 @@ void setup()
   // device like wireless mouse and keyboard this can cause mouse problems.
   //keyboard1.forceBootProtocol();
 
+#ifdef USE_ST77XX
+  // Only uncomment one of these init options.
+  // ST7735 - More options mentioned in examples for st7735_t3 library
+  //tft.initR(INITR_BLACKTAB); // if you're using a 1.8" TFT 128x160 displays
+  //tft.initR(INITR_144GREENTAB); // if you're using a 1.44" TFT (128x128)
+  //tft.initR(INITR_MINI160x80);  //if you're using a .96" TFT(160x80)
+
+  // ST7789
+  tft.init(240, 240);           // initialize a ST7789 chip, 240x240 pixels
+  //tft.init(240, 320);           // Init ST7789 2.0" 320x240
+  //tft.init(135, 240);             // Init ST7789 1.4" 135x240
+  //tft.init(240, 240, SPI_MODE2);    // clones Init ST7789 240x240 no CS
+#else
   tft.begin();
+#endif
   // explicitly set the frame buffer
-  tft.setFrameBuffer(frame_buffer);
+  //  tft.setFrameBuffer(frame_buffer);
   delay(100);
   tft.setRotation(3); // 180
   delay(100);
 
-  tft.fillScreen(ILI9341_BLACK);
-  tft.setTextColor(ILI9341_YELLOW);
+  tft.fillScreen(BLACK);
+  tft.setTextColor(YELLOW);
   tft.setTextSize(2);
   tft.println("Waiting for Device...");
   tft.useFrameBuffer(true);
@@ -203,9 +222,9 @@ void UpdateActiveDeviceInfo() {
         new_device_detected = true;
         Serial.printf("*** Device %s %x:%x - connected ***\n", driver_names[i], drivers[i]->idVendor(), drivers[i]->idProduct());
         driver_active[i] = true;
-        tft.fillScreen(ILI9341_BLACK);  // clear the screen.
+        tft.fillScreen(BLACK);  // clear the screen.
         tft.setCursor(0, 0);
-        tft.setTextColor(ILI9341_YELLOW);
+        tft.setTextColor(YELLOW);
         tft.setFont(Arial_12);
         tft.printf("Device %s %x:%x\n", driver_names[i], drivers[i]->idVendor(), drivers[i]->idProduct());
 
@@ -229,9 +248,9 @@ void UpdateActiveDeviceInfo() {
         new_device_detected = true;
         Serial.printf("*** HID Device %s %x:%x - connected ***\n", hid_driver_names[i], hiddrivers[i]->idVendor(), hiddrivers[i]->idProduct());
         hid_driver_active[i] = true;
-        tft.fillScreen(ILI9341_BLACK);  // clear the screen.
+        tft.fillScreen(BLACK);  // clear the screen.
         tft.setCursor(0, 0);
-        tft.setTextColor(ILI9341_YELLOW);
+        tft.setTextColor(YELLOW);
         tft.setFont(Arial_12);
         tft.printf("HID Device %s %x:%x\n", hid_driver_names[i], hiddrivers[i]->idVendor(), hiddrivers[i]->idProduct());
 
@@ -256,9 +275,9 @@ void UpdateActiveDeviceInfo() {
         new_device_detected = true;
         Serial.printf("*** BTHID Device %s %x:%x - connected ***\n", hid_driver_names[i], hiddrivers[i]->idVendor(), hiddrivers[i]->idProduct());
         bthid_driver_active[i] = true;
-        tft.fillScreen(ILI9341_BLACK);  // clear the screen.
+        tft.fillScreen(BLACK);  // clear the screen.
         tft.setCursor(0, 0);
-        tft.setTextColor(ILI9341_YELLOW);
+        tft.setTextColor(YELLOW);
         tft.setFont(Arial_12);
         tft.printf("Bluetooth Device %s %x:%x\n", bthid_driver_names[i], bthiddrivers[i]->idVendor(), bthiddrivers[i]->idProduct());
 
@@ -283,7 +302,7 @@ void ProcessTabletData() {
       // Lets display the titles.
       int16_t x;
       tft.getCursor(&x, &y_position_after_device_info);
-      tft.setTextColor(ILI9341_YELLOW);
+      tft.setTextColor(YELLOW);
       tft.printf("Buttons:\nX:\nY:\nWheel:\nWheel H:\nAxis:");
       new_device_detected = false;
     }
@@ -321,13 +340,13 @@ void ProcessTabletData() {
 #define TABLET_DATA_X 100
       int16_t x, y2;
       unsigned char line_space = Arial_12.line_space;
-      tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+      tft.setTextColor(WHITE, BLACK);
       //tft.setTextDatum(BR_DATUM);
       int16_t y = y_position_after_device_info;
       tft.setCursor(TABLET_DATA_X, y);
       tft.printf("%d(%x)", buttons_cur, buttons_cur);
       tft.getCursor(&x, &y2);
-      tft.fillRect(x, y, 320, line_space, ILI9341_BLACK);
+      tft.fillRect(x, y, 320, line_space, BLACK);
 
       y += line_space; OutputNumberField(TABLET_DATA_X, y, x_cur, 320);
       y += line_space; OutputNumberField(TABLET_DATA_X, y, y_cur, 320);
@@ -354,7 +373,7 @@ void OutputNumberField(int16_t x, int16_t y, int val, int16_t field_width) {
   int16_t x2, y2;
   tft.setCursor(x, y);
   tft.print(val, DEC); tft.getCursor(&x2, &y2);
-  tft.fillRect(x2, y, field_width - (x2 - x), Arial_12.line_space, ILI9341_BLACK);
+  tft.fillRect(x2, y, field_width - (x2 - x), Arial_12.line_space, BLACK);
 }
 
 //=============================================================================
@@ -366,7 +385,7 @@ void ProcessMouseData() {
       // Lets display the titles.
       int16_t x;
       tft.getCursor(&x, &y_position_after_device_info);
-      tft.setTextColor(ILI9341_YELLOW);
+      tft.setTextColor(YELLOW);
       tft.printf("Buttons:\nX:\nY:\nWheel:\nWheel H:");
       new_device_detected = false;
     }
@@ -396,13 +415,13 @@ void ProcessMouseData() {
 #define MOUSE_DATA_X 100
       int16_t x, y2;
       unsigned char line_space = Arial_12.line_space;
-      tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+      tft.setTextColor(WHITE, BLACK);
       //tft.setTextDatum(BR_DATUM);
       int16_t y = y_position_after_device_info;
       tft.setCursor(TABLET_DATA_X, y);
       tft.printf("%d(%x)", buttons_cur, buttons_cur);
       tft.getCursor(&x, &y2);
-      tft.fillRect(x, y, 320, line_space, ILI9341_BLACK);
+      tft.fillRect(x, y, 320, line_space, BLACK);
 
       y += line_space; OutputNumberField(MOUSE_DATA_X, y, x_cur, 320);
       y += line_space; OutputNumberField(MOUSE_DATA_X, y, y_cur, 320);
@@ -470,6 +489,7 @@ void ProcessJoystickData() {
 
       case JoystickController::XBOXONE:
       case JoystickController::XBOX360:
+      case JoystickController::SWITCH:
         ltv = joystick.getAxis(4);
         rtv = joystick.getAxis(5);
         if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
@@ -502,97 +522,99 @@ void ProcessJoystickData() {
 // TFT_joystick
 //=============================================================================
 void tft_JoystickData() {
-    if (new_device_detected) {
-      // Lets display the titles.
-      int16_t x;
-      tft.getCursor(&x, &y_position_after_device_info);
-      tft.setTextColor(ILI9341_YELLOW);
-      tft.printf("Buttons:\nX:\nY:\nX2\nY2(Z):\nL1:\nR1:\nHAT:");
-      new_device_detected = false;
-    }
+  if (new_device_detected) {
+    // Lets display the titles.
+    int16_t x;
+    tft.getCursor(&x, &y_position_after_device_info);
+    tft.setTextColor(YELLOW);
+    tft.printf("Buttons:\nX:\nY:\nX2\nY2(Z):\nL1:\nR1:\nHAT:");
+    new_device_detected = false;
+  }
 
-    bool something_changed = false;
-    if (buttons != buttons_prev) {  //buttons
-      something_changed = true;
-    }
-    if (user_axis[0] != x_cur) {  //xL
-      x_cur = user_axis[0];
-      something_changed = true;
-    }
-    if (user_axis[1] != y_cur) {  //yL
-      y_cur = user_axis[1];
-      something_changed = true;
-    }
-    if (user_axis[9] != wheel_cur) {  //Hat
-      wheel_cur = user_axis[9];
-      something_changed = true;
-    }
+  bool something_changed = false;
+  if (buttons != buttons_prev) {  //buttons
+    something_changed = true;
+  }
+  if (user_axis[0] != x_cur) {  //xL
+    x_cur = user_axis[0];
+    something_changed = true;
+  }
+  if (user_axis[1] != y_cur) {  //yL
+    y_cur = user_axis[1];
+    something_changed = true;
+  }
+  if (user_axis[9] != wheel_cur) {  //Hat
+    wheel_cur = user_axis[9];
+    something_changed = true;
+  }
   //Second Axis
-    if (user_axis[2] != x2_cur) {  //xR
-      x2_cur = user_axis[2];
-      something_changed = true;
-    }
-    if (user_axis[5] != y2_cur) {  //yR or z-axis
-      y2_cur = user_axis[5];
-      something_changed = true;
-    } 
-    //Rumble Axis
-     switch (joystick.joystickType()) {
-        case JoystickController::XBOXONE:
-        case JoystickController::XBOX360:
-        case JoystickController::PS4:
-          if (user_axis[3] != L1_cur) {  //xR
-            L1_cur = user_axis[3];
-            something_changed = true;
-          }
-          if (user_axis[4] != R1_cur) {  //yR or z-axis
-            R1_cur = user_axis[4];
-            something_changed = true;
-          }
-          break;
-      case JoystickController::PS3:
-          if (user_axis[18] != L1_cur) {  //xR
-            L1_cur = user_axis[18];
-            something_changed = true;
-          }
-          if (user_axis[19] != R1_cur) {  //yR or z-axis
-            R1_cur = user_axis[19];
-            something_changed = true;
-          }
-          break;
-     }
-    if (something_changed) {
-#define MOUSE_DATA_X 100
-      int16_t x, y2;
-      unsigned char line_space = Arial_12.line_space;
-      tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
-      //tft.setTextDatum(BR_DATUM);
-      int16_t y = y_position_after_device_info;
-      tft.setCursor(TABLET_DATA_X, y);
-      tft.printf("%d(%x)", buttons, buttons);
-      tft.getCursor(&x, &y2);
-      tft.fillRect(x, y, 320, line_space, ILI9341_BLACK);
-
-      y += line_space; OutputNumberField(MOUSE_DATA_X, y, x_cur, 320);  //x
-      y += line_space; OutputNumberField(MOUSE_DATA_X, y, y_cur, 320);  //y
-      y += line_space; OutputNumberField(MOUSE_DATA_X, y, x2_cur, 320); //x2(z)
-      y += line_space; OutputNumberField(MOUSE_DATA_X, y, y2_cur, 320); //y2
-      switch (joystick.joystickType()) {
-        case JoystickController::PS4:
-        case JoystickController::PS3:
-        case JoystickController::XBOXONE:
-        case JoystickController::XBOX360:
-          y += line_space; OutputNumberField(MOUSE_DATA_X, y, L1_cur, 320); 
-          y += line_space; OutputNumberField(MOUSE_DATA_X, y, R1_cur, 320);
-          break;
-        default:
-          y += line_space; OutputNumberField(MOUSE_DATA_X, y, 0, 320); 
-          y += line_space; OutputNumberField(MOUSE_DATA_X, y, 0, 320);
-          y += line_space; OutputNumberField(MOUSE_DATA_X, y, wheel_cur, 320); //hat
-          break;
+  if (user_axis[2] != x2_cur) {  //xR
+    x2_cur = user_axis[2];
+    something_changed = true;
+  }
+  if (user_axis[5] != y2_cur) {  //yR or z-axis
+    y2_cur = user_axis[5];
+    something_changed = true;
+  }
+  //Rumble Axis
+  switch (joystick.joystickType()) {
+    case JoystickController::XBOXONE:
+    case JoystickController::XBOX360:
+    case JoystickController::PS4:
+      if (user_axis[3] != L1_cur) {  //xR
+        L1_cur = user_axis[3];
+        something_changed = true;
       }
-      tft.updateScreen(); // update the screen now
+      if (user_axis[4] != R1_cur) {  //yR or z-axis
+        R1_cur = user_axis[4];
+        something_changed = true;
+      }
+      break;
+    case JoystickController::PS3:
+      if (user_axis[18] != L1_cur) {  //xR
+        L1_cur = user_axis[18];
+        something_changed = true;
+      }
+      if (user_axis[19] != R1_cur) {  //yR or z-axis
+        R1_cur = user_axis[19];
+        something_changed = true;
+      }
+      break;
+    default: // All others
+      break;
+  }
+  if (something_changed) {
+#define MOUSE_DATA_X 100
+    int16_t x, y2;
+    unsigned char line_space = Arial_12.line_space;
+    tft.setTextColor(WHITE, BLACK);
+    //tft.setTextDatum(BR_DATUM);
+    int16_t y = y_position_after_device_info;
+    tft.setCursor(TABLET_DATA_X, y);
+    tft.printf("%d(%x)", buttons, buttons);
+    tft.getCursor(&x, &y2);
+    tft.fillRect(x, y, 320, line_space, BLACK);
+
+    y += line_space; OutputNumberField(MOUSE_DATA_X, y, x_cur, 320);  //x
+    y += line_space; OutputNumberField(MOUSE_DATA_X, y, y_cur, 320);  //y
+    y += line_space; OutputNumberField(MOUSE_DATA_X, y, x2_cur, 320); //x2(z)
+    y += line_space; OutputNumberField(MOUSE_DATA_X, y, y2_cur, 320); //y2
+    switch (joystick.joystickType()) {
+      case JoystickController::PS4:
+      case JoystickController::PS3:
+      case JoystickController::XBOXONE:
+      case JoystickController::XBOX360:
+        y += line_space; OutputNumberField(MOUSE_DATA_X, y, L1_cur, 320);
+        y += line_space; OutputNumberField(MOUSE_DATA_X, y, R1_cur, 320);
+        break;
+      default:
+        y += line_space; OutputNumberField(MOUSE_DATA_X, y, 0, 320);
+        y += line_space; OutputNumberField(MOUSE_DATA_X, y, 0, 320);
+        y += line_space; OutputNumberField(MOUSE_DATA_X, y, wheel_cur, 320); //hat
+        break;
     }
+    tft.updateScreen(); // update the screen now
+  }
 }
 
 //=============================================================================
@@ -610,8 +632,8 @@ bool OnReceiveHidData(uint32_t usage, const uint8_t *data, uint32_t len) {
     }
 
     bool something_changed = false;
-    if (user_axis[3] != buttons_cur) {
-      buttons_cur = user_axis[3];
+    if ((uint32_t)user_axis[3] != buttons_cur) {
+      buttons_cur = (uint32_t)user_axis[3];
       something_changed = true;
     }
     if (user_axis[4] != x_cur) {
@@ -631,7 +653,7 @@ bool OnReceiveHidData(uint32_t usage, const uint8_t *data, uint32_t len) {
       something_changed = true;
     }
     if (something_changed) {
-      tft.fillRect(45, 197, 240, 20, ILI9341_RED);
+      tft.fillRect(45, 197, 240, 20, RED);
       tft.drawNumber(buttons_cur, 50, 200);
       tft.drawNumber(x_cur, 100, 200);
       tft.drawNumber(y_cur, 150, 200);
@@ -661,9 +683,9 @@ void MaybeSetupTextScrollArea()
   if (BT == 0) {
     tft.enableScroll();
     tft.setScrollTextArea(20, 70, 280, 140);
-    tft.setScrollBackgroundColor(ILI9341_GREEN);
+    tft.setScrollBackgroundColor(GREEN);
     tft.setFont(Arial_11);
-    tft.setTextColor(ILI9341_BLACK);
+    tft.setTextColor(BLACK);
     tft.setCursor(20, 70);
     BT = 1;
   }

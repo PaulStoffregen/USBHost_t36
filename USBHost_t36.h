@@ -57,7 +57,7 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-//#define USBHOST_PRINT_DEBUG
+#define USBHOST_PRINT_DEBUG
 //#define USBHDBGSerial	Serial1
 
 #ifndef USBHDBGSerial
@@ -918,7 +918,7 @@ public:
     bool setLEDs(uint8_t lr, uint8_t lg, uint8_t lb);  // sets Leds, 
     bool inline setLEDs(uint32_t leds) {return setLEDs((leds >> 16) & 0xff, (leds >> 8) & 0xff, leds & 0xff);}  // sets Leds - passing one arg for all leds 
 	enum { STANDARD_AXIS_COUNT = 10, ADDITIONAL_AXIS_COUNT = 54, TOTAL_AXIS_COUNT = (STANDARD_AXIS_COUNT+ADDITIONAL_AXIS_COUNT) };
-	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360, PS3_MOTION, SpaceNav} joytype_t;
+	typedef enum { UNKNOWN=0, PS3, PS4, XBOXONE, XBOX360, PS3_MOTION, SpaceNav, SWITCH} joytype_t;
 	joytype_t joystickType() {return joystickType_;} 
 
 	// PS3 pair function. hack, requires that it be connect4ed by USB and we have the address of the Bluetooth dongle...
@@ -1756,6 +1756,26 @@ private:
 
 class BluetoothController: public USBDriver {
 public:
+	static const uint8_t MAX_CONNECTIONS = 4;
+	typedef struct {
+    BTHIDInput * 	device_driver_ = nullptr;;
+    uint16_t		connection_rxid_ = 0;
+    uint16_t		control_dcid_ = 0x70;
+    uint16_t		interrupt_dcid_ = 0x71;
+    uint16_t		interrupt_scid_;
+    uint16_t		control_scid_;
+
+    uint8_t			device_bdaddr_[6];// remember devices address
+    uint8_t			device_ps_repetion_mode_ ; // mode
+    uint8_t			device_clock_offset_[2];
+    uint32_t		device_class_;	// class of device. 
+    uint16_t		device_connection_handle_;	// handle to connection 
+	uint8_t    		remote_ver_;
+	uint16_t		remote_man_;
+	uint8_t			remote_subv_;
+	uint8_t			connection_complete_ = false;	//
+	} connection_info_t;
+
 	BluetoothController(USBHost &host, bool pair = false, const char *pin = "0000") : do_pair_device_(pair), pair_pincode_(pin), delayTimer_(this) 
 			 { init(); }
 
@@ -1778,12 +1798,18 @@ protected:
 	BTHIDInput * find_driver(uint32_t device_type, uint8_t *remoteName=nullptr);
 
 	// Hack to allow PS3 to maybe change values
+    uint16_t		next_dcid_ = 0x70;		// Lets try not hard coding control and interrupt dcid
+#if 0    
     uint16_t		connection_rxid_ = 0;
     uint16_t		control_dcid_ = 0x70;
     uint16_t		interrupt_dcid_ = 0x71;
     uint16_t		interrupt_scid_;
     uint16_t		control_scid_;
-
+#else
+    connection_info_t connections_[MAX_CONNECTIONS];
+    uint8_t count_connections_ = 0;
+    uint8_t current_connection_ = 0;	// need to figure out when this changes and/or... 
+#endif    
 
 private:
 	friend class BTHIDInput;
@@ -1873,16 +1899,6 @@ private:
 	USBDriverTimer 	delayTimer_;
     uint8_t 		my_bdaddr_[6];	// The bluetooth dongles Bluetooth address.
     uint8_t			features[8];	// remember our local features.
-    BTHIDInput * 	device_driver_ = nullptr;;
-    uint8_t			device_bdaddr_[6];// remember devices address
-    uint8_t			device_ps_repetion_mode_ ; // mode
-    uint8_t			device_clock_offset_[2];
-    uint32_t		device_class_;	// class of device. 
-    uint16_t		device_connection_handle_;	// handle to connection 
-	uint8_t    		remote_ver_;
-	uint16_t		remote_man_;
-	uint8_t			remote_subv_;
-	uint8_t			connection_complete_ = false;	//
 
 	typedef struct {
 		uint16_t 	idVendor;

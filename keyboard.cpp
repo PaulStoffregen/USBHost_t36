@@ -521,13 +521,20 @@ void KeyboardController::hid_input_end()
 bool KeyboardController::claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName) 
 {
 	USBHDBGSerial.printf("Keyboard Controller::claim_bluetooth - Class %x\n", bluetooth_class);
+	// If we are already in use than don't grab another one.  Likewise don't grab if it is used as USB or HID object
+	if (btdevice && (btdevice != (Device_t*)driver)) return false;
+	if (mydevice != NULL) return false;
+	if (device != nullptr) return false;
+
 	if ((((bluetooth_class & 0xff00) == 0x2500) || (((bluetooth_class & 0xff00) == 0x500))) && (bluetooth_class & 0x40)) {
 		if (remoteName && (strncmp((const char *)remoteName, "PLAYSTATION(R)3", 15) == 0)) {
 			USBHDBGSerial.printf("KeyboardController::claim_bluetooth Reject PS3 hack\n");
+			btdevice = nullptr;	// remember this way 
+
 			return false;
 		}
 		USBHDBGSerial.printf("KeyboardController::claim_bluetooth TRUE\n");
-		//btdevice = driver;
+		btdevice = (Device_t*)driver;	// remember this way 
 		return true;
 	}
 	return false;
@@ -578,7 +585,7 @@ bool KeyboardController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 
 void KeyboardController::release_bluetooth() 
 {
-	//btdevice = nullptr;
+	btdevice = nullptr;
 }
 
 //*****************************************************************************
