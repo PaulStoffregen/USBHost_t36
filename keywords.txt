@@ -8,6 +8,8 @@ DigitizerController	KEYWORD1
 MIDIDevice	KEYWORD1
 MIDIDevice_BigBuffer	KEYWORD1
 USBSerial	KEYWORD1
+USBSerial_BigBuffer	KEYWORD1
+USBSerialBase	KEYWORD1
 AntPlus	KEYWORD1
 JoystickController	KEYWORD1
 RawHIDController	KEYWORD1
