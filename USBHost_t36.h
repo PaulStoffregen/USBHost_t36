@@ -57,9 +57,12 @@
 // your best effort to read chapter 4 before asking USB questions!
 
 
-#define USBHOST_PRINT_DEBUG
-//#define USBHDBGSerial	Serial1
+// Uncomment this line to see lots of debugging info!
+//#define USBHOST_PRINT_DEBUG
 
+
+// This can let you control where to send the debugging messages
+//#define USBHDBGSerial	Serial1
 #ifndef USBHDBGSerial
 #define USBHDBGSerial	Serial
 #endif
