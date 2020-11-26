@@ -68,8 +68,10 @@
 #define MS_CMD_ERR			0x26
 
 #define	MS_INIT_PASS 		0
-
 #define MAXLUNS				16
+
+// These two defines are timeouts for detecting a connected drive
+// and waiting for it to be operational.
 #define MEDIA_READY_TIMEOUT	1000
 #define MSC_CONNECT_TIMEOUT 4000
 
