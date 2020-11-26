@@ -81,7 +81,7 @@ void loop() {
 
 	// Check if msDrive1 is plugged in and initialized
 	if((mscError = msDrive1.checkConnectedInitialized()) != MS_INIT_PASS) {
-		Serial.printf(f("msDrive1 not connected: Code: %d\n\n"),  mscError);
+		Serial.printf(("msDrive1 not connected: Code: %d\n\n"),  mscError);
 	} else {
 		Serial.printf(F("msDrive1  connected/initilized\n"));
 		showUSBDriveInfo(&msDrive1);
