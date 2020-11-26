@@ -54,20 +54,20 @@ static uint8_t mscError = 0;
 void setup() {
 	while(!Serial);
 
-	Serial.printf("\n\nMSC TEST\n\n");
-	Serial.printf("Initializing USB Drive(s)\n");
+	Serial.printf(F("\n\nMSC TEST\n\n"));
+	Serial.printf(F("Initializing USB Drive(s)\n"));
 	
 	myusb.begin();
 
 	if(mscError = msDrive1.mscInit())
-		Serial.printf("msDrive1 not connected: Code: %d\n\n",  mscError);
+		Serial.printf(F("msDrive1 not connected: Code: %d\n\n"),  mscError);
 	else
-		Serial.printf("msDrive1  connected\n");
+		Serial.printf(F("msDrive1  connected\n"));
 	
 	if(mscError = msDrive2.mscInit())
-		Serial.printf("msDrive2 not connected: Code: %d\n\n",  mscError);
+		Serial.printf(F("msDrive2 not connected: Code: %d\n\n"),  mscError);
 	else
-		Serial.printf("msDrive2  connected\n");
+		Serial.printf(F("msDrive2  connected\n"));
 
 }
 
@@ -81,16 +81,16 @@ void loop() {
 
 	// Check if msDrive1 is plugged in and initialized
 	if((mscError = msDrive1.checkConnectedInitialized()) != MS_INIT_PASS) {
-		Serial.printf("msDrive1 not connected: Code: %d\n\n",  mscError);
+		Serial.printf(f("msDrive1 not connected: Code: %d\n\n"),  mscError);
 	} else {
-		Serial.printf("msDrive1  connected/initilized\n");
+		Serial.printf(F("msDrive1  connected/initilized\n"));
 		showUSBDriveInfo(&msDrive1);
 	}
 	// Check if msDrive2 is plugged in and initialized
 	if((mscError = msDrive2.checkConnectedInitialized()) != MS_INIT_PASS) {
-		Serial.printf("msDrive2 not connected: Code: %d\n\n",  mscError);
+		Serial.printf(F("msDrive2 not connected: Code: %d\n\n"),  mscError);
 	} else {
-		Serial.printf("msDrive2  connected/initilized\n");
+		Serial.printf(F("msDrive2  connected/initilized\n"));
 		showUSBDriveInfo(&msDrive2);
 	}
 }
