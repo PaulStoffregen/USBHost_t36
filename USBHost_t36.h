@@ -99,6 +99,7 @@ typedef enum { CLAIM_NO=0, CLAIM_REPORT, CLAIM_INTERFACE} hidclaim_t;
 // USBHost.
 class USBDriver;
 class USBDriverTimer;
+class USBHIDInput;
 
 /************************************************/
 /*  Added Defines                               */
@@ -488,6 +489,8 @@ class USBDriverTimer {
 public:
 	USBDriverTimer() { }
 	USBDriverTimer(USBDriver *d) : driver(d) { }
+	USBDriverTimer(USBHIDInput *hd) : driver(nullptr), hidinput(hd) { }
+
 	void init(USBDriver *d) { driver = d; };
 	void start(uint32_t microseconds);
 	void stop();
@@ -496,6 +499,7 @@ public:
 	uint32_t started_micros; // testing only
 private:
 	USBDriver      *driver;
+	USBHIDInput	   *hidinput;
 	uint32_t       usec;
 	USBDriverTimer *next;
 	USBDriverTimer *prev;
@@ -518,6 +522,7 @@ public:
 	const uint8_t *serialNumber()
 		{  return  ((mydevice == nullptr) || (mydevice->strbuf == nullptr)) ? nullptr : &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
 
+
 private:
 	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
 	virtual bool hid_process_in_data(const Transfer_t *transfer) {return false;}
@@ -526,6 +531,7 @@ private:
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
+	virtual void hid_timer_event(USBDriverTimer *whichTimer) { }
 	void add_to_list();
 	USBHIDInput *next = NULL;
 	friend class USBHIDParser;
@@ -658,13 +664,21 @@ private:
 
 class USBHIDParser : public USBDriver {
 public:
-	USBHIDParser(USBHost &host) { init(); }
+	USBHIDParser(USBHost &host) : hidTimer(this) { init(); }
 	static void driver_ready_for_hid_collection(USBHIDInput *driver);
 	bool sendPacket(const uint8_t *buffer, int cb=-1);
 	void setTXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb);
 
 	bool sendControlPacket(uint32_t bmRequestType, uint32_t bRequest,
 			uint32_t wValue, uint32_t wIndex, uint32_t wLength, void *buf);
+
+	// Atempt for RAWhid and SEREMU to take over processing of data 
+	// 
+	uint16_t inSize(void) {return in_size;}
+	uint16_t outSize(void) {return out_size;}
+	void startTimer(uint32_t microseconds) {hidTimer.start(microseconds);}
+	void stopTimer() {hidTimer.stop();}
+	uint8_t interfaceNumber() { return bInterfaceNumber;}
 protected:
 	enum { TOPUSAGE_LIST_LEN = 4 };
 	enum { USAGE_LIST_LEN = 24 };
@@ -673,6 +687,7 @@ protected:
 	virtual void disconnect();
 	static void in_callback(const Transfer_t *transfer);
 	static void out_callback(const Transfer_t *transfer);
+	virtual void timer_event(USBDriverTimer *whichTimer);
 	void in_data(const Transfer_t *transfer);
 	void out_data(const Transfer_t *transfer);
 	bool check_if_using_report_id();
@@ -681,10 +696,6 @@ protected:
 	void parse(uint16_t type_and_report_id, const uint8_t *data, uint32_t len);
 	void init();
 
-	// Atempt for RAWhid to take over processing of data 
-	// 
-	uint16_t inSize(void) {return in_size;}
-	uint16_t outSize(void) {return out_size;}
 
 	uint8_t activeSendMask(void) {return txstate;} 
 
@@ -708,6 +719,8 @@ private:
 	uint8_t *tx1 = nullptr;
 	uint8_t *tx2 = nullptr;
 	bool hid_driver_claimed_control_ = false;
+	USBDriverTimer hidTimer;
+	uint8_t bInterfaceNumber = 0;
 };
 
 //--------------------------------------------------------------------------
@@ -1758,6 +1771,68 @@ private:
 
 //--------------------------------------------------------------------------
 
+class USBSerialEmu : public USBHIDInput, public Stream {
+public:
+	USBSerialEmu(USBHost &host) { init(); }
+	uint32_t usage(void) {return usage_;}
+
+	// Stream stuff. 
+	uint32_t writeTimeout() {return write_timeout_;}
+	void writeTimeOut(uint32_t write_timeout) {write_timeout_ = write_timeout;} // Will not impact current ones.
+	virtual int available(void);
+	virtual int peek(void);
+	virtual int read(void);
+	virtual int availableForWrite();
+	virtual size_t write(uint8_t c);
+	virtual void flush(void);
+
+	using Print::write;
+
+
+protected:
+	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
+	virtual bool hid_process_in_data(const Transfer_t *transfer);
+	virtual bool hid_process_out_data(const Transfer_t *transfer);
+	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
+	virtual void hid_input_data(uint32_t usage, int32_t value);
+	virtual void hid_input_end();
+	virtual void disconnect_collection(Device_t *dev);
+	virtual void hid_timer_event(USBDriverTimer *whichTimer);
+
+	bool sendPacket();
+
+private:
+	void init();
+	USBHIDParser *driver_;
+	enum { MAX_PACKET_SIZE = 64 };
+	bool (*receiveCB)(uint32_t usage, const uint8_t *data, uint32_t len) = nullptr;
+	uint8_t collections_claimed = 0;
+	uint32_t usage_ = 0;
+
+	// We have max of 512 byte packets coming in.  How about enough room for 3+3
+	enum { RX_BUFFER_SIZE=1024, TX_BUFFER_SIZE = 512 };
+	enum { DEFAULT_WRITE_TIMEOUT = 3500};
+
+	uint8_t rx_buffer_[RX_BUFFER_SIZE];
+	uint8_t tx_buffer_[TX_BUFFER_SIZE];
+
+	volatile uint8_t tx_out_data_pending_ = 0;
+
+	volatile uint16_t rx_head_;// receive head
+	volatile uint16_t rx_tail_;// receive tail
+	volatile uint16_t tx_head_;
+	uint16_t rx_pipe_size_;// size of receive circular buffer
+	uint16_t tx_pipe_size_;// size of transmit circular buffer
+	uint32_t write_timeout_ = DEFAULT_WRITE_TIMEOUT;
+
+
+	// See if we can contribute transfers
+	Transfer_t mytransfers[2] __attribute__ ((aligned(32)));
+
+};
+
+//--------------------------------------------------------------------------
+
 class BluetoothController: public USBDriver {
 public:
 	static const uint8_t MAX_CONNECTIONS = 4;
@@ -2036,6 +2111,5 @@ private:
 	uint32_t CBWTag = 0;
 	bool deviceAvailable = false;
 };
-
 
 #endif

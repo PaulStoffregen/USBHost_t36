@@ -55,6 +55,7 @@ bool USBHIDParser::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 	uint32_t numendpoint = descriptors[4];
 	if (numendpoint < 1 || numendpoint > 2) return false;
 	if (descriptors[5] != 3) return false; // bInterfaceClass, 3 = HID
+	println(" bInterfaceNumber =   ", descriptors[2]);
 	println(" bInterfaceClass =    ", descriptors[5]);
 	println(" bInterfaceSubClass = ", descriptors[6]);
 	println(" bInterfaceProtocol = ", descriptors[7]);
@@ -148,6 +149,7 @@ bool USBHIDParser::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 		topusage_drivers[i] = NULL;
 	}
 	// request the HID report descriptor
+	bInterfaceNumber = descriptors[2];	// save away the interface number; 
 	mk_setup(setup, 0x81, 6, 0x2200, descriptors[2], descsize); // get report desc
 	queue_Control_Transfer(dev, &setup, descriptor, this);
 	return true;
@@ -213,10 +215,12 @@ void USBHIDParser::in_data(const Transfer_t *transfer)
 	}
 	USBHDBGSerial.printf("\n"); */
 
+	/*
 	print("HID: ");
 	print(use_report_id);
 	print(" - ");
 	print_hexbytes(transfer->buffer, transfer->length);
+	*/
 	const uint8_t *buf = (const uint8_t *)transfer->buffer;
 	uint32_t len = transfer->length;
 
@@ -248,6 +252,14 @@ void USBHIDParser::out_data(const Transfer_t *transfer)
 		topusage_drivers[0]->hid_process_out_data(transfer);
 	}
 }
+
+void USBHIDParser::timer_event(USBDriverTimer *whichTimer)
+{
+	if (topusage_drivers[0]) {
+		topusage_drivers[0]->hid_timer_event(whichTimer);
+	}	
+}
+
 
 bool USBHIDParser::sendPacket(const uint8_t *buffer, int cb) {
 	if (!out_size || !out_pipe) return false;	
