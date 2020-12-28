@@ -37,10 +37,14 @@ hidclaim_t RawHIDController::claim_collection(USBHIDParser *driver, Device_t *de
 	USBHDBGSerial.printf("Rawhid Claim: %x:%x usage: %x\n", dev->idVendor, dev->idProduct, topusage);
 #endif
 
-	if ((dev->idVendor != 0x16c0 || (dev->idProduct) != 0x486)) return CLAIM_NO;
+	if (dev->idVendor != 0x16c0) return CLAIM_NO;  //  NOT PJRC
 	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
 	if (usage_) return CLAIM_NO;			// Only claim one
-	if (fixed_usage_  && (fixed_usage_ != topusage)) return CLAIM_NO; 	// See if we want specific one and if so is it this one
+
+	if (fixed_usage_ ) {
+		if (fixed_usage_ != topusage) return CLAIM_NO; 		// See if we want specific one and if so is it this one
+	} else if (dev->idProduct != 0x486) return CLAIM_NO;	// otherwise mainly used for RAWHID Serial type.
+
 	mydevice = dev;
 	collections_claimed++;
 	usage_ = topusage;

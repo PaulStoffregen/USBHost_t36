@@ -1239,25 +1239,19 @@ int USBSerialBase::available(void)
 int USBSerialBase::peek(void)
 {
 	if (!device) return -1;
-	uint32_t head = rxhead;
-	uint32_t tail = rxtail;
-	if (head == tail) return -1;
-	if (++tail >= rxsize) tail = 0;
-	return rxbuf[tail];
+	if (rxhead == rxtail) return -1;
+	return rxbuf[rxtail];
 }
 
 int USBSerialBase::read(void)
 {
 	if (!device) return -1;
-	uint32_t head = rxhead;
-	uint32_t tail = rxtail;
-	if (head == tail) return -1;
-	if (++tail >= rxsize) tail = 0;
-	int c = rxbuf[tail];
-	rxtail = tail;
+	if (rxhead == rxtail) return -1;
+	int c = rxbuf[rxtail];
+	if (++rxtail >= rxsize) rxtail = 0;
 	if ((rxstate & 0x03) != 0x03) {
 		NVIC_DISABLE_IRQ(IRQ_USBHS);
-		rx_queue_packets(head, tail);
+		rx_queue_packets(rxhead, rxtail);
 		NVIC_ENABLE_IRQ(IRQ_USBHS);
 	}
 	return c;
