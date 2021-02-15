@@ -294,40 +294,52 @@ void MIDIDeviceBase::write_packed(uint32_t data)
 	if (!txpipe) return;
 	uint32_t tx_max = tx_size / 4;
 	while (1) {
+		__disable_irq();
 		uint32_t tx1 = tx1_count;
 		uint32_t tx2 = tx2_count;
 		if (tx1 < tx_max && (tx2 == 0 || tx2 >= tx_max)) {
 			// use tx_buffer1
 			tx_buffer1[tx1++] = data;
 			tx1_count = tx1;
-                        __disable_irq();
+			txtimer.stop();
 			if (tx1 >= tx_max) {
 				queue_Data_Transfer(txpipe, tx_buffer1, tx_max*4, this);
 			} else {
-				// TODO: start a timer, rather than sending the buffer
-				// before it's full, to make best use of bandwidth
-				tx1_count = tx_max;
-				queue_Data_Transfer(txpipe, tx_buffer1, tx_max*4, this);
+				txtimer.start(tx_max >= 128 ? 200 : 1500);
 			}
-                        __enable_irq();
+			__enable_irq();
 			return;
 		}
 		if (tx2 < tx_max) {
 			// use tx_buffer2
 			tx_buffer2[tx2++] = data;
 			tx2_count = tx2;
-                        __disable_irq();
+			txtimer.stop();
 			if (tx2 >= tx_max) {
 				queue_Data_Transfer(txpipe, tx_buffer2, tx_max*4, this);
 			} else {
-				// TODO: start a timer, rather than sending the buffer
-				// before it's full, to make best use of bandwidth
-				tx2_count = tx_max;
-				queue_Data_Transfer(txpipe, tx_buffer2, tx_max*4, this);
+				txtimer.start(tx_max >= 128 ? 200 : 1500);
 			}
-                        __enable_irq();
+			__enable_irq();
 			return;
 		}
+		__enable_irq();
+		// TODO: call yield() ??
+	}
+}
+
+void MIDIDeviceBase::timer_event(USBDriverTimer *timer)
+{
+	const uint32_t tx_max = tx_size / 4;
+	uint32_t tx1 = tx1_count;
+	if (tx1 > 0) {
+		tx1_count = tx_max;
+		queue_Data_Transfer(txpipe, tx_buffer1, tx1*4, this);
+	}
+	uint32_t tx2 = tx2_count;
+	if (tx2 > 0) {
+		tx2_count = tx_max;
+		queue_Data_Transfer(txpipe, tx_buffer2, tx2*4, this);
 	}
 }
 

@@ -499,7 +499,7 @@ public:
 	uint32_t started_micros; // testing only
 private:
 	USBDriver      *driver;
-	USBHIDInput	   *hidinput;
+	USBHIDInput    *hidinput;
 	uint32_t       usec;
 	USBDriverTimer *next;
 	USBDriverTimer *prev;
@@ -1060,7 +1060,7 @@ public:
 	};
 	MIDIDeviceBase(USBHost &host, uint32_t *rx, uint32_t *tx1, uint32_t *tx2,
 		uint16_t bufsize, uint32_t *rqueue, uint16_t qsize) :
-			rx_buffer(rx), tx_buffer1(tx1), tx_buffer2(tx2),
+			txtimer(this), rx_buffer(rx), tx_buffer1(tx1), tx_buffer2(tx2),
 			rx_queue(rqueue), max_packet_size(bufsize), rx_queue_size(qsize) {
 				init();
 		}
@@ -1301,6 +1301,7 @@ public:
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void disconnect();
+	virtual void timer_event(USBDriverTimer *timer);
 	static void rx_callback(const Transfer_t *transfer);
 	static void tx_callback(const Transfer_t *transfer);
 	void rx_data(const Transfer_t *transfer);
@@ -1313,6 +1314,7 @@ protected:
 private:
 	Pipe_t *rxpipe;
 	Pipe_t *txpipe;
+	USBDriverTimer txtimer;
 	//enum { MAX_PACKET_SIZE = 64 };
 	//enum { RX_QUEUE_SIZE = 80 }; // must be more than MAX_PACKET_SIZE/4
 	//uint32_t rx_buffer[MAX_PACKET_SIZE/4];
