@@ -62,6 +62,15 @@
 //#define USBHOST_PRINT_DEBUG
 
 
+// When developing a new driver, please edit ehci.cpp to set
+// USBHS_USBCMD_ITC to zero.  Today we set USBHS_USBCMD_ITC(1)
+// because some drivers have race conditions exposed by
+// non-delayed interrupts.  Eventually USBHS_USBCMD_ITC will
+// be changed to 0.  Please test any new driver code with
+// USBHS_USBCMD_ITC(0) so it won't break in the future when
+// this change is made!
+
+
 // This can let you control where to send the debugging messages
 //#define USBHDBGSerial	Serial1
 #ifndef USBHDBGSerial
