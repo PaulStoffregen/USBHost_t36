@@ -196,9 +196,10 @@ uint8_t msController::mscInit(void) {
 		yield();
 	} while(!available()); 
 	
-	msReset();
+	msReset(0); // Assume bNumInterfaces = 1 for now.
 	delay(500);
-	maxLUN = msGetMaxLun();
+	maxLUN = msGetMaxLun(0); // Assume bNumInterfaces = 1 for now
+
 //	msResult = msReportLUNs(&maxLUN);
 //Serial.printf("maxLUN = %d\n",maxLUN);
 //	delay(150);
@@ -228,11 +229,11 @@ uint8_t msController::mscInit(void) {
 
 //---------------------------------------------------------------------------
 // Perform Mass Storage Reset
-void msController::msReset() {
+void msController::msReset(uint32_t interfaceNumber) {
 #ifdef DBGprint
 	Serial.printf("msReset()\n");
 #endif
-	mk_setup(setup, 0x21, 0xff, 0, 0, 0);
+	mk_setup(setup, 0x21, 0xff, 0, interfaceNumber, 0);
 	queue_Control_Transfer(device, &setup, NULL, this);
 	while (!msControlCompleted) yield();
 	msControlCompleted = false;
@@ -240,12 +241,12 @@ void msController::msReset() {
 
 //---------------------------------------------------------------------------
 // Get MAX LUN
-uint8_t msController::msGetMaxLun() {
+uint8_t msController::msGetMaxLun(uint32_t interfaceNumber) {
 #ifdef DBGprint
 	Serial.printf("msGetMaxLun()\n");
 #endif
 	report[0] = 0;
-	mk_setup(setup, 0xa1, 0xfe, 0, 0, 1);
+	mk_setup(setup, 0xa1, 0xfe, 0, interfaceNumber, 1);
 	queue_Control_Transfer(device, &setup, report, this);
 	while (!msControlCompleted) yield();
 	msControlCompleted = false;
@@ -559,36 +560,10 @@ uint8_t msController::msProcessError(uint8_t msStatus) {
 			return MS_CSW_SIG_ERROR;
 			break;
 		case MS_CBW_FAIL:
-			msResult = msRequestSense(&msSense);
-			if(msResult) return msResult;
-			switch(msSense.SenseKey) {
-				case MS_UNIT_ATTENTION:
-					switch(msSense.AdditionalSenseCode) {
-						case MS_MEDIA_CHANGED:
-							return MS_MEDIA_CHANGED_ERR;
-							break;
-						default:
-							msStatus = MS_UNIT_NOT_READY;
-					}
-				case MS_NOT_READY:
-					switch(msSense.AdditionalSenseCode) {
-						case MS_MEDIUM_NOT_PRESENT:
-							msStatus = MS_NO_MEDIA_ERR;
-							break;
-						default:
-							 msStatus = MS_UNIT_NOT_READY;
-					}
-				case MS_ILLEGAL_REQUEST:
-					switch(msSense.AdditionalSenseCode) {
-						case MS_LBA_OUT_OF_RANGE:
-							msStatus = MS_BAD_LBA_ERR;
-							break;
-						default:
-							msStatus = MS_CMD_ERR;
-					}
-				default:
-					msStatus = MS_SCSI_ERROR;
-			}
+			if(msResult = msRequestSense(&msSense))
+				Serial.printf("Failed to get sense codes. Returned code: %d\n",msResult);
+			return MS_CBW_FAIL;
+			break;
 		default:
 			Serial.printf("SCSI Error: %d\n",msStatus);
 			return msStatus;
