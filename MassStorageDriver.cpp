@@ -31,7 +31,7 @@
 #define println USBHost::println_
 
 // Uncomment this to display function usage and sequencing.
-#define DBGprint 1
+#define DBGprint 0
 
 // Big Endian/Little Endian
 #define swap32(x) ((x >> 24) & 0xff) | \
