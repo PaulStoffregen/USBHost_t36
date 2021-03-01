@@ -2049,8 +2049,8 @@ public:
 
 	bool mscTransferComplete = false;
 	uint8_t mscInit(void);
-	void msReset(uint32_t interfaceNumber);
-	uint8_t msGetMaxLun(uint32_t interfaceNumber);
+	void msReset(void);
+	uint8_t msGetMaxLun(void);
 	void msCurrentLun(uint8_t lun) {currentLUN = lun;}
 	uint8_t msCurrentLun() {return currentLUN;}
 	bool available() { delay(0); return deviceAvailable; }
@@ -2093,6 +2093,7 @@ private:
 	uint32_t packetSizeOut;
 	Pipe_t *datapipeIn;
 	Pipe_t *datapipeOut;
+	uint8_t bInterfaceNumber;
 	uint32_t endpointIn = 0;
 	uint32_t endpointOut = 0;
 	setup_t setup;
