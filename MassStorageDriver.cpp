@@ -63,6 +63,8 @@ bool msController::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 	if (descriptors[6] != 6) return false; // bInterfaceSubClass, 6 = SCSI transparent command set (SCSI Standards)
 	if (descriptors[7] != 80) return false; // bInterfaceProtocol, 80 = BULK-ONLY TRANSPORT
 
+	bInterfaceNumber = descriptors[2];
+
 	uint8_t desc_index = 9;
 	uint8_t in_index = 0xff, out_index = 0xff;
 
@@ -198,11 +200,11 @@ uint8_t msController::mscInit(void) {
 			return MS_NO_MEDIA_ERR;  // Not connected Error.
 		}
 		yield();
-	} while(!available()); 
-	
-	msReset(0); // Assume bNumInterfaces = 1 for now.
-//	delay(500); // Not needed any more.
-	maxLUN = msGetMaxLun(0); // Assume bNumInterfaces = 1 for now
+	} while(!available());
+  
+	msReset();
+	// delay(500); // Not needed any more.
+	maxLUN = msGetMaxLun();
 
 //	msResult = msReportLUNs(&maxLUN);
 //println("maxLUN = ");
@@ -234,11 +236,11 @@ uint8_t msController::mscInit(void) {
 
 //---------------------------------------------------------------------------
 // Perform Mass Storage Reset
-void msController::msReset(uint32_t interfaceNumber) {
+void msController::msReset(void) {
 #ifdef DBGprint
 	println("msReset()");
 #endif
-	mk_setup(setup, 0x21, 0xff, 0, interfaceNumber, 0);
+	mk_setup(setup, 0x21, 0xff, 0, bInterfaceNumber, 0);
 	queue_Control_Transfer(device, &setup, NULL, this);
 	while (!msControlCompleted) yield();
 	msControlCompleted = false;
@@ -246,12 +248,12 @@ void msController::msReset(uint32_t interfaceNumber) {
 
 //---------------------------------------------------------------------------
 // Get MAX LUN
-uint8_t msController::msGetMaxLun(uint32_t interfaceNumber) {
+uint8_t msController::msGetMaxLun(void) {
 #ifdef DBGprint
 	println("msGetMaxLun()");
 #endif
 	report[0] = 0;
-	mk_setup(setup, 0xa1, 0xfe, 0, interfaceNumber, 1);
+	mk_setup(setup, 0xa1, 0xfe, 0, bInterfaceNumber, 1);
 	queue_Control_Transfer(device, &setup, report, this);
 	while (!msControlCompleted) yield();
 	msControlCompleted = false;
