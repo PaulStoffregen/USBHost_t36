@@ -31,7 +31,7 @@
 #define println USBHost::println_
 
 // Uncomment this to display function usage and sequencing.
-//#define DBGprint 1
+#define DBGprint 0
 
 // Big Endian/Little Endian
 #define swap32(x) ((x >> 24) & 0xff) | \
@@ -117,8 +117,10 @@ bool msController::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 	msDriveInfo.initialized = false;
 	msDriveInfo.connected = true;
 #ifdef DBGprint
-	Serial.printf("   connected %d\n",msDriveInfo.connected);
-	Serial.printf("   initialized %d\n",msDriveInfo.initialized);
+	print("   connected = ");
+	println(msDriveInfo.connected);
+	print("   initialized = ");
+	println(msDriveInfo.initialized);
 #endif	
 	return true;
 }
@@ -132,8 +134,10 @@ void msController::disconnect()
 	memset(&msDriveInfo, 0, sizeof(msDriveInfo_t));
 
 #ifdef DBGprint
-	Serial.printf("   connected %d\n",msDriveInfo.connected);
-	Serial.printf("   initialized %d\n",msDriveInfo.initialized);
+	print("   connected ");
+	println(msDriveInfo.connected);
+	print("   initialized ");
+	println(msDriveInfo.initialized);
 #endif
 }
 
@@ -184,7 +188,7 @@ void msController::new_dataIn(const Transfer_t *transfer)
 // Initialize Mass Storage Device
 uint8_t msController::mscInit(void) {
 #ifdef DBGprint
-	Serial.printf("mscIint()\n");
+	println("mscIint()");
 #endif
 	uint8_t msResult = MS_CBW_PASS;
 
@@ -196,17 +200,18 @@ uint8_t msController::mscInit(void) {
 			return MS_NO_MEDIA_ERR;  // Not connected Error.
 		}
 		yield();
-	} while(!available()); 
-	
+	} while(!available());
+  
 	msReset();
-	delay(500);
+	// delay(500); // Not needed any more.
 	maxLUN = msGetMaxLun();
 
 //	msResult = msReportLUNs(&maxLUN);
-//Serial.printf("maxLUN = %d\n",maxLUN);
+//println("maxLUN = ");
+//println(maxLUN);
 //	delay(150);
 	//-------------------------------------------------------
-//	msResult = msStartStopUnit(1);
+	msResult = msStartStopUnit(1);
 	msResult = WaitMediaReady();
 	if(msResult)
 		return msResult;
@@ -233,7 +238,7 @@ uint8_t msController::mscInit(void) {
 // Perform Mass Storage Reset
 void msController::msReset(void) {
 #ifdef DBGprint
-	Serial.printf("msReset()\n");
+	println("msReset()");
 #endif
 	mk_setup(setup, 0x21, 0xff, 0, bInterfaceNumber, 0);
 	queue_Control_Transfer(device, &setup, NULL, this);
@@ -245,7 +250,7 @@ void msController::msReset(void) {
 // Get MAX LUN
 uint8_t msController::msGetMaxLun(void) {
 #ifdef DBGprint
-	Serial.printf("msGetMaxLun()\n");
+	println("msGetMaxLun()");
 #endif
 	report[0] = 0;
 	mk_setup(setup, 0xa1, 0xfe, 0, bInterfaceNumber, 1);
@@ -260,7 +265,7 @@ uint8_t msController::WaitMediaReady() {
 	uint8_t msResult;
 	uint32_t start = millis();
 #ifdef DBGprint
-	Serial.printf("WaitMediaReady()\n");
+	println("WaitMediaReady()");
 #endif
 	do {
 		if((millis() - start) >= MEDIA_READY_TIMEOUT) {
@@ -276,7 +281,7 @@ uint8_t msController::WaitMediaReady() {
 uint8_t msController::checkConnectedInitialized(void) {
 	uint8_t msResult = MS_CBW_PASS;
 #ifdef DBGprint
-	Serial.printf("checkConnectedInitialized()\n");
+	print("checkConnectedInitialized()");
 #endif
 	if(!msDriveInfo.connected) {
 		return MS_NO_MEDIA_ERR;
@@ -296,7 +301,7 @@ uint8_t msController::msDoCommand(msCommandBlockWrapper_t *CBW,	void *buffer)
 	uint8_t CSWResult = 0;
 	mscTransferComplete = false;
 #ifdef DBGprint
-	Serial.printf("msDoCommand():\n");
+	println("msDoCommand()");
 #endif	
 	if(CBWTag == 0xFFFFFFFF) CBWTag = 1;
 	queue_Data_Transfer(datapipeOut, CBW, sizeof(msCommandBlockWrapper_t), this); // Command stage.
@@ -330,7 +335,7 @@ uint8_t msController::msDoCommand(msCommandBlockWrapper_t *CBW,	void *buffer)
 // Get Command Status Wrapper
 uint8_t msController::msGetCSW(void) {
 #ifdef DBGprint
-	Serial.printf("msGetCSW()\n");
+	println("msGetCSW()");
 #endif
 	msCommandStatusWrapper_t StatusBlockWrapper = (msCommandStatusWrapper_t)
 	{
@@ -352,7 +357,7 @@ uint8_t msController::msGetCSW(void) {
 // Test Unit Ready
 uint8_t msController::msTestReady() {
 #ifdef DBGprint
-	Serial.printf("msTestReady()\n");
+	println("msTestReady()");
 #endif
 	msCommandBlockWrapper_t CommandBlockWrapper = (msCommandBlockWrapper_t)
 	{
@@ -374,7 +379,7 @@ uint8_t msController::msTestReady() {
 // Start/Stop unit
 uint8_t msController::msStartStopUnit(uint8_t mode) {
 #ifdef DBGprint
-	Serial.printf("msStartStopUnit()\n");
+	println("msStartStopUnit()");
 #endif
 	msCommandBlockWrapper_t CommandBlockWrapper = (msCommandBlockWrapper_t)
 	{
@@ -396,7 +401,7 @@ uint8_t msController::msStartStopUnit(uint8_t mode) {
 // Read Mass Storage Device Capacity (Number of Blocks and Block Size)
 uint8_t msController::msReadDeviceCapacity(msSCSICapacity_t * const Capacity) {
 #ifdef DBGprint
-	Serial.printf("msReadDeviceCapacity()\n");
+	println("msReadDeviceCapacity()");
 #endif
 	uint8_t result = 0;
 	msCommandBlockWrapper_t CommandBlockWrapper = (msCommandBlockWrapper_t)
@@ -420,7 +425,7 @@ uint8_t msController::msReadDeviceCapacity(msSCSICapacity_t * const Capacity) {
 uint8_t msController::msDeviceInquiry(msInquiryResponse_t * const Inquiry)
 {
 #ifdef DBGprint
-	Serial.printf("msDeviceInquiry()\n");
+	println("msDeviceInquiry()");
 #endif
 	msCommandBlockWrapper_t CommandBlockWrapper = (msCommandBlockWrapper_t)
 	{
@@ -440,7 +445,7 @@ uint8_t msController::msDeviceInquiry(msInquiryResponse_t * const Inquiry)
 uint8_t msController::msRequestSense(msRequestSenseResponse_t * const Sense)
 {
 #ifdef DBGprint
-	Serial.printf("msRequestSense()\n");
+	println("msRequestSense()");
 #endif
 	msCommandBlockWrapper_t CommandBlockWrapper = (msCommandBlockWrapper_t)
 	{
@@ -460,7 +465,7 @@ uint8_t msController::msRequestSense(msRequestSenseResponse_t * const Sense)
 uint8_t msController::msReportLUNs(uint8_t *Buffer)
 {
 #ifdef DBGprint
-	Serial.printf("msReportLuns()\n");
+	println("msReportLuns()");
 #endif
 	msCommandBlockWrapper_t CommandBlockWrapper = (msCommandBlockWrapper_t)
 	{
@@ -485,7 +490,7 @@ uint8_t msController::msReadBlocks(
 									void * sectorBuffer)
 	{
 #ifdef DBGprint
-	Serial.printf("msReadBlocks()\n");
+	println("msReadBlocks()");
 #endif
 	uint8_t BlockHi = (Blocks >> 8) & 0xFF;
 	uint8_t BlockLo = Blocks & 0xFF;
@@ -517,7 +522,7 @@ uint8_t msController::msWriteBlocks(
 								  const void * sectorBuffer)
 	{
 #ifdef DBGprint
-	Serial.printf("msWriteBlocks()\n");
+	println("msWriteBlocks()");
 #endif
 	uint8_t BlockHi = (Blocks >> 8) & 0xFF;
 	uint8_t BlockLo = Blocks & 0xFF;
@@ -542,7 +547,7 @@ uint8_t msController::msWriteBlocks(
 // Proccess Possible SCSI errors
 uint8_t msController::msProcessError(uint8_t msStatus) {
 #ifdef DBGprint
-	Serial.printf("msProcessError()\n");
+	println("msProcessError()");
 #endif
 	uint8_t msResult = 0;
 	switch(msStatus) {
@@ -550,24 +555,30 @@ uint8_t msController::msProcessError(uint8_t msStatus) {
 			return MS_CBW_PASS;
 			break;
 		case MS_CBW_PHASE_ERROR:
-			Serial.printf("SCSI Phase Error: %d\n",msStatus);
+			print("SCSI Phase Error: ");
+			println(msStatus);
 			return MS_SCSI_ERROR;
 			break;
 		case MS_CSW_TAG_ERROR:
-			Serial.printf("CSW Tag Error: %d\n",MS_CSW_TAG_ERROR);
+			print("CSW Tag Error: ");
+			println(MS_CSW_TAG_ERROR);
 			return MS_CSW_TAG_ERROR;
 			break;
 		case MS_CSW_SIG_ERROR:
-			Serial.printf("CSW Signature Error: %d\n",MS_CSW_SIG_ERROR);
+			print("CSW Signature Error: ");
+			println(MS_CSW_SIG_ERROR);
 			return MS_CSW_SIG_ERROR;
 			break;
 		case MS_CBW_FAIL:
-			if(msResult = msRequestSense(&msSense))
-				Serial.printf("Failed to get sense codes. Returned code: %d\n",msResult);
+			if(msResult = msRequestSense(&msSense)) {
+				print("Failed to get sense codes. Returned code: ");
+				println(msResult);
+			}
 			return MS_CBW_FAIL;
 			break;
 		default:
-			Serial.printf("SCSI Error: %d\n",msStatus);
+			print("SCSI Error: ");
+			println(msStatus);
 			return msStatus;
 	}
 }
