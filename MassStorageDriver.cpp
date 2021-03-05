@@ -31,7 +31,7 @@
 #define println USBHost::println_
 
 // Uncomment this to display function usage and sequencing.
-#define DBGprint 0
+//#define DBGprint 1
 
 // Big Endian/Little Endian
 #define swap32(x) ((x >> 24) & 0xff) | \
@@ -182,7 +182,21 @@ void msController::new_dataIn(const Transfer_t *transfer)
 	uint32_t len = transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF);
 	println("msController dataIn (static): ", len, DEC);
 	print_hexbytes((uint8_t*)transfer->buffer, (len < 32)? len : 32 );
-	msInCompleted = true; // Last in transaction is completed.
+	if (_read_sectors_callback) {
+		_emlastRead = 0; // remember that we received something. 
+		(*_read_sectors_callback)(_read_sectors_token, (uint8_t*)transfer->buffer);
+		_read_sectors_remaining--;
+		if (_read_sectors_remaining > 1) queue_Data_Transfer(datapipeIn, transfer->buffer, len, this);
+		if (!_read_sectors_remaining) {
+			_read_sectors_callback = nullptr;
+			msInCompleted = true; // Last in transaction is completed.
+		}
+#ifdef DBGprint
+		Serial.write('@');
+		if ((_read_sectors_remaining & 0x3f) == 0) Serial.printf("\n");
+#endif
+	}
+	else msInCompleted = true; // Last in transaction is completed.
 }
 
 // Initialize Mass Storage Device
@@ -304,16 +318,20 @@ uint8_t msController::msDoCommand(msCommandBlockWrapper_t *CBW,	void *buffer)
 	println("msDoCommand()");
 #endif	
 	if(CBWTag == 0xFFFFFFFF) CBWTag = 1;
+	digitalWriteFast(2, HIGH);
 	queue_Data_Transfer(datapipeOut, CBW, sizeof(msCommandBlockWrapper_t), this); // Command stage.
 	while(!msOutCompleted) yield();
+	digitalWriteFast(2, LOW);
 	msOutCompleted = false;
 	if((CBW->Flags == CMD_DIR_DATA_IN)) { // Data stage from device.
 		queue_Data_Transfer(datapipeIn, buffer, CBW->TransferLength, this);
 	while(!msInCompleted) yield();
+	digitalWriteFast(2, HIGH);
 	msInCompleted = false;
 	} else {							  // Data stage to device.
 		queue_Data_Transfer(datapipeOut, buffer, CBW->TransferLength, this);
 	while(!msOutCompleted) yield();
+	digitalWriteFast(2, LOW);
 	msOutCompleted = false;
 	}
 	CSWResult = msGetCSW(); // Status stage.
@@ -489,8 +507,9 @@ uint8_t msController::msReadBlocks(
 									const uint16_t BlockSize,
 									void * sectorBuffer)
 	{
-#ifdef DBGprint
 	println("msReadBlocks()");
+#ifdef DBGprint
+	Serial.printf("<<< msReadBlocks(%x %x %x)\n", BlockAddress, Blocks, BlockSize);
 #endif
 	uint8_t BlockHi = (Blocks >> 8) & 0xFF;
 	uint8_t BlockLo = Blocks & 0xFF;
@@ -512,6 +531,96 @@ uint8_t msController::msReadBlocks(
 	};
 	return msDoCommand(&CommandBlockWrapper, sectorBuffer);
 }
+
+//---------------------------------------------------------------------------
+// Read Sectors (Multi Sector Capable)
+
+uint8_t msController::msReadSectorsWithCB(
+									const uint32_t BlockAddress,
+									const uint16_t Blocks,
+									void (*callback)(uint32_t, uint8_t *), 
+									uint32_t token)	
+	{
+#ifdef DBGprint
+	Serial.printf("<<< msReadSectorsWithCB(%x %u %x)\n", BlockAddress, Blocks, (uint32_t)callback);
+#endif
+	if ((callback == nullptr) || (!Blocks)) return MS_CBW_FAIL;
+
+	uint8_t BlockHi = (Blocks >> 8) & 0xFF;
+	uint8_t BlockLo = Blocks & 0xFF;
+	static const uint16_t BlockSize = 512;
+
+	msCommandBlockWrapper_t CommandBlockWrapper = (msCommandBlockWrapper_t)
+	{
+	
+		.Signature          = CBW_SIGNATURE,
+		.Tag                = ++CBWTag,
+		.TransferLength     = (uint32_t)(Blocks * BlockSize),
+		.Flags              = CMD_DIR_DATA_IN,
+		.LUN                = currentLUN,
+		.CommandLength      = 10,
+		.CommandData        = {CMD_RD_10, 0x00,
+							  (uint8_t)(BlockAddress >> 24),
+							  (uint8_t)(BlockAddress >> 16),
+							  (uint8_t)(BlockAddress >> 8),
+							  (uint8_t)(BlockAddress & 0xFF),
+							   0x00, BlockHi, BlockLo, 0x00}
+	};
+
+	// We need to remember how many blocks and call back function
+	_read_sectors_callback = callback;
+	_read_sectors_remaining = Blocks;
+	_read_sectors_token = token;
+	_emlastRead = 0; // reset the timeout. 
+
+	// lets unwrap the msDoCommand here...
+	uint8_t CSWResult = 0;
+	mscTransferComplete = false;
+
+	if(CBWTag == 0xFFFFFFFF) CBWTag = 1;
+	digitalWriteFast(2, HIGH);
+	queue_Data_Transfer(datapipeOut, &CommandBlockWrapper, sizeof(msCommandBlockWrapper_t), this); // Command stage.
+
+	while(!msOutCompleted && (_emlastRead < READ_CALLBACK_TIMEOUT_MS)) yield();
+	digitalWriteFast(2, LOW);
+
+	msOutCompleted = false;
+
+	queue_Data_Transfer(datapipeIn, _read_sector_buffer1, BlockSize, this);
+	if (_read_sectors_remaining > 1) 	queue_Data_Transfer(datapipeIn, _read_sector_buffer2, BlockSize, this);
+
+	while(!msInCompleted && (_emlastRead < READ_CALLBACK_TIMEOUT_MS)) ;
+	digitalWriteFast(2, HIGH);
+
+	if (!msInCompleted) {
+		// clear this out..
+		#ifdef DBGprint
+			Serial.printf("!!! msReadBlocks Timed Out(%u)\n", _read_sectors_remaining);
+		#endif
+		_read_sectors_callback = nullptr;
+		_read_sectors_remaining = 0;
+		return MS_CBW_FAIL;
+	}	
+
+	msInCompleted = false;
+
+	CSWResult = msGetCSW(); // Status stage.
+	#ifdef DBGprint
+	Serial.printf("  CSWResult: %x CD:%x\n", CSWResult, CommandBlockWrapper.CommandData[0] );
+	#endif
+	// All stages of this transfer have completed.
+	//Check for special cases. 
+	//If test for unit ready command is given then
+	//  return the CSW status byte.
+	//Bit 0 == 1 == not ready else
+	//Bit 0 == 0 == ready.
+	//And the Start/Stop Unit command as well.
+	if((CommandBlockWrapper.CommandData[0] == CMD_TEST_UNIT_READY) ||
+	   (CommandBlockWrapper.CommandData[0] == CMD_START_STOP_UNIT))
+		return CSWResult;
+	return msProcessError(CSWResult);
+}
+
 
 //---------------------------------------------------------------------------
 // Write Sectors (Multi Sector Capable)
@@ -570,7 +679,7 @@ uint8_t msController::msProcessError(uint8_t msStatus) {
 			return MS_CSW_SIG_ERROR;
 			break;
 		case MS_CBW_FAIL:
-			if(msResult = msRequestSense(&msSense)) {
+			if((msResult = msRequestSense(&msSense))) {
 				print("Failed to get sense codes. Returned code: ");
 				println(msResult);
 			}
