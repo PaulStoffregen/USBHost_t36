@@ -318,20 +318,20 @@ uint8_t msController::msDoCommand(msCommandBlockWrapper_t *CBW,	void *buffer)
 	println("msDoCommand()");
 #endif	
 	if(CBWTag == 0xFFFFFFFF) CBWTag = 1;
-	digitalWriteFast(2, HIGH);
+	// digitalWriteFast(2, HIGH);
 	queue_Data_Transfer(datapipeOut, CBW, sizeof(msCommandBlockWrapper_t), this); // Command stage.
 	while(!msOutCompleted) yield();
-	digitalWriteFast(2, LOW);
+	// digitalWriteFast(2, LOW);
 	msOutCompleted = false;
 	if((CBW->Flags == CMD_DIR_DATA_IN)) { // Data stage from device.
 		queue_Data_Transfer(datapipeIn, buffer, CBW->TransferLength, this);
 	while(!msInCompleted) yield();
-	digitalWriteFast(2, HIGH);
+	// digitalWriteFast(2, HIGH);
 	msInCompleted = false;
 	} else {							  // Data stage to device.
 		queue_Data_Transfer(datapipeOut, buffer, CBW->TransferLength, this);
 	while(!msOutCompleted) yield();
-	digitalWriteFast(2, LOW);
+	// digitalWriteFast(2, LOW);
 	msOutCompleted = false;
 	}
 	CSWResult = msGetCSW(); // Status stage.
@@ -578,11 +578,11 @@ uint8_t msController::msReadSectorsWithCB(
 	mscTransferComplete = false;
 
 	if(CBWTag == 0xFFFFFFFF) CBWTag = 1;
-	digitalWriteFast(2, HIGH);
+	// digitalWriteFast(2, HIGH);
 	queue_Data_Transfer(datapipeOut, &CommandBlockWrapper, sizeof(msCommandBlockWrapper_t), this); // Command stage.
 
 	while(!msOutCompleted && (_emlastRead < READ_CALLBACK_TIMEOUT_MS)) yield();
-	digitalWriteFast(2, LOW);
+	// digitalWriteFast(2, LOW);
 
 	msOutCompleted = false;
 
@@ -590,7 +590,7 @@ uint8_t msController::msReadSectorsWithCB(
 	if (_read_sectors_remaining > 1) 	queue_Data_Transfer(datapipeIn, _read_sector_buffer2, BlockSize, this);
 
 	while(!msInCompleted && (_emlastRead < READ_CALLBACK_TIMEOUT_MS)) ;
-	digitalWriteFast(2, HIGH);
+	// digitalWriteFast(2, HIGH);
 
 	if (!msInCompleted) {
 		// clear this out..
