@@ -48,19 +48,6 @@
 // a situation where an item can't be allocated when it's needed.  Well,
 // unless there's a bug or oversight...
 
-
-// Lists of "free" memory
-static Device_t * free_Device_list = NULL;
-static Pipe_t * free_Pipe_list = NULL;
-static Transfer_t * free_Transfer_list = NULL;
-static strbuf_t * free_strbuf_list = NULL;
-// A small amount of non-driver memory, just to get things started
-// TODO: is this really necessary?  Can these be eliminated, so we
-// use only memory from the drivers?
-static Device_t memory_Device[1];
-static Pipe_t memory_Pipe[1] __attribute__ ((aligned(32)));
-static Transfer_t memory_Transfer[4] __attribute__ ((aligned(32)));
-
 void USBHost::init_Device_Pipe_Transfer_memory(void)
 {
 	contribute_Devices(memory_Device, sizeof(memory_Device)/sizeof(Device_t));
@@ -68,46 +55,46 @@ void USBHost::init_Device_Pipe_Transfer_memory(void)
 	contribute_Transfers(memory_Transfer, sizeof(memory_Transfer)/sizeof(Transfer_t));
 }
 
-Device_t * USBHost::allocate_Device(void)
+Device_t * USBHostPort::allocate_Device(void)
 {
 	Device_t *device = free_Device_list;
 	if (device) free_Device_list = *(Device_t **)device;
 	return device;
 }
 
-void USBHost::free_Device(Device_t *device)
+void USBHostPort::free_Device(Device_t *device)
 {
 	*(Device_t **)device = free_Device_list;
 	free_Device_list = device;
 }
 
-Pipe_t * USBHost::allocate_Pipe(void)
+Pipe_t * USBHostPort::allocate_Pipe(void)
 {
 	Pipe_t *pipe = free_Pipe_list;
 	if (pipe) free_Pipe_list = *(Pipe_t **)pipe;
 	return pipe;
 }
 
-void USBHost::free_Pipe(Pipe_t *pipe)
+void USBHostPort::free_Pipe(Pipe_t *pipe)
 {
 	*(Pipe_t **)pipe = free_Pipe_list;
 	free_Pipe_list = pipe;
 }
 
-Transfer_t * USBHost::allocate_Transfer(void)
+Transfer_t * USBHostPort::allocate_Transfer(void)
 {
 	Transfer_t *transfer = free_Transfer_list;
 	if (transfer) free_Transfer_list = *(Transfer_t **)transfer;
 	return transfer;
 }
 
-void USBHost::free_Transfer(Transfer_t *transfer)
+void USBHostPort::free_Transfer(Transfer_t *transfer)
 {
 	*(Transfer_t **)transfer = free_Transfer_list;
 	free_Transfer_list = transfer;
 }
 
-strbuf_t * USBHost::allocate_string_buffer(void)
+strbuf_t * USBHostPort::allocate_string_buffer(void)
 {
 	strbuf_t *strbuf = free_strbuf_list;
 	if (strbuf) {
@@ -120,7 +107,7 @@ strbuf_t * USBHost::allocate_string_buffer(void)
 	return strbuf;
 }
 
-void USBHost::free_string_buffer(strbuf_t *strbuf) 
+void USBHostPort::free_string_buffer(strbuf_t *strbuf) 
 {
 	*(strbuf_t **)strbuf = free_strbuf_list;
 	free_strbuf_list = strbuf;
@@ -130,7 +117,7 @@ void USBHost::contribute_Devices(Device_t *devices, uint32_t num)
 {
 	Device_t *end = devices + num;
 	for (Device_t *device = devices ; device < end; device++) {
-		free_Device(device);
+		usb_host_port->free_Device(device);
 	}
 }
 
@@ -138,7 +125,7 @@ void USBHost::contribute_Pipes(Pipe_t *pipes, uint32_t num)
 {
 	Pipe_t *end = pipes + num;
 	for (Pipe_t *pipe = pipes; pipe < end; pipe++) {
-		free_Pipe(pipe);
+		usb_host_port->free_Pipe(pipe);
 	}
 
 }
@@ -147,7 +134,7 @@ void USBHost::contribute_Transfers(Transfer_t *transfers, uint32_t num)
 {
 	Transfer_t *end = transfers + num;
 	for (Transfer_t *transfer = transfers ; transfer < end; transfer++) {
-		free_Transfer(transfer);
+		usb_host_port->free_Transfer(transfer);
 	}
 }
 
@@ -155,7 +142,7 @@ void USBHost::contribute_String_Buffers(strbuf_t *strbufs, uint32_t num)
 {
 	strbuf_t *end = strbufs + num;
 	for (strbuf_t *str = strbufs ; str < end; str++) {
-		free_string_buffer(str);
+		usb_host_port->free_string_buffer(str);
 	}
 }
 
@@ -164,22 +151,22 @@ void USBHost::countFree(uint32_t &devices, uint32_t &pipes, uint32_t &transfers,
 {
 	uint32_t ndev=0, npipe=0, ntransfer=0, nstr=0;
 	__disable_irq();
-	Device_t *dev = free_Device_list;
+	Device_t *dev = usb_host_port->free_Device_list;
 	while (dev) {
 		ndev++;
 		dev = *(Device_t **)dev;
 	}
-	Pipe_t *pipe = free_Pipe_list;
+	Pipe_t *pipe = usb_host_port->free_Pipe_list;
 	while (pipe) {
 		npipe++;
 		pipe = *(Pipe_t **)pipe;
 	}
-	Transfer_t *transfer = free_Transfer_list;
+	Transfer_t *transfer = usb_host_port->free_Transfer_list;
 	while (transfer) {
 		ntransfer++;
 		transfer = *(Transfer_t **)transfer;
 	}
-	strbuf_t *str = free_strbuf_list;
+	strbuf_t *str = usb_host_port->free_strbuf_list;
 	while (str) {
 		nstr++;
 		str = *(strbuf_t **)str;

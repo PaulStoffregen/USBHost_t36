@@ -41,7 +41,7 @@ static void print(const char *title, uint32_t val, uint8_t b = DEC) {
 
 void USBDeviceInfo::init()
 {
-	driver_ready_for_device(this);
+	usb_host_port->driver_ready_for_device(this);
 }
 
 // Again this class is solely to display as much information about a device as we can...

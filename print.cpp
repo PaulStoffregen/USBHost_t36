@@ -31,7 +31,7 @@
 
 #ifdef USBHOST_PRINT_DEBUG
 
-void USBHost::print_(const Transfer_t *transfer)
+void PrintDebug::print_(const Transfer_t *transfer)
 {
 	if (!((uint32_t)transfer & 0xFFFFFFE0)) return;
 	USBHDBGSerial.print("Transfer @ ");
@@ -50,7 +50,7 @@ void USBHost::print_(const Transfer_t *transfer)
 	USBHDBGSerial.println();
 }
 
-void USBHost::print_(const Transfer_t *first, const Transfer_t *last)
+void PrintDebug::print_(const Transfer_t *first, const Transfer_t *last)
 {
 	USBHDBGSerial.print("Transfer Followup List ");
 	USBHDBGSerial.print((uint32_t)first, HEX);
@@ -72,7 +72,7 @@ void USBHost::print_(const Transfer_t *first, const Transfer_t *last)
 	}
 }
 
-void USBHost::print_token(uint32_t token)
+void PrintDebug::print_token(uint32_t token)
 {
 	switch ((token >> 8) & 3) {
 	case 0:
@@ -91,7 +91,7 @@ void USBHost::print_token(uint32_t token)
 	}
 }
 
-void USBHost::print_(const Pipe_t *pipe)
+void PrintDebug::print_(const Pipe_t *pipe)
 {
 	if (!((uint32_t)pipe & 0xFFFFFFE0)) return;
 	USBHDBGSerial.print("Pipe ");
@@ -131,7 +131,7 @@ void USBHost::print_(const Pipe_t *pipe)
 	//USBHDBGSerial.print();
 }
 
-void USBHost::print_driverlist(const char *name, const USBDriver *driver)
+void PrintDebug::PrintDebug::print_driverlist(const char *name, const USBDriver *driver)
 {
 	USBHDBGSerial.print("USBDriver (");
 	USBHDBGSerial.print(name);
@@ -152,7 +152,7 @@ void USBHost::print_driverlist(const char *name, const USBDriver *driver)
 	USBHDBGSerial.println();
 }
 
-void USBHost::print_qh_list(const Pipe_t *list)
+void PrintDebug::print_qh_list(const Pipe_t *list)
 {
 	if (!list) {
 		USBHDBGSerial.println("(empty)");
@@ -193,11 +193,11 @@ static void print_class_subclass_protocol(uint8_t c, uint8_t s, uint8_t p)
 	USBHDBGSerial.println();
 }
 
-void USBHost::print_device_descriptor(const uint8_t *p)
+void PrintDebug::PrintDebug::print_device_descriptor(const uint8_t *p)
 {
 	USBHDBGSerial.println("Device Descriptor:");
 	USBHDBGSerial.print("  ");
-	print_hexbytes(p, p[0]);
+	PrintDebug::print_hexbytes(p, p[0]);
 	if (p[0] != 18) {
 		USBHDBGSerial.println("error: device must be 18 bytes");
 		return;
@@ -215,12 +215,12 @@ void USBHost::print_device_descriptor(const uint8_t *p)
 	USBHDBGSerial.println(p[17]);
 }
 
-void USBHost::print_config_descriptor(const uint8_t *p, uint32_t maxlen)
+void PrintDebug::PrintDebug::print_config_descriptor(const uint8_t *p, uint32_t maxlen)
 {
 	// Descriptor Types: (USB 2.0, page 251)
 	USBHDBGSerial.println("Configuration Descriptor:");
 	USBHDBGSerial.print("  ");
-	print_hexbytes(p, p[0]);
+	PrintDebug::print_hexbytes(p, p[0]);
 	if (p[0] != 9) {
 		USBHDBGSerial.println("error: config must be 9 bytes");
 		return;
@@ -242,12 +242,12 @@ void USBHost::print_config_descriptor(const uint8_t *p, uint32_t maxlen)
 	while (len > 0) {
 		if (p[0] > len) {
 			USBHDBGSerial.print("  ");
-			print_hexbytes(p, len);
+			PrintDebug::print_hexbytes(p, len);
 			USBHDBGSerial.println("  error: length beyond total data size");
 			break;
 		}
 		USBHDBGSerial.print("  ");
-		print_hexbytes(p, p[0]);
+		PrintDebug::print_hexbytes(p, p[0]);
 		if (p[0] == 9 && p[1] == 4) { // Interface Descriptor
 			USBHDBGSerial.print("    Interface = ");
 			USBHDBGSerial.println(p[2]);
@@ -289,7 +289,7 @@ void USBHost::print_config_descriptor(const uint8_t *p, uint32_t maxlen)
 	}
 }
 
-void USBHost::print_string_descriptor(const char *name, const uint8_t *p)
+void PrintDebug::PrintDebug::print_string_descriptor(const char *name, const uint8_t *p)
 {
 	uint32_t len = p[0];
 	if (len < 4) return;
@@ -316,7 +316,7 @@ void USBHost::print_string_descriptor(const char *name, const uint8_t *p)
 }
 
 
-void USBHost::print_hexbytes(const void *ptr, uint32_t len)
+void PrintDebug::print_hexbytes(const void *ptr, uint32_t len)
 {
 	if (ptr == NULL || len == 0) return;
 	const uint8_t *p = (const uint8_t *)ptr;

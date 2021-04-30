@@ -50,62 +50,27 @@
 // to changes on the main port, creating and deleting the root device.
 // See enumeration.cpp for all device-level code.
 
-// Size of the periodic list, in milliseconds.  This determines the
-// slowest rate we can poll interrupt endpoints.  Each entry uses
-// 12 bytes (4 for a pointer, 8 for bandwidth management).
-// Supported values: 8, 16, 32, 64, 128, 256, 512, 1024
-#if defined(USBHS_PERIODIC_LIST_SIZE)
-#define PERIODIC_LIST_SIZE (USBHS_PERIODIC_LIST_SIZE)
-#else
-#define PERIODIC_LIST_SIZE  32
-#endif
 
-// The EHCI periodic schedule, used for interrupt pipes/endpoints
-static uint32_t periodictable[PERIODIC_LIST_SIZE] __attribute__ ((aligned(4096), used));
-static uint8_t  uframe_bandwidth[PERIODIC_LIST_SIZE*8];
-
-// State of the 1 and only physical USB host port on Teensy 3.6
-static uint8_t  port_state;
-#define PORT_STATE_DISCONNECTED   0
-#define PORT_STATE_DEBOUNCE       1
-#define PORT_STATE_RESET          2
-#define PORT_STATE_RECOVERY       3
-#define PORT_STATE_ACTIVE         4
-
-// The device currently connected, or NULL when no device
-static Device_t   *rootdev=NULL;
-
-// List of all queued transfers in the asychronous schedule (control & bulk).
-// When the EHCI completes these transfers, this list is how we locate them
-// in memory.
-static Transfer_t *async_followup_first=NULL;
-static Transfer_t *async_followup_last=NULL;
-
-// List of all queued transfers in the asychronous schedule (interrupt endpoints)
-// When the EHCI completes these transfers, this list is how we locate them
-// in memory.
-static Transfer_t *periodic_followup_first=NULL;
-static Transfer_t *periodic_followup_last=NULL;
-
-// List of all pending timers.  This double linked list is stored in
-// chronological order.  Each timer is stored with the number of
-// microseconds which need to elapsed from the prior timer on this
-// list, to allow efficient servicing from the timer interrupt.
-static USBDriverTimer *active_timers=NULL;
+// Allocate USBHostPort singleton instances for all host-capable ports
+USBHostPort* usb_host_ports[NUM_USB_HOST_PORTS] = USB_HOST_PORTS_ARR;  // See imxrt_usbhs.h
 
 
 static void init_qTD(volatile Transfer_t *t, void *buf, uint32_t len,
               uint32_t pid, uint32_t data01, bool irq);
-static void add_to_async_followup_list(Transfer_t *first, Transfer_t *last);
-static void remove_from_async_followup_list(Transfer_t *transfer);
-static void add_to_periodic_followup_list(Transfer_t *first, Transfer_t *last);
-static void remove_from_periodic_followup_list(Transfer_t *transfer);
 
-#define print   USBHost::print_
-#define println USBHost::println_
+void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
+		uint32_t wValue, uint32_t wIndex, uint32_t wLength) {
+	s.word1 = bmRequestType | (bRequest << 8) | (wValue << 16);
+	s.word2 = wIndex | (wLength << 16);
+}
+
+#define print   PrintDebug::print_
+#define println PrintDebug::println_
 
 void USBHost::begin()
 {
+	uint8_t host_port = usb_host_port->host_port;
+	println("USBHost::begin(), USB", host_port);
 #if defined(__MK66FX1M0__)
 	// Teensy 3.6 has USB host power controlled by PTE6
 	PORTE_PCR6 = PORT_PCR_MUX(1);
@@ -163,48 +128,47 @@ void USBHost::begin()
 	//SIM_SOPT2 = SIM_SOPT2 & (~SIM_SOPT2_CLKOUTSEL(7)) | SIM_SOPT2_CLKOUTSEL(4); // MCGIRCLK
 	//CORE_PIN9_CONFIG = PORT_PCR_MUX(5);  // CLKOUT on PTC3 Alt5 (Arduino pin 9)
 
-
 #elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
 	// Teensy 4.0 PLL & USB PHY powerup
 	while (1) {
-		uint32_t n = CCM_ANALOG_PLL_USB2;
-		if (n & CCM_ANALOG_PLL_USB2_DIV_SELECT) {
-			CCM_ANALOG_PLL_USB2_CLR = 0xC000; // get out of 528 MHz mode
-			CCM_ANALOG_PLL_USB2_SET = CCM_ANALOG_PLL_USB2_BYPASS;
-			CCM_ANALOG_PLL_USB2_CLR = CCM_ANALOG_PLL_USB2_POWER |
-				CCM_ANALOG_PLL_USB2_DIV_SELECT |
-				CCM_ANALOG_PLL_USB2_ENABLE |
-				CCM_ANALOG_PLL_USB2_EN_USB_CLKS;
+		uint32_t n = CCM_ANALOG_PLL_USB_(host_port);
+		if (n & CCM_ANALOG_PLL_USB_DIV_SELECT_(host_port)) {
+			CCM_ANALOG_PLL_USB_CLR_(host_port) = 0xC000; // get out of 528 MHz mode
+			CCM_ANALOG_PLL_USB_SET_(host_port) = CCM_ANALOG_PLL_USB_BYPASS_(host_port);
+			CCM_ANALOG_PLL_USB_CLR_(host_port) = CCM_ANALOG_PLL_USB_POWER_(host_port) |
+				CCM_ANALOG_PLL_USB_DIV_SELECT_(host_port) |
+				CCM_ANALOG_PLL_USB_ENABLE_(host_port) |
+				CCM_ANALOG_PLL_USB_EN_USB_CLKS_(host_port);
 			continue;
 		}
-		if (!(n & CCM_ANALOG_PLL_USB2_ENABLE)) {
-			CCM_ANALOG_PLL_USB2_SET = CCM_ANALOG_PLL_USB2_ENABLE; // enable
+		if (!(n & CCM_ANALOG_PLL_USB_ENABLE_(host_port))) {
+			CCM_ANALOG_PLL_USB_SET_(host_port) = CCM_ANALOG_PLL_USB_ENABLE_(host_port); // enable
 			continue;
 		}
-		if (!(n & CCM_ANALOG_PLL_USB2_POWER)) {
-			CCM_ANALOG_PLL_USB2_SET = CCM_ANALOG_PLL_USB2_POWER; // power up
+		if (!(n & CCM_ANALOG_PLL_USB_POWER_(host_port))) {
+			CCM_ANALOG_PLL_USB_SET_(host_port) = CCM_ANALOG_PLL_USB_POWER_(host_port); // power up
 			continue;
 		}
-		if (!(n & CCM_ANALOG_PLL_USB2_LOCK)) {
+		if (!(n & CCM_ANALOG_PLL_USB_LOCK_(host_port))) {
 			continue; // wait for lock
 		}
-		if (n & CCM_ANALOG_PLL_USB2_BYPASS) {
-			CCM_ANALOG_PLL_USB2_CLR = CCM_ANALOG_PLL_USB2_BYPASS; // turn off bypass
+		if (n & CCM_ANALOG_PLL_USB_BYPASS_(host_port)) {
+			CCM_ANALOG_PLL_USB_CLR_(host_port) = CCM_ANALOG_PLL_USB_BYPASS_(host_port); // turn off bypass
 			continue;
 		}
-		if (!(n & CCM_ANALOG_PLL_USB2_EN_USB_CLKS)) {
-			CCM_ANALOG_PLL_USB2_SET = CCM_ANALOG_PLL_USB2_EN_USB_CLKS; // enable
+		if (!(n & CCM_ANALOG_PLL_USB_EN_USB_CLKS_(host_port))) {
+			CCM_ANALOG_PLL_USB_SET_(host_port) = CCM_ANALOG_PLL_USB_EN_USB_CLKS_(host_port); // enable
 			continue;
 		}
-		println("USB2 PLL running");
-		break; // USB2 PLL up and running
+		println("PLL running for USB", usb_host_port->host_port);
+		break; // USB PLL up and running
 	}
 	// turn on USB clocks (should already be on)
 	CCM_CCGR6 |= CCM_CCGR6_USBOH3(CCM_CCGR_ON);
-	// turn on USB2 PHY
-	USBPHY2_CTRL_CLR = USBPHY_CTRL_SFTRST | USBPHY_CTRL_CLKGATE;
-	USBPHY2_CTRL_SET = USBPHY_CTRL_ENUTMILEVEL2 | USBPHY_CTRL_ENUTMILEVEL3;
-	USBPHY2_PWD = 0;
+	// turn on USB PHY
+	USBPHYX_CTRL_CLR_(host_port) = USBPHY_CTRL_SFTRST | USBPHY_CTRL_CLKGATE;
+	USBPHYX_CTRL_SET_(host_port) = USBPHY_CTRL_ENUTMILEVEL2 | USBPHY_CTRL_ENUTMILEVEL3;
+	USBPHYX_PWD_(host_port) = 0;
 	#ifdef ARDUINO_TEENSY41
 	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_40 = 5;
 	IOMUXC_SW_PAD_CTL_PAD_GPIO_EMC_40 = 0x0008; // slow speed, weak 150 ohm drive
@@ -216,30 +180,30 @@ void USBHost::begin()
 
 	// now with the PHY up and running, start up USBHS
 	//print("begin ehci reset");
-	USBHS_USBCMD |= USBHS_USBCMD_RST;
+	USBHS_USBCMD_(host_port) |= USBHS_USBCMD_RST;
 	int reset_count = 0;
-	while (USBHS_USBCMD & USBHS_USBCMD_RST) {
+	while (USBHS_USBCMD_(host_port) & USBHS_USBCMD_RST) {
 		reset_count++;
 	}
 	println(" reset waited ", reset_count);
 
 	init_Device_Pipe_Transfer_memory();
 	for (int i=0; i < PERIODIC_LIST_SIZE; i++) {
-		periodictable[i] = 1;
+		usb_host_port->periodictable[i] = 1;
 	}
-	memset(uframe_bandwidth, 0, sizeof(uframe_bandwidth));
-	port_state = PORT_STATE_DISCONNECTED;
+	memset(usb_host_port->uframe_bandwidth, 0, sizeof(usb_host_port->uframe_bandwidth));
+	usb_host_port->port_state = PORT_STATE_DISCONNECTED;
 
-	USBHS_USB_SBUSCFG = 1; //  System Bus Interface Configuration
+	USBHS_USB_SBUSCFG_(host_port) = 1; //  System Bus Interface Configuration
 
 	// turn on the USBHS controller
-	//USBHS_USBMODE = USBHS_USBMODE_TXHSD(5) | USBHS_USBMODE_CM(3); // host mode
-	USBHS_USBMODE = USBHS_USBMODE_CM(3); // host mode
-	USBHS_USBINTR = 0;
-	USBHS_PERIODICLISTBASE = (uint32_t)periodictable;
-	USBHS_FRINDEX = 0;
-	USBHS_ASYNCLISTADDR = 0;
-	USBHS_USBCMD = USBHS_USBCMD_ITC(1) | USBHS_USBCMD_RS |
+	//USBHS_USBMODE_(host_port) = USBHS_USBMODE_TXHSD(5) | USBHS_USBMODE_CM(3); // host mode
+	USBHS_USBMODE_(host_port) = USBHS_USBMODE_CM(3); // host mode
+	USBHS_USBINTR_(host_port) = 0;
+	USBHS_PERIODICLISTBASE_(host_port) = (uint32_t)usb_host_port->periodictable;
+	USBHS_FRINDEX_(host_port) = 0;
+	USBHS_ASYNCLISTADDR_(host_port) = 0;
+	USBHS_USBCMD_(host_port) = USBHS_USBCMD_ITC(1) | USBHS_USBCMD_RS |
 		USBHS_USBCMD_ASP(3) | USBHS_USBCMD_ASPE | USBHS_USBCMD_PSE |
 		#if PERIODIC_LIST_SIZE == 8
 		USBHS_USBCMD_FS2 | USBHS_USBCMD_FS(3);
@@ -262,22 +226,21 @@ void USBHost::begin()
 		#endif
 
 	// turn on the USB port
-	//USBHS_PORTSC1 = USBHS_PORTSC_PP;
-	USBHS_PORTSC1 |= USBHS_PORTSC_PP;
-	//USBHS_PORTSC1 |= USBHS_PORTSC_PFSC; // force 12 Mbit/sec
-	//USBHS_PORTSC1 |= USBHS_PORTSC_PHCD; // phy off
+	//USBHS_PORTSC1_(host_port) = USBHS_PORTSC_PP;
+	USBHS_PORTSC1_(host_port) |= USBHS_PORTSC_PP;
+	//USBHS_PORTSC1_(host_port) |= USBHS_PORTSC_PFSC; // force 12 Mbit/sec
+	//USBHS_PORTSC1_(host_port) |= USBHS_PORTSC_PHCD; // phy off
 
-	println("USBHS_ASYNCLISTADDR = ", USBHS_ASYNCLISTADDR, HEX);
-	println("USBHS_PERIODICLISTBASE = ", USBHS_PERIODICLISTBASE, HEX);
-	println("periodictable = ", (uint32_t)periodictable, HEX);
+	println("USBHS_ASYNCLISTADDR = ", USBHS_ASYNCLISTADDR_(host_port), HEX);
+	println("USBHS_PERIODICLISTBASE = ", USBHS_PERIODICLISTBASE_(host_port), HEX);
+	println("periodictable = ", (uint32_t)usb_host_port->periodictable, HEX);
 
-	// enable interrupts, after this point interruts to all the work
-	attachInterruptVector(IRQ_USBHS, isr);
-	NVIC_ENABLE_IRQ(IRQ_USBHS);
-	USBHS_USBINTR = USBHS_USBINTR_PCE | USBHS_USBINTR_TIE0 | USBHS_USBINTR_TIE1;
-	USBHS_USBINTR |= USBHS_USBINTR_UEE | USBHS_USBINTR_SEE;
-	USBHS_USBINTR |= USBHS_USBINTR_UPIE | USBHS_USBINTR_UAIE;
-
+	// enable interrupts, after this point interrupts do all the work
+	attachInterruptVector(IRQ_USBHS_(host_port), usb_host_port->isr_callback);
+	NVIC_ENABLE_IRQ(IRQ_USBHS_(host_port));
+	USBHS_USBINTR_(host_port) = USBHS_USBINTR_PCE | USBHS_USBINTR_TIE0 | USBHS_USBINTR_TIE1;
+	USBHS_USBINTR_(host_port) |= USBHS_USBINTR_UEE | USBHS_USBINTR_SEE;
+	USBHS_USBINTR_(host_port) |= USBHS_USBINTR_UPIE | USBHS_USBINTR_UAIE;
 }
 
 
@@ -299,12 +262,11 @@ void USBHost::begin()
 // PORT_STATE_RECOVERY       3
 // PORT_STATE_ACTIVE         4
 
-
-void USBHost::isr()
+void USBHostPort::isr()
 {
-	uint32_t stat = USBHS_USBSTS;
-	USBHS_USBSTS = stat; // clear pending interrupts
-	//stat &= USBHS_USBINTR; // mask away unwanted interrupts
+	uint32_t stat = USBHS_USBSTS_(host_port);
+	USBHS_USBSTS_(host_port) = stat; // clear pending interrupts
+	//stat &= USBHS_USBINTR_(host_port); // mask away unwanted interrupts
 #if 0
 	println();
 	println("ISR: ", stat, HEX);
@@ -327,9 +289,9 @@ void USBHost::isr()
 	if (stat & USBHS_USBSTS_TI0) println(" Timer0");
 	if (stat & USBHS_USBSTS_TI1) println(" Timer1");
 #endif
-
+	println("isr ", stat, HEX);
 	if (stat & USBHS_USBSTS_UAI) { // completed qTD(s) from the async schedule
-		//println("Async Followup");
+		println("Async Followup");
 		//print(async_followup_first, async_followup_last);
 		Transfer_t *p = async_followup_first;
 		while (p) {
@@ -347,7 +309,7 @@ void USBHost::isr()
 		//print(async_followup_first, async_followup_last);
 	}
 	if (stat & USBHS_USBSTS_UPI) { // completed qTD(s) from the periodic schedule
-		//println("Periodic Followup");
+		println("Periodic Followup");
 		Transfer_t *p = periodic_followup_first;
 		while (p) {
 			if (followup_Transfer(p)) {
@@ -367,9 +329,9 @@ void USBHost::isr()
 	}
 
 	if (stat & USBHS_USBSTS_PCI) { // port change detected
-		const uint32_t portstat = USBHS_PORTSC1;
+		const uint32_t portstat = USBHS_PORTSC1_(host_port);
 		println("port change: ", portstat, HEX);
-		USBHS_PORTSC1 = portstat | (USBHS_PORTSC_OCC|USBHS_PORTSC_PEC|USBHS_PORTSC_CSC);
+		USBHS_PORTSC1_(host_port) = portstat | (USBHS_PORTSC_OCC|USBHS_PORTSC_PEC|USBHS_PORTSC_CSC);
 		if (portstat & USBHS_PORTSC_OCC) {
 			println("  overcurrent change");
 		}
@@ -380,15 +342,15 @@ void USBHost::isr()
 				  || port_state == PORT_STATE_DEBOUNCE) {
 					// 100 ms debounce (USB 2.0: TATTDB, page 150 & 188)
 					port_state = PORT_STATE_DEBOUNCE;
-					USBHS_GPTIMER0LD = 100000; // microseconds
-					USBHS_GPTIMER0CTL =
+					USBHS_GPTIMER0LD_(host_port) = 100000; // microseconds
+					USBHS_GPTIMER0CTL_(host_port) =
 						USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
 					stat &= ~USBHS_USBSTS_TI0;
 				}
 			} else {
 				println("    disconnect");
 				port_state = PORT_STATE_DISCONNECTED;
-				USBPHY_CTRL_CLR = USBPHY_CTRL_ENHOSTDISCONDETECT;
+				USBPHY_CTRL_CLR_(host_port) = USBPHY_CTRL_ENHOSTDISCONDETECT;
 				disconnect_Device(rootdev);
 				rootdev = NULL;
 			}
@@ -400,11 +362,11 @@ void USBHost::isr()
 			println("  port enabled");
 			port_state = PORT_STATE_RECOVERY;
 			// 10 ms reset recover (USB 2.0: TRSTRCY, page 151 & 188)
-			USBHS_GPTIMER0LD = 10000; // microseconds
-			USBHS_GPTIMER0CTL = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
-			if (USBHS_PORTSC1 & USBHS_PORTSC_HSP) {
+			USBHS_GPTIMER0LD_(host_port) = 10000; // microseconds
+			USBHS_GPTIMER0CTL_(host_port) = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
+			if (USBHS_PORTSC1_(host_port) & USBHS_PORTSC_HSP) {
 				// turn on high-speed disconnect detector
-				USBPHY_CTRL_SET = USBPHY_CTRL_ENHOSTDISCONDETECT;
+				USBPHY_CTRL_SET_(host_port) = USBPHY_CTRL_ENHOSTDISCONDETECT;
 			}
 		}
 		if (portstat & USBHS_PORTSC_FPR) {
@@ -421,13 +383,13 @@ void USBHost::isr()
 			// are ever supported, we would need to remain in
 			// debounce if any other port was resetting or
 			// enumerating a device.
-			USBHS_PORTSC1 |= USBHS_PORTSC_PR; // begin reset sequence
+			USBHS_PORTSC1_(host_port) |= USBHS_PORTSC_PR; // begin reset sequence
 			println("  begin reset");
 		} else if (port_state == PORT_STATE_RECOVERY) {
 			port_state = PORT_STATE_ACTIVE;
 			println("  end recovery");
 			//  HCSPARAMS  TTCTRL  page 1671
-			uint32_t speed = (USBHS_PORTSC1 >> 26) & 3;
+			uint32_t speed = (USBHS_PORTSC1_(host_port) >> 26) & 3;
 			rootdev = new_Device(speed, 0, 0);
 		}
 	}
@@ -440,8 +402,8 @@ void USBHost::isr()
 			if (next) {
 				// more timers scheduled
 				next->prev = NULL;
-				USBHS_GPTIMER1LD = next->usec - 1;
-				USBHS_GPTIMER1CTL = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
+				USBHS_GPTIMER1LD_(host_port) = next->usec - 1;
+				USBHS_GPTIMER1CTL_(host_port) = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
 			}
 			// TODO: call multiple timers if 0 elapsed between them?
 			timer->driver->timer_event(timer); // call driver's timer()
@@ -452,48 +414,50 @@ void USBHost::isr()
 void USBDriverTimer::start(uint32_t microseconds)
 {
 #if 0
-	USBHost::print_("start_timer, us = ");
-	USBHost::print_(microseconds);
-	USBHost::print_(", driver = ");
-	USBHost::print_((uint32_t)driver, HEX);
-	USBHost::print_(", this = ");
-	USBHost::println_((uint32_t)this, HEX);
+	PrintDebug::print_("start_timer, us = ");
+	PrintDebug::print_(microseconds);
+	PrintDebug::print_(", driver = ");
+	PrintDebug::print_((uint32_t)driver, HEX);
+	PrintDebug::print_(", this = ");
+	PrintDebug::println_((uint32_t)this, HEX);
 #endif
 	if (!driver) return;
 	if (microseconds < 100) return; // minimum timer duration
 	started_micros = micros();
-	if (active_timers == NULL) {
+	USBHostPort *usb_host_port = driver->usb_host_port;
+	uint8_t host_port = usb_host_port->host_port;
+	if (usb_host_port->active_timers == NULL) {
 		// schedule is empty, just add this timer
 		usec = microseconds;
 		next = NULL;
 		prev = NULL;
-		active_timers = this;
-		USBHS_GPTIMER1LD = microseconds - 1;
-		USBHS_GPTIMER1CTL = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
+		usb_host_port->active_timers = this;
+		USBHS_GPTIMER1LD_(host_port) = microseconds - 1;
+		USBHS_GPTIMER1CTL_(host_port) = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
 		return;
 	}
-	uint32_t remain = USBHS_GPTIMER1CTL & 0xFFFFFF;
+	uint32_t remain = USBHS_GPTIMER1CTL_(host_port) & 0xFFFFFF;
 	//USBHDBGSerial.print("remain = ");
 	//USBHDBGSerial.println(remain);
 	if (microseconds < remain) {
 		// this timer event is before any on the schedule
 		__disable_irq();
-		USBHS_GPTIMER1CTL = 0;
-		USBHS_USBSTS = USBHS_USBSTS_TI1; // TODO: UPI & UAI safety?!
+		USBHS_GPTIMER1CTL_(host_port) = 0;
+		USBHS_USBSTS_(host_port) = USBHS_USBSTS_TI1; // TODO: UPI & UAI safety?!
 		usec = microseconds;
-		next = active_timers;
+		next = usb_host_port->active_timers;
 		prev = NULL;
-		active_timers->usec = remain - microseconds;
-		active_timers->prev = this;
-		active_timers = this;
-		USBHS_GPTIMER1LD = microseconds - 1;
-		USBHS_GPTIMER1CTL = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
+		usb_host_port->active_timers->usec = remain - microseconds;
+		usb_host_port->active_timers->prev = this;
+		usb_host_port->active_timers = this;
+		USBHS_GPTIMER1LD_(host_port) = microseconds - 1;
+		USBHS_GPTIMER1CTL_(host_port) = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
 		__enable_irq();
 		return;
 	}
 	// add this timer to the schedule, somewhere after the first timer
 	microseconds -= remain;
-	USBDriverTimer *list = active_timers;
+	USBDriverTimer *list = usb_host_port->active_timers;
 	while (list->next) {
 		list = list->next;
 		if (microseconds < list->usec) {
@@ -518,22 +482,24 @@ void USBDriverTimer::start(uint32_t microseconds)
 void USBDriverTimer::stop()
 {
 	__disable_irq();
-	if (active_timers) {
-		if (active_timers == this) {
-			USBHS_GPTIMER1CTL = 0;
+	USBHostPort *usb_host_port = driver->usb_host_port;
+	uint8_t host_port = usb_host_port->host_port;
+	if (usb_host_port->active_timers) {
+		if (usb_host_port->active_timers == this) {
+			USBHS_GPTIMER1CTL_(host_port) = 0;
 			if (next) {
-				uint32_t usec_til_next = USBHS_GPTIMER1CTL & 0xFFFFFF;
+				uint32_t usec_til_next = USBHS_GPTIMER1CTL_(host_port) & 0xFFFFFF;
 				usec_til_next += next->usec;
 				next->usec = usec_til_next;
-				USBHS_GPTIMER1LD = usec_til_next;
-				USBHS_GPTIMER1CTL = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
+				USBHS_GPTIMER1LD_(host_port) = usec_til_next;
+				USBHS_GPTIMER1CTL_(host_port) = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
 				next->prev = NULL;
-				active_timers = next;
+				usb_host_port->active_timers = next;
 			} else {
-				active_timers = NULL;
+				usb_host_port->active_timers = NULL;
 			}
 		} else {
-			for (USBDriverTimer *t = active_timers->next; t; t = t->next) {
+			for (USBDriverTimer *t = usb_host_port->active_timers->next; t; t = t->next) {
 				if (t == this) {
 					t->prev->next = t->next;
 					if (t->next) {
@@ -568,7 +534,7 @@ static uint32_t QH_capabilities2(uint32_t high_bw_mult, uint32_t hub_port_number
 
 
 
-// Create a new pipe.  It's QH is added to the async or periodic schedule,
+// Create a new pipe.  Its QH is added to the async or periodic schedule,
 // and a halt qTD is added to the QH, so we can grow the qTD list later.
 //   dev:       device owning this pipe/endpoint
 //   type:      0=control, 2=bulk, 3=interrupt
@@ -577,7 +543,7 @@ static uint32_t QH_capabilities2(uint32_t high_bw_mult, uint32_t hub_port_number
 //   maxlen:    maximum packet size
 //   interval:  polling interval for interrupt, power of 2, unused if control or bulk
 //
-Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
+Pipe_t * USBHostPort::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 	uint32_t direction, uint32_t maxlen, uint32_t interval)
 {
 	Pipe_t *pipe;
@@ -636,12 +602,12 @@ Pipe_t * USBHost::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 
 	if (type == 0 || type == 2) {
 		// control or bulk: add to async queue
-		Pipe_t *list = (Pipe_t *)USBHS_ASYNCLISTADDR;
+		Pipe_t *list = (Pipe_t *)USBHS_ASYNCLISTADDR_(host_port);
 		if (list == NULL) {
 			pipe->qh.capabilities[0] |= 0x8000; // H bit
 			pipe->qh.horizontal_link = (uint32_t)&(pipe->qh) | 2; // 2=QH
-			USBHS_ASYNCLISTADDR = (uint32_t)&(pipe->qh);
-			USBHS_USBCMD |= USBHS_USBCMD_ASE; // enable async schedule
+			USBHS_ASYNCLISTADDR_(host_port) = (uint32_t)&(pipe->qh);
+			USBHS_USBCMD_(host_port) |= USBHS_USBCMD_ASE; // enable async schedule
 			//println("  first in async list");
 		} else {
 			// EHCI 1.0: section 4.8.1, page 72
@@ -685,7 +651,7 @@ static void init_qTD(volatile Transfer_t *t, void *buf, uint32_t len,
 
 // Create a Control Transfer and queue it
 //
-bool USBHost::queue_Control_Transfer(Device_t *dev, setup_t *setup, void *buf, USBDriver *driver)
+bool USBHostPort::queue_Control_Transfer(Device_t *dev, setup_t *setup, void *buf, USBDriver *driver)
 {
 	Transfer_t *transfer, *data, *status;
 	uint32_t status_direction;
@@ -736,7 +702,7 @@ bool USBHost::queue_Control_Transfer(Device_t *dev, setup_t *setup, void *buf, U
 
 // Create a Bulk or Interrupt Transfer and queue it
 //
-bool USBHost::queue_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBDriver *driver)
+bool USBHostPort::queue_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBDriver *driver)
 {
 	Transfer_t *transfer, *data, *next;
 	uint8_t *p = (uint8_t *)buffer;
@@ -792,7 +758,7 @@ bool USBHost::queue_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBD
 }
 
 
-bool USBHost::queue_Transfer(Pipe_t *pipe, Transfer_t *transfer)
+bool USBHostPort::queue_Transfer(Pipe_t *pipe, Transfer_t *transfer)
 {
 	// find halt qTD
 	Transfer_t *halt = (Transfer_t *)(pipe->qh.next);
@@ -846,9 +812,9 @@ bool USBHost::queue_Transfer(Pipe_t *pipe, Transfer_t *transfer)
 	return true;
 }
 
-bool USBHost::followup_Transfer(Transfer_t *transfer)
+bool USBHostPort::followup_Transfer(Transfer_t *transfer)
 {
-	//print("  Followup ", (uint32_t)transfer, HEX);
+	print("  Followup ", (uint32_t)transfer, HEX);
 	//println("    token=", transfer->qtd.token, HEX);
 
 	if (!(transfer->qtd.token & 0x80)) {
@@ -867,7 +833,7 @@ bool USBHost::followup_Transfer(Transfer_t *transfer)
 	return false;
 }
 
-void USBHost::followup_Error(void)
+void USBHostPort::followup_Error(void)
 {
 	println("ERROR Followup");
 	Transfer_t *p = async_followup_first;
@@ -952,7 +918,7 @@ void USBHost::followup_Error(void)
 	// TODO: handle errors from periodic schedule!
 }
 
-static void add_to_async_followup_list(Transfer_t *first, Transfer_t *last)
+void USBHostPort::add_to_async_followup_list(Transfer_t *first, Transfer_t *last)
 {
 	last->next_followup = NULL; // always add to end of list
 	if (async_followup_last == NULL) {
@@ -965,7 +931,7 @@ static void add_to_async_followup_list(Transfer_t *first, Transfer_t *last)
 	async_followup_last = last;
 }
 
-static void remove_from_async_followup_list(Transfer_t *transfer)
+void USBHostPort::remove_from_async_followup_list(Transfer_t *transfer)
 {
 	Transfer_t *next = transfer->next_followup;
 	Transfer_t *prev = transfer->prev_followup;
@@ -981,7 +947,7 @@ static void remove_from_async_followup_list(Transfer_t *transfer)
 	}
 }
 
-static void add_to_periodic_followup_list(Transfer_t *first, Transfer_t *last)
+void USBHostPort::add_to_periodic_followup_list(Transfer_t *first, Transfer_t *last)
 {
 	last->next_followup = NULL; // always add to end of list
 	if (periodic_followup_last == NULL) {
@@ -994,7 +960,7 @@ static void add_to_periodic_followup_list(Transfer_t *first, Transfer_t *last)
 	periodic_followup_last = last;
 }
 
-static void remove_from_periodic_followup_list(Transfer_t *transfer)
+void USBHostPort::remove_from_periodic_followup_list(Transfer_t *transfer)
 {
 	Transfer_t *next = transfer->next_followup;
 	Transfer_t *prev = transfer->prev_followup;
@@ -1059,7 +1025,7 @@ static uint32_t round_to_power_of_two(uint32_t n, uint32_t maxnum)
 //   maxlen:              [in]   maximum packet length
 //   interval:            [in]   polling interval: LS+FS: frames, HS: 2^(n-1) uframes
 //
-bool USBHost::allocate_interrupt_pipe_bandwidth(Pipe_t *pipe, uint32_t maxlen, uint32_t interval)
+bool USBHostPort::allocate_interrupt_pipe_bandwidth(Pipe_t *pipe, uint32_t maxlen, uint32_t interval)
 {
 	println("allocate_interrupt_pipe_bandwidth");
 	if (interval == 0) interval = 1;
@@ -1191,7 +1157,7 @@ bool USBHost::allocate_interrupt_pipe_bandwidth(Pipe_t *pipe, uint32_t maxlen, u
 // put a new pipe into the periodic schedule tree
 // according to periodic_interval and periodic_offset
 //
-void USBHost::add_qh_to_periodic_schedule(Pipe_t *pipe)
+void USBHostPort::add_qh_to_periodic_schedule(Pipe_t *pipe)
 {
 	// quick hack for testing, just put it into the first table entry
 	//println("add_qh_to_periodic_schedule: ", (uint32_t)pipe, HEX);
@@ -1261,7 +1227,7 @@ void USBHost::add_qh_to_periodic_schedule(Pipe_t *pipe)
 }
 
 
-void USBHost::delete_Pipe(Pipe_t *pipe)
+void USBHostPort::delete_Pipe(Pipe_t *pipe)
 {
 	println("delete_Pipe ", (uint32_t)pipe, HEX);
 
@@ -1287,9 +1253,9 @@ void USBHost::delete_Pipe(Pipe_t *pipe)
 		if (next == pipe) {
 			// removing the only QH, so just shut down the async schedule
 			println("  shut down async schedule");
-			USBHS_USBCMD &= ~USBHS_USBCMD_ASE; // disable async schedule
-			while (USBHS_USBSTS & USBHS_USBSTS_AS) ; // busy loop wait
-			USBHS_ASYNCLISTADDR = 0;
+			USBHS_USBCMD_(host_port) &= ~USBHS_USBCMD_ASE; // disable async schedule
+			while (USBHS_USBSTS_(host_port) & USBHS_USBSTS_AS) ; // busy loop wait
+			USBHS_ASYNCLISTADDR_(host_port) = 0;
 		} else {
 			// find the previous QH in the async schedule loop
 			println("  remove QH from async schedule");
@@ -1307,9 +1273,9 @@ void USBHost::delete_Pipe(Pipe_t *pipe)
 			prev->qh.horizontal_link = pipe->qh.horizontal_link;
 			// do the Async Advance Doorbell handshake to wait to be
 			// sure the EHCI no longer references the removed QH
-			USBHS_USBCMD |= USBHS_USBCMD_IAA;
-			while (!(USBHS_USBSTS & USBHS_USBSTS_AAI)) ; // busy loop wait
-			USBHS_USBSTS = USBHS_USBSTS_AAI;
+			USBHS_USBCMD_(host_port) |= USBHS_USBCMD_IAA;
+			while (!(USBHS_USBSTS_(host_port) & USBHS_USBSTS_AAI)) ; // busy loop wait
+			USBHS_USBSTS_(host_port) = USBHS_USBSTS_AAI;
 			// TODO: does this write interfere UPI & UAI (bits 18 & 19) ??
 		}
 		// find & free all the transfers which completed

@@ -25,8 +25,8 @@
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
 
-#define print   USBHost::print_
-#define println USBHost::println_
+#define print   PrintDebug::print_
+#define println PrintDebug::println_
 
 #define ADK_VID   0x18D1
 #define ADK_PID   0x2D00
@@ -61,7 +61,7 @@ void ADK::init()
 	
 	rx_head = 0;
 	rx_tail = 0;
-	driver_ready_for_device(this);
+	usb_host_port->driver_ready_for_device(this);
 	
 	state = 0;
 }
@@ -101,7 +101,7 @@ bool ADK::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t le
 		println(", bDeviceProtocol = ", dev->bDeviceProtocol);
 		println("  bInterfaceClass=", p[5]);
 		println("  bInterfaceSubClass=", p[6]);
-		print_hexbytes(descriptors, len);
+		PrintDebug::print_hexbytes(descriptors, len);
 		
 		p += 9;
 		rx_ep = 0;
@@ -167,11 +167,11 @@ bool ADK::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t le
 		// if an IN endpoint was found, create its pipe
 		if (rx_ep && rx_size <= MAX_PACKET_SIZE) 
 		{
-			rxpipe = new_Pipe(dev, 2, rx_ep, 1, rx_size);
+			rxpipe = usb_host_port->new_Pipe(dev, 2, rx_ep, 1, rx_size);
 			if (rxpipe) 
 			{
 				rxpipe->callback_function = rx_callback;
-				queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
+				usb_host_port->queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
 				rx_packet_queued = true;
 				println("Done creating RX pipe");
 			}
@@ -184,7 +184,7 @@ bool ADK::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t le
 		// if an OUT endpoint was found, create its pipe
 		if (tx_ep && tx_size <= MAX_PACKET_SIZE) 
 		{
-			txpipe = new_Pipe(dev, 2, tx_ep, 0, tx_size);
+			txpipe = usb_host_port->new_Pipe(dev, 2, tx_ep, 0, tx_size);
 			if (txpipe) 
 			{
 				txpipe->callback_function = tx_callback;
@@ -217,7 +217,7 @@ bool ADK::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t le
 		
 		// Kick off switch to Accessory Mode
 		mk_setup(adksetup, UHS_ADK_bmREQ_GET, UHS_ADK_GETPROTO, 0, 0, 2);
-		queue_Control_Transfer(dev, &adksetup, adkbuf, this);
+		usb_host_port->queue_Control_Transfer(dev, &adksetup, adkbuf, this);
 		
 		return true;
 	}
@@ -228,7 +228,7 @@ void ADK::sendStr(Device_t *dev, uint8_t index, char *str)
 { 
 	strcpy((char *)adkbuf, str);
 	mk_setup(adksetup, UHS_ADK_bmREQ_SEND, UHS_ADK_SENDSTR, 0, index, strlen(str));
-	queue_Control_Transfer(dev, &adksetup, adkbuf, this);
+	usb_host_port->queue_Control_Transfer(dev, &adksetup, adkbuf, this);
 }
 
 void ADK::control(const Transfer_t *transfer)
@@ -238,46 +238,46 @@ void ADK::control(const Transfer_t *transfer)
 	switch (state)
 	{
 		case 0:
-			print_hexbytes(transfer->buffer, transfer->length);
+			PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 			state++;
 			sendStr(device, UHS_ADK_ID_MANUFACTURER, manufacturer);
 			break;
 		case 1:
-			print_hexbytes(transfer->buffer, transfer->length);
+			PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 			state++;
 			sendStr(device, UHS_ADK_ID_MODEL, model);
 			break;
 		case 2:
-			print_hexbytes(transfer->buffer, transfer->length);
+			PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 			state++;
 			sendStr(device, UHS_ADK_ID_DESCRIPTION, desc);
 			break;
 		case 3:
-			print_hexbytes(transfer->buffer, transfer->length);
+			PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 			state++;
 			sendStr(device, UHS_ADK_ID_VERSION, version);
 			break;
 		case 4:
-			print_hexbytes(transfer->buffer, transfer->length);
+			PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 			state++;
 			sendStr(device, UHS_ADK_ID_URI, uri);
 			break;
 		case 5:
-			print_hexbytes(transfer->buffer, transfer->length);
+			PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 			state++;
 			sendStr(device, UHS_ADK_ID_SERIAL, serial);
 			break;
 		case 6:
-			print_hexbytes(transfer->buffer, transfer->length);
+			PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 			state++;
 
 			// Send ADK switch command
 			mk_setup(adksetup, UHS_ADK_bmREQ_SEND, UHS_ADK_ACCSTART, 0, 0, 0);
-			queue_Control_Transfer(device, &adksetup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &adksetup, NULL, this);
 			break;
 		case 7:
 			println("After ACC switch command. Device should re-enumerate.");
-			print_hexbytes(transfer->buffer, transfer->length);
+			PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 			state++;
 			break;
 		default:
@@ -307,7 +307,7 @@ void ADK::rx_data(const Transfer_t *transfer)
 	print("Len: ");
 	print(len);
 	print(" Data: ");
-	print_hexbytes(transfer->buffer, len);
+	PrintDebug::print_hexbytes(transfer->buffer, len);
 	
 	uint32_t head = rx_head;
 	
@@ -342,7 +342,7 @@ void ADK::rx_queue_packets(uint32_t head, uint32_t tail)
 		// enough space to accept another full packet
 		println("queue another receive packet");
 		
-		queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
+		usb_host_port->queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
 		rx_packet_queued = true;
 	} else {
 		// queue can't accept another packet's data, so leave
@@ -356,7 +356,7 @@ void ADK::tx_data(const Transfer_t *transfer)
 {
 	println("ADK tx_data transmit complete");
 	print("  Data: ");
-	print_hexbytes(transfer->buffer, tx_size);
+	PrintDebug::print_hexbytes(transfer->buffer, tx_size);
 }
 
 
@@ -442,7 +442,7 @@ size_t ADK::write(size_t len, uint8_t *buf)
 {
 	memcpy(tx_buffer, buf, len);
 	__disable_irq();
-	queue_Data_Transfer(txpipe, tx_buffer, len, this);
+	usb_host_port->queue_Data_Transfer(txpipe, tx_buffer, len, this);
 	__enable_irq();
 	
 	return len;

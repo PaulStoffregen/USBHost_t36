@@ -76,7 +76,12 @@
 // These 6 types are the key to understanding how this USB Host
 // library really works.
 
-// USBHost is a static class controlling the hardware.
+// USBHost is a class controlling access to one host port
+// (USB2 is the standard host port on the Teensy 4.1; USB1 is
+// the standard device port, which may also be used as a host port)
+class USBHostPort;
+
+// USBHost is a class controlling the hardware.
 // All common USB functionality is implemented here.
 class USBHost;
 
@@ -169,6 +174,9 @@ typedef union {
         uint32_t word2;
  };
 } setup_t;
+
+extern void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
+			uint32_t wValue, uint32_t wIndex, uint32_t wLength);
 
 typedef struct {
 	enum {STRING_BUF_SIZE=50};
@@ -267,53 +275,11 @@ struct Transfer_struct {
 
 
 /************************************************/
-/*  Main USB EHCI Controller                    */
+/*  Print Debug Info                            */
 /************************************************/
 
-class USBHost {
+class PrintDebug {
 public:
-	static void begin();
-	static void Task();
-	static void countFree(uint32_t &devices, uint32_t &pipes, uint32_t &trans, uint32_t &strs);
-protected:
-	static Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
-		uint32_t direction, uint32_t maxlen, uint32_t interval=0);
-	static bool queue_Control_Transfer(Device_t *dev, setup_t *setup,
-		void *buf, USBDriver *driver);
-	static bool queue_Data_Transfer(Pipe_t *pipe, void *buffer,
-		uint32_t len, USBDriver *driver);
-	static Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port);
-	static void disconnect_Device(Device_t *dev);
-	static void enumeration(const Transfer_t *transfer);
-	static void driver_ready_for_device(USBDriver *driver);
-	static volatile bool enumeration_busy;
-public: // Maybe others may want/need to contribute memory example HID devices may want to add transfers.
-	static void contribute_Devices(Device_t *devices, uint32_t num);
-	static void contribute_Pipes(Pipe_t *pipes, uint32_t num);
-	static void contribute_Transfers(Transfer_t *transfers, uint32_t num);
-	static void contribute_String_Buffers(strbuf_t *strbuf, uint32_t num);
-private:
-	static void isr();
-	static void convertStringDescriptorToASCIIString(uint8_t string_index, Device_t *dev, const Transfer_t *transfer);
-	static void claim_drivers(Device_t *dev);
-	static uint32_t assign_address(void);
-	static bool queue_Transfer(Pipe_t *pipe, Transfer_t *transfer);
-	static void init_Device_Pipe_Transfer_memory(void);
-	static Device_t * allocate_Device(void);
-	static void delete_Pipe(Pipe_t *pipe);
-	static void free_Device(Device_t *q);
-	static Pipe_t * allocate_Pipe(void);
-	static void free_Pipe(Pipe_t *q);
-	static Transfer_t * allocate_Transfer(void);
-	static void free_Transfer(Transfer_t *q);
-	static strbuf_t * allocate_string_buffer(void);
-	static void free_string_buffer(strbuf_t *strbuf);
-	static bool allocate_interrupt_pipe_bandwidth(Pipe_t *pipe,
-		uint32_t maxlen, uint32_t interval);
-	static void add_qh_to_periodic_schedule(Pipe_t *pipe);
-	static bool followup_Transfer(Transfer_t *transfer);
-	static void followup_Error(void);
-protected:
 #ifdef USBHOST_PRINT_DEBUG
 	static void print_(const Transfer_t *transfer);
 	static void print_(const Transfer_t *first, const Transfer_t *last);
@@ -388,11 +354,199 @@ protected:
 	static void println_(const char *s, long n, uint8_t b = DEC) {}
 	static void println_(const char *s, unsigned long n, uint8_t b = DEC) {}
 #endif
-	static void mk_setup(setup_t &s, uint32_t bmRequestType, uint32_t bRequest,
-			uint32_t wValue, uint32_t wIndex, uint32_t wLength) {
-		s.word1 = bmRequestType | (bRequest << 8) | (wValue << 16);
-		s.word2 = wIndex | (wLength << 16);
-	}
+};
+
+
+/**********************************************************************/
+/*  Memory allocations for a single USB host port (e.g. USB1 or USB2) */
+/**********************************************************************/
+
+// All USB EHCI controller hardware access is done from this file's code.
+// Hardware services are made available to the rest of this library by
+// three structures:
+//
+//   Pipe_t: Every USB endpoint is accessed by a pipe.  new_Pipe()
+//     sets up the EHCI to support the pipe/endpoint, and delete_Pipe()
+//     removes this configuration.
+//
+//   Transfer_t: These are used for all communication.  Data transfers
+//     are placed into work queues, to be executed by the EHCI in
+//     the future.  Transfer_t only manages data.  The actual data
+//     is stored in a separate buffer (usually from a device driver)
+//     which is referenced from Transfer_t.  All data transfer is queued,
+//     never done with blocking functions that wait.  When transfers
+//     complete, a driver-supplied callback function is called to notify
+//     the driver.
+//
+//   USBDriverTimer: Some drivers require timers.  These allow drivers
+//     to share the hardware timer, with each USBDriverTimer object
+//     able to schedule a callback function a configurable number of
+//     microseconds in the future.
+//
+// In addition to these 3 services, the EHCI interrupt also responds
+// to changes on the main port, creating and deleting the root device.
+// See enumeration.cpp for all device-level code.
+
+// Size of the periodic list, in milliseconds.  This determines the
+// slowest rate we can poll interrupt endpoints.  Each entry uses
+// 12 bytes (4 for a pointer, 8 for bandwidth management).
+// Supported values: 8, 16, 32, 64, 128, 256, 512, 1024
+#if defined(USBHS_PERIODIC_LIST_SIZE)
+#define PERIODIC_LIST_SIZE (USBHS_PERIODIC_LIST_SIZE)
+#else
+#define PERIODIC_LIST_SIZE  32
+#endif
+
+#define PORT_STATE_DISCONNECTED   0
+#define PORT_STATE_DEBOUNCE       1
+#define PORT_STATE_RESET          2
+#define PORT_STATE_RECOVERY       3
+#define PORT_STATE_ACTIVE         4
+
+class USBHostPort {
+public:
+	// 1 => USB1 (which is the device port by default); 2 => USB2 (which is the host port by default)
+	uint8_t host_port;
+
+	// The EHCI periodic schedule, used for interrupt pipes/endpoints
+	uint32_t periodictable[PERIODIC_LIST_SIZE] __attribute__ ((aligned(4096)));
+	uint8_t  uframe_bandwidth[PERIODIC_LIST_SIZE*8];
+
+	// State physical USB host port (PORT_STATE_*)
+	uint8_t  port_state = 0;
+
+	// The device currently connected, or NULL when no device
+	Device_t *rootdev = NULL;
+
+	// List of all connected devices, regardless of their status.  If
+	// it's connected to the EHCI port or any port on any hub, it needs
+	// to be linked into this list.
+	Device_t *devlist = NULL;
+
+	// List of all queued transfers in the asychronous schedule (control & bulk).
+	// When the EHCI completes these transfers, this list is how we locate them
+	// in memory.
+	Transfer_t *async_followup_first = NULL;
+	Transfer_t *async_followup_last = NULL;
+
+	// List of all queued transfers in the asychronous schedule (interrupt endpoints)
+	// When the EHCI completes these transfers, this list is how we locate them
+	// in memory.
+	Transfer_t *periodic_followup_first = NULL;
+	Transfer_t *periodic_followup_last = NULL;
+
+	// List of all pending timers.  This double linked list is stored in
+	// chronological order.  Each timer is stored with the number of
+	// microseconds which need to elapsed from the prior timer on this
+	// list, to allow efficient servicing from the timer interrupt.
+	USBDriverTimer *active_timers = NULL;
+
+	// List of all inactive drivers.  At the end of enumeration, when
+	// drivers claim the device or its interfaces, they are removed
+	// from this list and linked into the list of active drivers on
+	// that device.  When devices disconnect, the drivers are returned
+	// to this list, making them again available for enumeration of new
+	// devices.
+	USBDriver *available_drivers = NULL;
+
+	// True while any device is present but not yet fully configured.
+	// Only one USB device may be in this state at a time (responding
+	// to address zero) and using the enumeration buffer.
+	volatile bool enumeration_busy = false;
+
+	// Buffers used during enumeration.  One a single USB device
+	// may enumerate at once, because USB address zero is used, and
+	// because this buffer & state info can't be shared.
+	uint8_t enumbuf[512] __attribute__ ((aligned(16)));
+	setup_t enumsetup __attribute__ ((aligned(16)));
+	uint16_t enumlen;
+
+	// Lists of "free" memory
+	Device_t * free_Device_list = NULL;
+	Pipe_t * free_Pipe_list = NULL;
+	Transfer_t * free_Transfer_list = NULL;
+	strbuf_t * free_strbuf_list = NULL;
+
+	void (* isr_callback)();
+	void isr();
+	
+	void (* enumeration_callback)(const Transfer_struct*);
+	void enumeration(const Transfer_struct *transfer);	
+	
+	USBHostPort(uint8_t host_port,
+	            void (* isr_callback)(void),
+	            void (* enumeration_callback)(const Transfer_struct*))
+			: host_port(host_port),
+			  isr_callback(isr_callback),
+			  enumeration_callback(enumeration_callback) { }
+
+	Transfer_t * allocate_Transfer(void);
+	void free_Transfer(Transfer_t *q);
+	Device_t * allocate_Device(void);
+	void delete_Pipe(Pipe_t *pipe);
+	void free_Device(Device_t *q);
+	Pipe_t * allocate_Pipe(void);
+	void free_Pipe(Pipe_t *q);
+	strbuf_t * allocate_string_buffer(void);
+	void free_string_buffer(strbuf_t *strbuf);
+
+	bool queue_Transfer(Pipe_t *pipe, Transfer_t *transfer);
+	bool queue_Control_Transfer(Device_t *dev, setup_t *setup,
+		void *buf, USBDriver *driver);
+	bool queue_Data_Transfer(Pipe_t *pipe, void *buffer,
+		uint32_t len, USBDriver *driver);
+	bool followup_Transfer(Transfer_t *transfer);
+	void followup_Error(void);
+	void add_to_async_followup_list(Transfer_t *, Transfer_t *);
+	void remove_from_async_followup_list(Transfer_t *);
+	void add_to_periodic_followup_list(Transfer_t *, Transfer_t *);
+	void remove_from_periodic_followup_list(Transfer_t *);
+
+	Pipe_t * new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
+		uint32_t direction, uint32_t maxlen, uint32_t interval=0);
+	Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port);
+	void disconnect_Device(Device_t *dev);
+	void driver_ready_for_device(USBDriver *driver);
+
+private:
+	uint32_t assign_address(void);
+	bool address_in_use(uint32_t addr);
+	void claim_drivers(Device_t *dev);
+	bool allocate_interrupt_pipe_bandwidth(Pipe_t *pipe,
+		uint32_t maxlen, uint32_t interval);
+	void add_qh_to_periodic_schedule(Pipe_t *pipe);
+};
+
+// USBHostPort singletons for each host port
+extern USBHostPort* usb_host_ports[NUM_USB_HOST_PORTS];
+
+
+/************************************************/
+/*  Main USB EHCI Controller                    */
+/************************************************/
+
+class USBHost {
+public:
+	USBHost(const uint8_t host_port) : usb_host_port(usb_host_ports[host_port - 1]) { }
+	USBHost() : usb_host_port(usb_host_ports[DEFAULT_HOST_PORT - 1]) { }
+	void begin();
+	void Task();
+	void enumeration(const Transfer_t *transfer);
+	void countFree(uint32_t &devices, uint32_t &pipes, uint32_t &trans, uint32_t &strs);
+	// Maybe others may want/need to contribute memory example HID devices may want to add transfers.
+	void contribute_Devices(Device_t *devices, uint32_t num);
+	void contribute_Pipes(Pipe_t *pipes, uint32_t num);
+	void contribute_Transfers(Transfer_t *transfers, uint32_t num);
+	void contribute_String_Buffers(strbuf_t *strbuf, uint32_t num);
+    USBHostPort *usb_host_port;
+private:
+	// A small amount of non-driver memory, just to get things started
+	// TODO: is this really necessary?  Can these be eliminated, so we
+	// use only memory from the drivers?
+	Device_t memory_Device[1];
+	Pipe_t memory_Pipe[1] __attribute__ ((aligned(32)));
+	Transfer_t memory_Transfer[4] __attribute__ ((aligned(32)));
+	void init_Device_Pipe_Transfer_memory(void);
 };
 
 
@@ -430,6 +584,15 @@ public:
 		if (dev == nullptr || dev->strbuf == nullptr) return nullptr;
 		return &dev->strbuf->buffer[dev->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]];
 	}
+
+	// When an unknown (not chapter 9) control transfer completes, this
+	// function is called for all drivers bound to the device.  Return
+	// true means this driver originated this control transfer, so no
+	// more drivers need to be offered an opportunity to process it.
+	// This function is optional, only needed if the driver uses control
+	// transfers and wishes to be notified when they complete.
+	virtual void control(const Transfer_t *transfer) { }
+
 protected:
 	USBDriver() : next(NULL), device(NULL) {}
 	// Check if a driver wishes to claim a device or interface or group
@@ -442,14 +605,6 @@ protected:
 	//   type is 0 for device level, 1 for interface level, 2 for IAD
 	//   descriptors points to the specific descriptor data
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
-
-	// When an unknown (not chapter 9) control transfer completes, this
-	// function is called for all drivers bound to the device.  Return
-	// true means this driver originated this control transfer, so no
-	// more drivers need to be offered an opportunity to process it.
-	// This function is optional, only needed if the driver uses control
-	// transfers and wishes to be notified when they complete.
-	virtual void control(const Transfer_t *transfer) { }
 
 	// When any of the USBDriverTimer objects a driver creates generates
 	// a timer event, this function is called.
@@ -482,6 +637,8 @@ protected:
 	// from the HID parser).
 	Device_t *device;
 	friend class USBHost;
+	friend class USBHostPort;
+	friend class PrintDebug;
 };
 
 // Device drivers may create these timer objects to schedule a timer call
@@ -504,6 +661,7 @@ private:
 	USBDriverTimer *next;
 	USBDriverTimer *prev;
 	friend class USBHost;
+	friend class USBHostPort;
 };
 
 // Device drivers may inherit from this base class, if they wish to receive
@@ -664,7 +822,7 @@ private:
 
 class USBHIDParser : public USBDriver {
 public:
-	USBHIDParser(USBHost &host) : hidTimer(this) { init(); }
+	USBHIDParser(USBHost &host) : hidTimer(this), usb_host_port(host.usb_host_port) { init(); }
 	static void driver_ready_for_hid_collection(USBHIDInput *driver);
 	bool sendPacket(const uint8_t *buffer, int cb=-1);
 	void setTXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb);
@@ -721,6 +879,7 @@ private:
 	bool hid_driver_claimed_control_ = false;
 	USBDriverTimer hidTimer;
 	uint8_t bInterfaceNumber = 0;
+	USBHostPort *usb_host_port;
 };
 
 //--------------------------------------------------------------------------
@@ -910,7 +1069,7 @@ private:
 
 class JoystickController : public USBDriver, public USBHIDInput, public BTHIDInput {
 public:
-	JoystickController(USBHost &host) { init(); }
+	JoystickController(USBHost &host) : usb_host_port(host.usb_host_port) { init(); }
 
 	uint16_t idVendor();
 	uint16_t idProduct();
@@ -1027,6 +1186,7 @@ private:
 	} product_vendor_mapping_t;
 	static product_vendor_mapping_t pid_vid_mapping[];
 
+	USBHostPort *usb_host_port;
 };
 
 
@@ -1061,7 +1221,8 @@ public:
 	MIDIDeviceBase(USBHost &host, uint32_t *rx, uint32_t *tx1, uint32_t *tx2,
 		uint16_t bufsize, uint32_t *rqueue, uint16_t qsize) :
 			txtimer(this), rx_buffer(rx), tx_buffer1(tx1), tx_buffer2(tx2),
-			rx_queue(rqueue), max_packet_size(bufsize), rx_queue_size(qsize) {
+			rx_queue(rqueue), max_packet_size(bufsize), rx_queue_size(qsize),
+			usb_host_port(host.usb_host_port) {
 				init();
 		}
 	void sendNoteOff(uint8_t note, uint8_t velocity, uint8_t channel, uint8_t cable=0) {
@@ -1368,6 +1529,7 @@ private:
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
+    USBHostPort *usb_host_port;
 };
 
 class MIDIDevice : public MIDIDeviceBase {
@@ -1410,13 +1572,13 @@ class USBSerialBase: public USBDriver, public Stream {
 
 	USBSerialBase(USBHost &host, uint32_t *big_buffer, uint16_t buffer_size, 
 		uint16_t min_pipe_rxtx, uint16_t max_pipe_rxtx) :
+			usb_host_port(host.usb_host_port),
 			txtimer(this), 
 			_bigBuffer(big_buffer), 
 			_big_buffer_size(buffer_size), 
 			_min_rxtx(min_pipe_rxtx), 
-			_max_rxtx(max_pipe_rxtx) 
+			_max_rxtx(max_pipe_rxtx)
 		{ 
-
 			init(); 
 		}
 
@@ -1448,6 +1610,7 @@ private:
 	bool init_buffers(uint32_t rsize, uint32_t tsize);
 	void ch341_setBaud(uint8_t byte_index);
 private:
+	USBHostPort *usb_host_port;
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
@@ -1456,7 +1619,6 @@ private:
 	uint16_t _big_buffer_size;
 	uint16_t  _min_rxtx;
 	uint16_t _max_rxtx;
-
 
 	setup_t setup;
 	uint8_t setupdata[16]; // 
@@ -1525,7 +1687,7 @@ class AntPlus: public USBDriver {
 // Please post any AntPlus feedback or contributions on this forum thread:
 // https://forum.pjrc.com/threads/43110-Ant-libarary-and-USB-driver-for-Teensy-3-5-6
 public:
-	AntPlus(USBHost &host) : /* txtimer(this),*/  updatetimer(this) { init(); }
+	AntPlus(USBHost &host) : /* txtimer(this),*/  updatetimer(this), usb_host_port(host.usb_host_port) { init(); }
 	void begin(const uint8_t key=0);
 	void onStatusChange(void (*function)(int channel, int status)) {
 		user_onStatusChange = function;
@@ -1586,6 +1748,7 @@ private:
 	volatile bool     txready;
 	volatile uint8_t  rxlen;
 	volatile bool     do_polling;
+	USBHostPort *usb_host_port;
 private:
 	enum _eventi {
 		EVENTI_MESSAGE = 0,
@@ -1744,7 +1907,7 @@ private:
 
 class RawHIDController : public USBHIDInput {
 public:
-	RawHIDController(USBHost &host, uint32_t usage = 0) : fixed_usage_(usage) { init(); }
+	RawHIDController(USBHost &host, uint32_t usage = 0) : fixed_usage_(usage) { init(host); }
 	uint32_t usage(void) {return usage_;}
 	void attachReceive(bool (*f)(uint32_t usage, const uint8_t *data, uint32_t len)) {receiveCB = f;}
 	bool sendPacket(const uint8_t *buffer);
@@ -1757,7 +1920,7 @@ protected:
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 private:
-	void init();
+	void init(USBHost&);
 	USBHIDParser *driver_;
 	enum { MAX_PACKET_SIZE = 64 };
 	bool (*receiveCB)(uint32_t usage, const uint8_t *data, uint32_t len) = nullptr;
@@ -1775,7 +1938,7 @@ private:
 
 class USBSerialEmu : public USBHIDInput, public Stream {
 public:
-	USBSerialEmu(USBHost &host) { init(); }
+	USBSerialEmu(USBHost &host) { init(host); }
 	uint32_t usage(void) {return usage_;}
 
 	// Stream stuff. 
@@ -1804,7 +1967,7 @@ protected:
 	bool sendPacket();
 
 private:
-	void init();
+	void init(USBHost &host);
 	USBHIDParser *driver_;
 	enum { MAX_PACKET_SIZE = 64 };
 	bool (*receiveCB)(uint32_t usage, const uint8_t *data, uint32_t len) = nullptr;
@@ -2039,8 +2202,8 @@ private:
 //--------------------------------------------------------------------------
 class msController : public USBDriver {
 public:
-	msController(USBHost &host) { init(); }
-	msController(USBHost *host) { init(); }
+	msController(USBHost &host) : usb_host_port(host.usb_host_port) { init(); }
+	msController(USBHost *host) : usb_host_port(host->usb_host_port) { init(); }
 
 	msSCSICapacity_t msCapacity;
 	msInquiryResponse_t msInquiry;
@@ -2112,7 +2275,8 @@ private:
 	volatile bool msInCompleted = false;
 	volatile bool msControlCompleted = false;
 	uint32_t CBWTag = 0;
-	bool deviceAvailable = false;
+	volatile bool deviceAvailable = false;
+	USBHostPort *usb_host_port;
 };
 
 #endif

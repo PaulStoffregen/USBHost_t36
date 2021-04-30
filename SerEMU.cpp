@@ -27,9 +27,9 @@
 //#define  SEREMU_PRINT_DEBUG
 
 
-void USBSerialEmu::init()
+void USBSerialEmu::init(USBHost &host)
 {
-	USBHost::contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
+	host.contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
 	USBHIDParser::driver_ready_for_hid_collection(this);	
 }
 

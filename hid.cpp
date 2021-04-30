@@ -32,15 +32,15 @@
 // callbacks with the arriving data full decoded to data/usage
 // pairs.
 
-#define print   USBHost::print_
-#define println USBHost::println_
+#define print   PrintDebug::print_
+#define println PrintDebug::println_
 
 void USBHIDParser::init()
 {
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
 	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
-	driver_ready_for_device(this);
+	usb_host_port->driver_ready_for_device(this);
 }
 
 bool USBHIDParser::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
@@ -63,7 +63,7 @@ bool USBHIDParser::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 	if (descriptors[6] == 1 && descriptors[7] == 1) return false;
 
 	print("HID Parser Claim: ");
-	print_hexbytes(descriptors, len);
+	PrintDebug::print_hexbytes(descriptors, len);
 
 
 	// hid interface descriptor
@@ -101,7 +101,7 @@ bool USBHIDParser::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 		println("   interval = ", interval);
 		if ((endpoint & 0x0F) == 0) return false;
 		if ((endpoint & 0xF0) != 0x80) return false; // must be IN direction
-		in_pipe = new_Pipe(dev, 3, endpoint & 0x0F, 1, size, interval);
+		in_pipe = usb_host_port->new_Pipe(dev, 3, endpoint & 0x0F, 1, size, interval);
 		out_pipe = NULL;
 		in_size = size;
 	} else {
@@ -128,14 +128,14 @@ bool USBHIDParser::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 		if ((endpoint2 & 0x0F) == 0) return false;
 		if (((endpoint1 & 0xF0) == 0x80) && ((endpoint2 & 0xF0) == 0)) {
 			// first endpoint is IN, second endpoint is OUT
-			in_pipe = new_Pipe(dev, 3, endpoint1 & 0x0F, 1, size1, interval1);
-			out_pipe = new_Pipe(dev, 3, endpoint2, 0, size2, interval2);
+			in_pipe = usb_host_port->new_Pipe(dev, 3, endpoint1 & 0x0F, 1, size1, interval1);
+			out_pipe = usb_host_port->new_Pipe(dev, 3, endpoint2, 0, size2, interval2);
 			in_size = size1;
 			out_size = size2;
 		} else if (((endpoint1 & 0xF0) == 0) && ((endpoint2 & 0xF0) == 0x80)) {
 			// first endpoint is OUT, second endpoint is IN
-			in_pipe = new_Pipe(dev, 3, endpoint2 & 0x0F, 1, size2, interval2);
-			out_pipe = new_Pipe(dev, 3, endpoint1, 0, size1, interval1);
+			in_pipe = usb_host_port->new_Pipe(dev, 3, endpoint2 & 0x0F, 1, size2, interval2);
+			out_pipe = usb_host_port->new_Pipe(dev, 3, endpoint1, 0, size1, interval1);
 			in_size = size2;
 			out_size = size1;
 		} else {
@@ -151,14 +151,14 @@ bool USBHIDParser::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 	// request the HID report descriptor
 	bInterfaceNumber = descriptors[2];	// save away the interface number; 
 	mk_setup(setup, 0x81, 6, 0x2200, descriptors[2], descsize); // get report desc
-	queue_Control_Transfer(dev, &setup, descriptor, this);
+	usb_host_port->queue_Control_Transfer(dev, &setup, descriptor, this);
 	return true;
 }
 
 void USBHIDParser::control(const Transfer_t *transfer)
 {
 	println("control callback (hid)");
-	print_hexbytes(transfer->buffer, transfer->length);
+	PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 	// To decode hex dump to human readable HID report summary:
 	//   http://eleccelerator.com/usbdescreqparser/
 	uint32_t mesg = transfer->setup.word1;
@@ -166,13 +166,13 @@ void USBHIDParser::control(const Transfer_t *transfer)
 	if (mesg == 0x22000681 && transfer->length == descsize) { // HID report descriptor
 		println("  got report descriptor");
 		parse();
-		queue_Data_Transfer(in_pipe, report, in_size, this);
+		usb_host_port->queue_Data_Transfer(in_pipe, report, in_size, this);
 		if (device->idVendor == 0x054C && 
 				((device->idProduct == 0x0268) || (device->idProduct == 0x042F)/* || (device->idProduct == 0x03D5)*/)) {
 			println("send special PS3 feature command");
 			mk_setup(setup, 0x21, 9, 0x03F4, 0, 4); // ps3 tell to send report 1?
 			static uint8_t ps3_feature_F4_report[] = {0x42, 0x0c, 0x00, 0x00};
-			queue_Control_Transfer(device, &setup, ps3_feature_F4_report, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, ps3_feature_F4_report, this);
 		}
 	}
 }
@@ -219,7 +219,7 @@ void USBHIDParser::in_data(const Transfer_t *transfer)
 	print("HID: ");
 	print(use_report_id);
 	print(" - ");
-	print_hexbytes(transfer->buffer, transfer->length);
+	PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 	*/
 	const uint8_t *buf = (const uint8_t *)transfer->buffer;
 	uint32_t len = transfer->length;
@@ -236,7 +236,7 @@ void USBHIDParser::in_data(const Transfer_t *transfer)
 			}
 		}
 	}
-	queue_Data_Transfer(in_pipe, report, in_size, this);
+	usb_host_port->queue_Data_Transfer(in_pipe, report, in_size, this);
 }
 
 
@@ -285,8 +285,8 @@ bool USBHIDParser::sendPacket(const uint8_t *buffer, int cb) {
 	// copy the users data into our out going buffer
 	memcpy(p, buffer, cb);	
 	println("USBHIDParser Send packet");
-	print_hexbytes(buffer, cb);
-	queue_Data_Transfer(out_pipe, p, cb, this);
+	PrintDebug::print_hexbytes(buffer, cb);
+	usb_host_port->queue_Data_Transfer(out_pipe, p, cb, this);
 	println("    Queue_data transfer returned");
 	return true;
 }
@@ -302,7 +302,7 @@ bool USBHIDParser::sendControlPacket(uint32_t bmRequestType, uint32_t bRequest,
 {
 	// Use setup structure to build packet 
 	mk_setup(setup, bmRequestType, bRequest, wValue, wIndex, wLength); // ps3 tell to send report 1?
-	return queue_Control_Transfer(device, &setup, buf, this);
+	return usb_host_port->queue_Control_Transfer(device, &setup, buf, this);
 }
 
 

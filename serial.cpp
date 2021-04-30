@@ -26,8 +26,8 @@
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
 
-#define print   USBHost::print_
-#define println USBHost::println_
+#define print   PrintDebug::print_
+#define println PrintDebug::println_
 
 //#define ENABLE_DEBUG_PINS
 
@@ -69,7 +69,7 @@ void USBSerialBase::init()
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
 	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
-	driver_ready_for_device(this);
+	usb_host_port->driver_ready_for_device(this);
 	format_ = USBHOST_SERIAL_8N1;
 }
 
@@ -82,7 +82,7 @@ bool USBSerialBase::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 	print(", bDeviceClass = ", dev->bDeviceClass);
    	print(", bDeviceSubClass = ", dev->bDeviceSubClass);
    	println(", bDeviceProtocol = ", dev->bDeviceProtocol);
-	print_hexbytes(descriptors, len);
+	PrintDebug::print_hexbytes(descriptors, len);
 
 	//---------------------------------------------------------------------------
 	// Lets try to map CDCACM devices only at device level
@@ -183,19 +183,19 @@ bool USBSerialBase::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 		if (!init_buffers(rx_size, tx_size)) return false;
 		println("  rx buffer size:", rxsize);
 		println("  tx buffer size:", txsize);
-		rxpipe = new_Pipe(dev, 2, rx_ep & 15, 1, rx_size);
+		rxpipe = usb_host_port->new_Pipe(dev, 2, rx_ep & 15, 1, rx_size);
 		if (!rxpipe) return false;
-		txpipe = new_Pipe(dev, 2, tx_ep, 0, tx_size);
+		txpipe = usb_host_port->new_Pipe(dev, 2, tx_ep, 0, tx_size);
 		if (!txpipe) {
 			// TODO: free rxpipe
 			return false;
 		}
 		sertype = CDCACM;
 		rxpipe->callback_function = rx_callback;
-		queue_Data_Transfer(rxpipe, rx1, (rx_size < 64)? rx_size : 64, this);
+		usb_host_port->queue_Data_Transfer(rxpipe, rx1, (rx_size < 64)? rx_size : 64, this);
 		rxstate = 1;
 		if (rx_size > 128) {
-			queue_Data_Transfer(rxpipe, rx2, rx_size, this);
+			usb_host_port->queue_Data_Transfer(rxpipe, rx2, rx_size, this);
 			rxstate = 3;
 		}
 		txstate = 0;
@@ -206,7 +206,7 @@ bool USBSerialBase::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 		println("Control - CDCACM DTR...");
 		// Need to setup  the data the line coding data
 		mk_setup(setup, 0x21, 0x22, 3, 0, 0);
-		queue_Control_Transfer(dev, &setup, NULL, this);
+		usb_host_port->queue_Control_Transfer(dev, &setup, NULL, this);
 		control_queued = true;
 		pending_control = 0x0;	// Maybe don't need to do...
 		return true;
@@ -299,15 +299,15 @@ bool USBSerialBase::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 	println("  rx buffer size:", rxsize);
 	println("  tx buffer size:", txsize);
 
-	rxpipe = new_Pipe(dev, 2, rxep & 15, 1, rx_size);
+	rxpipe = usb_host_port->new_Pipe(dev, 2, rxep & 15, 1, rx_size);
 	if (!rxpipe) return false;
-	txpipe = new_Pipe(dev, 2, txep, 0, tx_size);
+	txpipe = usb_host_port->new_Pipe(dev, 2, txep, 0, tx_size);
 	if (!txpipe) {
 		//free_Pipe(rxpipe);
 		return false;
 	}
 	rxpipe->callback_function = rx_callback;
-	queue_Data_Transfer(rxpipe, rx1, rx_size, this);
+	usb_host_port->queue_Data_Transfer(rxpipe, rx1, rx_size, this);
 	rxstate = 1;
 	txstate = 0;
 	txpipe->callback_function = tx_callback;
@@ -321,7 +321,7 @@ bool USBSerialBase::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 		{
 			pending_control = 0x0F;
 			mk_setup(setup, 0x40, 0, 0, 0, 0); // reset port
-			queue_Control_Transfer(dev, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(dev, &setup, NULL, this);
 			control_queued = true;
 			return true;
 		}
@@ -334,7 +334,7 @@ bool USBSerialBase::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 			println("PL2303: readRegister(0x04)");
 			// Need to setup  the data the line coding data
 			mk_setup(setup, 0xC0, 0x1, 0x8484, 0, 1);  
-			queue_Control_Transfer(dev, &setup, setupdata, this); 
+			usb_host_port->queue_Control_Transfer(dev, &setup, setupdata, this); 
 			control_queued = true;
 			setup_state = 1; 	// We are at step one of setup... 
 			pending_control = 0x3f;
@@ -347,7 +347,7 @@ bool USBSerialBase::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 			println("CH341:  0xC0, 0x5f, 0, 0, 8");
 			// Need to setup  the data the line coding data
 			mk_setup(setup, 0xC0, 0x5f, 0, 0, sizeof(setupdata));  
-			queue_Control_Transfer(dev, &setup, setupdata, this); 
+			usb_host_port->queue_Control_Transfer(dev, &setup, setupdata, this); 
 			control_queued = true;
 			setup_state = 1; 	// We are at step one of setup... 
 			pending_control = 0x7f;	
@@ -360,7 +360,7 @@ bool USBSerialBase::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 			println("CP210X:  0x41, 0x11, 0, 0, 0 - reset port");
 			// Need to setup  the data the line coding data
 			mk_setup(setup, 0x41, 0x11, 0, 0, 0);  
-			queue_Control_Transfer(dev, &setup, NULL, this); 
+			usb_host_port->queue_Control_Transfer(dev, &setup, NULL, this); 
 			control_queued = true;
 			setup_state = 1; 	// We are at step one of setup... 
 			pending_control = 0xf;	
@@ -377,7 +377,7 @@ bool USBSerialBase::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 		    setupdata[5] = 0; // 0 - None, 1 - Odd, 2 - Even, 3 - Mark, 4 - Space
 		    setupdata[6] = 8; // Data bits (5, 6, 7, 8 or 16)
 			mk_setup(setup, 0x21, 0x20, 0, 0, 7);
-			queue_Control_Transfer(dev, &setup, setupdata, this);
+			usb_host_port->queue_Control_Transfer(dev, &setup, setupdata, this);
 			pending_control = 0x04;	// Maybe don't need to do...
 			control_queued = true;
 			return true;
@@ -458,7 +458,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			if (format_ & 0x100) ftdi_format |= (0x2 << 11);
 
 			mk_setup(setup, 0x40, 4, ftdi_format, 0, 0); // data format 8N1
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			return;
 		}
@@ -467,7 +467,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			pending_control &= ~2;
 			uint32_t baudval = 3000000 / baudrate;
 			mk_setup(setup, 0x40, 3, baudval, 0, 0);
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			return;
 		}
@@ -475,7 +475,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 		if (pending_control & 4) {
 			pending_control &= ~4;
 			mk_setup(setup, 0x40, 2, 0, 1, 0);
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true; 
 			return;
 		}
@@ -483,7 +483,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 		if (pending_control & 8) {
 			pending_control &= ~8;
 			mk_setup(setup, 0x40, 1, 0x0101, 0, 0);
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			return;
 		}
@@ -492,7 +492,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			pending_control &= ~0x80;
 			println("FTDI clear DTR");
 			mk_setup(setup, 0x40, 1, 0x0100, 0, 0);
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			return;
 		}
@@ -513,9 +513,9 @@ void USBSerialBase::control(const Transfer_t *transfer)
 	        setupdata[5] = (format_ & 0xe0) >> 5; 		// 0 - None, 1 - Odd, 2 - Even, 3 - Mark, 4 - Space
 	        setupdata[6] = format_ & 0x1f;				// Data bits (5, 6, 7, 8 or 16)
 	        print("CDCACM setup: ");
-	        print_hexbytes(&setupdata, 7);
+	        PrintDebug::print_hexbytes(&setupdata, 7);
 			mk_setup(setup, 0x21, 0x20, 0, 0, 7);
-			queue_Control_Transfer(device, &setup, setupdata, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, setupdata, this);
 			control_queued = true;
 			return;
 		}
@@ -525,7 +525,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			println("Control - 0x21,0x22, 0x3");
 			// Need to setup  the data the line coding data
 			mk_setup(setup, 0x21, 0x22, 3, 0, 0);
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			return;
 		}
@@ -534,7 +534,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			println("Control - 0x21,0x22, 0x0 - clear DTR");
 			// Need to setup  the data the line coding data
 			mk_setup(setup, 0x21, 0x22, 0, 0, 0);
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			return;
 		}
@@ -549,21 +549,21 @@ void USBSerialBase::control(const Transfer_t *transfer)
 				case 1:
 					println("PL2303: writeRegister(0x04, 0x00)");
 					mk_setup(setup, 0x40, 1, 0x0404, 0, 0); // 
-					queue_Control_Transfer(device, &setup, NULL, this);
+					usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 					setup_state = 2; 
 					control_queued = true;
 					return;
 				case 2:
 					println("PL2303: readRegister(0x04)");
 					mk_setup(setup, 0xC0, 0x1, 0x8484, 0, 1);  
-					queue_Control_Transfer(device, &setup, setupdata, this); 
+					usb_host_port->queue_Control_Transfer(device, &setup, setupdata, this); 
 					control_queued = true;
 					setup_state = 3; 
 					return;
 				case 3:
 					println("PL2303: v1 = readRegister(0x03)");
 					mk_setup(setup, 0xC0, 0x1, 0x8383, 0, 1);  
-					queue_Control_Transfer(device, &setup, setupdata, this); 
+					usb_host_port->queue_Control_Transfer(device, &setup, setupdata, this); 
 					control_queued = true;
 					setup_state = 4; 
 					return;
@@ -572,28 +572,28 @@ void USBSerialBase::control(const Transfer_t *transfer)
 					// Do we need this value long term or we could just leave in setup data? 
 					pl2303_v1 = setupdata[0];	// save the first bye of version
 					mk_setup(setup, 0xC0, 0x1, 0x8484, 0, 1);  
-					queue_Control_Transfer(device, &setup, setupdata, this); 
+					usb_host_port->queue_Control_Transfer(device, &setup, setupdata, this); 
 					control_queued = true;
 					setup_state = 5; 
 					return;
 				case 5:
 					println("PL2303: writeRegister(0x04, 0x01)");
 					mk_setup(setup, 0x40, 1, 0x0404, 1, 0); // 
-					queue_Control_Transfer(device, &setup, NULL, this);
+					usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 					setup_state = 6; 
 					control_queued = true;
 					return;
 				case 6:
 					println("PL2303: readRegister(0x04)");
 					mk_setup(setup, 0xC0, 0x1, 0x8484, 0, 1);  
-					queue_Control_Transfer(device, &setup, setupdata, this); 
+					usb_host_port->queue_Control_Transfer(device, &setup, setupdata, this); 
 					control_queued = true;
 					setup_state = 7; 
 					return;
 				case 7:
 					println("PL2303: v2 = readRegister(0x03)");
 					mk_setup(setup, 0xC0, 0x1, 0x8383, 0, 1);  
-					queue_Control_Transfer(device, &setup, setupdata, this); 
+					usb_host_port->queue_Control_Transfer(device, &setup, setupdata, this); 
 					control_queued = true;
 					setup_state = 8; 
 					return;
@@ -603,42 +603,42 @@ void USBSerialBase::control(const Transfer_t *transfer)
 					println(":", pl2303_v2, HEX);
 					println("PL2303: writeRegister(0, 1)");
 					mk_setup(setup, 0x40, 1, 0, 1, 0); // 
-					queue_Control_Transfer(device, &setup, NULL, this);
+					usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 					setup_state = 9; 
 					control_queued = true;
 					return;
 				case 9:
 					println("PL2303: writeRegister(1, 0)");
 					mk_setup(setup, 0x40, 1, 1, 0, 0); // 
-					queue_Control_Transfer(device, &setup, NULL, this);
+					usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 					setup_state = 10; 
 					control_queued = true;
 					return;
 				case 10:
 					println("PL2303: writeRegister(2, 44)");
 					mk_setup(setup, 0x40, 1, 2, 0x44, 0); // 
-					queue_Control_Transfer(device, &setup, NULL, this);
+					usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 					setup_state = 11; 
 					control_queued = true;
 					return;
 				case 11:
 					println("PL2303: writeRegister(8, 0)");
 					mk_setup(setup, 0x40, 1, 8, 0, 0); // 
-					queue_Control_Transfer(device, &setup, NULL, this);
+					usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 					setup_state = 12; 
 					control_queued = true;
 					return;
 				case 12:
 					println("PL2303: writeRegister(9, 0)");
 					mk_setup(setup, 0x40, 1, 9, 0, 0); // 
-					queue_Control_Transfer(device, &setup, NULL, this);
+					usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 					setup_state = 13; 
 					control_queued = true;
 					return;
 				case 13:
 					println("PL2303: Read current Baud/control");
 					mk_setup(setup, 0xA1, 0x21, 0, 0, 7);
-					queue_Control_Transfer(device, &setup, setupdata, this);
+					usb_host_port->queue_Control_Transfer(device, &setup, setupdata, this);
 					control_queued = true;
 					break;
 			}
@@ -651,7 +651,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			pending_control &= ~2;
 			// See what the read returned earlier
 			print("PL2303: Returned configuration data: ");
-			print_hexbytes(setupdata, 7);
+			PrintDebug::print_hexbytes(setupdata, 7);
 
 			// Should probably use data structure, but that may depend on byte ordering...
 			setupdata[0] = (baudrate) & 0xff;  // Setup baud rate 115200 - 0x1C200
@@ -663,9 +663,9 @@ void USBSerialBase::control(const Transfer_t *transfer)
 	        setupdata[6] = format_ & 0x1f;				// Data bits (5, 6, 7, 8 or 16)
 	        print("PL2303: Set baud/control: ", baudrate, HEX);
 	        print(" = ");
-	        print_hexbytes(&setupdata, 7);
+	        PrintDebug::print_hexbytes(&setupdata, 7);
 			mk_setup(setup, 0x21, 0x20, 0, 0, 7);
-			queue_Control_Transfer(device, &setup, setupdata, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, setupdata, this);
 			control_queued = true;
 			return;
 		}
@@ -673,7 +673,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			pending_control &= ~4;
 			println("PL2303: writeRegister(0, 0)");
 			mk_setup(setup, 0x40, 1, 0, 0, 0); // 
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			return; 
 		}
@@ -682,18 +682,18 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			println("PL2303: Read current Baud/control");
 			memset(setupdata, 0, sizeof(setupdata));	// clear it to see if we read it...
 			mk_setup(setup, 0xA1, 0x21, 0, 0, 7);
-			queue_Control_Transfer(device, &setup, setupdata, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, setupdata, this);
 			control_queued = true;
 		}
 		if (pending_control & 0x10) {
 			pending_control &= ~0x10;
 			print("PL2303: Returned configuration data: ");
-			print_hexbytes(setupdata, 7);
+			PrintDebug::print_hexbytes(setupdata, 7);
 
 			// This sets the control lines (0x1=DTR, 0x2=RTS)
 			println("PL2303: 0x21, 0x22, 0x3");
 			mk_setup(setup, 0x21, 0x22, 3, 0, 0); // 
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			return;
 		}
@@ -701,14 +701,14 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			pending_control &= ~0x20;
 			println("PL2303: 0x21, 0x22, 0x3");
 			mk_setup(setup, 0x21, 0x22, 3, 0, 0); // 
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 		}
 		if (pending_control & 0x80) {
 			pending_control &= ~0x80;
 			println("PL2303: 0x21, 0x22, 0x0");  // Clear DTR/RTS
 			mk_setup(setup, 0x21, 0x22, 0, 0, 0); // 
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 		}
 	}
@@ -716,10 +716,10 @@ void USBSerialBase::control(const Transfer_t *transfer)
 	if (sertype == CH341) {
 #if 0
 		print("  Transfer: ");
-		print_hexbytes(&transfer->setup, sizeof(setup_t));
+		PrintDebug::print_hexbytes(&transfer->setup, sizeof(setup_t));
 		if (transfer->length) {
 			print("  data: ");
-			print_hexbytes(transfer->buffer, transfer->length);
+			PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 		}
 #endif
 		if (pending_control & 1) {
@@ -727,10 +727,10 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			switch (setup_state) {
 				case 1:
 					print("  Returned: ");
-					print_hexbytes(transfer->buffer, transfer->length);
+					PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 					println("CH341: 40, a1, 0, 0, 0");
 					mk_setup(setup, 0x40, 0xa1, 0, 0, 0); // 
-					queue_Control_Transfer(device, &setup, NULL, this);
+					usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 					setup_state = 2; 
 					control_queued = true;
 					return;
@@ -747,32 +747,32 @@ void USBSerialBase::control(const Transfer_t *transfer)
 				case 4:
 					println("CH341: c0, 95, 2518, 0, 8");
 					mk_setup(setup, 0xc0, 0x95, 0x2518, 0, sizeof(setup)); // 
-					queue_Control_Transfer(device, &setup, setupdata, this);
+					usb_host_port->queue_Control_Transfer(device, &setup, setupdata, this);
 					setup_state = 5; 
 					control_queued = true;
 					return;
 				case 5:
 					print("  Returned: ");
-					print_hexbytes(transfer->buffer, transfer->length);
+					PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 					println("CH341: 40, 0x9a, 0x2518, 0x0050, 0");
 					mk_setup(setup, 0x40, 0x9a, 0x2518, 0x0050, 0); // 
-					queue_Control_Transfer(device, &setup, NULL, this);
+					usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 					setup_state = 6; 
 					control_queued = true;
 					return;
 				case 6:
 					println("CH341: c0, 95, 0x706, 0, 8 - get status");
 					mk_setup(setup, 0xc0, 0x95, 0x706, 0, sizeof(setup)); // 
-					queue_Control_Transfer(device, &setup, setupdata, this);
+					usb_host_port->queue_Control_Transfer(device, &setup, setupdata, this);
 					setup_state = 7; 
 					control_queued = true;
 					return;
 				case 7:
 					print("  Returned: ");
-					print_hexbytes(transfer->buffer, transfer->length);
+					PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 					println("CH341: 40, 0xa1, 0x501f, 0xd90a, 0");
 					mk_setup(setup, 0x40, 0xa1, 0x501f, 0xd90a, 0); // 
-					queue_Control_Transfer(device, &setup, NULL, this);
+					usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 					setup_state = 8; 
 					control_queued = true;
 					break;
@@ -807,7 +807,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			}
 			println("CH341: 40, 0x9a, 0x2518: ", ch341_format, HEX);
 			mk_setup(setup, 0x40, 0x9a, 0x2518, ch341_format, 0); // 
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			return;
 		}
@@ -817,7 +817,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			// 0x20=DTR, 0x40=RTS send ~ of values. 
 			println("CH341: 0x40, 0xa4, 0xff9f, 0, 0 - Handshake");
 			mk_setup(setup, 0x40, 0xa4, 0xff9f, 0, 0); // 
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			return;
 		}
@@ -826,17 +826,17 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			// This is setting handshake need to figure out what...
 			println("CH341: c0, 95, 0x706, 0, 8 - get status");
 			mk_setup(setup, 0xc0, 0x95, 0x706, 0, sizeof(setup)); // 
-			queue_Control_Transfer(device, &setup, setupdata, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, setupdata, this);
 			control_queued = true;
 			return;
 		}
 		if (pending_control & 0x40) {
 			pending_control &= ~0x40;
 			print("  Returned: ");
-			print_hexbytes(transfer->buffer, transfer->length);
+			PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 			println("CH341: 0x40, 0x9a, 0x2727, 0, 0");
 			mk_setup(setup, 0x40, 0x9a, 0x2727, 0, 0); // 
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 
 			return;
 		}
@@ -845,7 +845,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			pending_control &= ~0x80;
 			println("CH341: 0x40, 0xa4, 0xffff, 0, 0 - Handshake");
 			mk_setup(setup, 0x40, 0xa4, 0xffff, 0, 0); // 
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			return;
 		}
@@ -866,7 +866,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 
 			mk_setup(setup, 0x41, 3, cp210x_format, 0, 0); // data format 8N1
 			println("CP210x setup, 0x41, 3, cp210x_format ",cp210x_format, HEX);
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			return;
 		}
@@ -879,7 +879,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			setupdata[3] = (baudrate >> 24) & 0xff;
 			mk_setup(setup, 0x40, 0x1e, 0, 0, 4);
 			println("CP210x Set Baud  0x40, 0x1e");
-			queue_Control_Transfer(device, &setup, setupdata, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, setupdata, this);
 			control_queued = true;
 			return;
 		}
@@ -889,7 +889,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			memset(setupdata, 0, sizeof(setupdata));	// clear out the data
 			println("CP210x 0x41, 0, 1");
 			mk_setup(setup, 0x41, 0, 1, 0, 0);
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true; 
 			return;
 		}
@@ -898,7 +898,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 		if (pending_control & 8) {
 			pending_control &= ~0x88;
 			mk_setup(setup, 0x41, 7, 0x0303, 0, 0);
-			queue_Control_Transfer(device, &setup, NULL, this);
+			usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			println("CP210x 0x41, 7, 0x0303");
 			return;
@@ -934,7 +934,7 @@ void USBSerialBase::ch341_setBaud(uint8_t byte_index) {
 		println("CH341: 40, 0x9a, 0x0f2c... (Baud word 1):", setupdata[0], HEX);
 		mk_setup(setup, 0x40, 0x9a, 0x0f2c, setupdata[0], 0); // 
 	}
-	queue_Control_Transfer(device, &setup, setupdata, this);
+	usb_host_port->queue_Control_Transfer(device, &setup, setupdata, this);
 	control_queued = true;
 }
 
@@ -984,7 +984,7 @@ void USBSerialBase::rx_data(const Transfer_t *transfer)
 		print(" - ", *p, HEX);
 		println(" ", *(p+1), HEX);
 		print("rx: ");
-		print_hexbytes(p, len);
+		PrintDebug::print_hexbytes(p, len);
 	}
 	// Copy data from packet buffer to circular buffer.
 	// Assume the buffer will always have space, since we
@@ -1027,18 +1027,18 @@ void USBSerialBase::rx_queue_packets(uint32_t head, uint32_t tail)
 	uint32_t packetsize = rx2 - rx1;
 	if (avail >= packetsize) {
 		if ((rxstate & 0x01) == 0) {
-			queue_Data_Transfer(rxpipe, rx1, packetsize, this);
+			usb_host_port->queue_Data_Transfer(rxpipe, rx1, packetsize, this);
 			rxstate |= 0x01;
 		} else if ((rxstate & 0x02) == 0) {
-			queue_Data_Transfer(rxpipe, rx2, packetsize, this);
+			usb_host_port->queue_Data_Transfer(rxpipe, rx2, packetsize, this);
 			rxstate |= 0x02;
 		}
 		if ((rxstate & 0x03) != 0x03 && avail >= packetsize * 2) {
 			if ((rxstate & 0x01) == 0) {
-				queue_Data_Transfer(rxpipe, rx1, packetsize, this);
+				usb_host_port->queue_Data_Transfer(rxpipe, rx1, packetsize, this);
 				rxstate |= 0x01;
 			} else if ((rxstate & 0x02) == 0) {
-				queue_Data_Transfer(rxpipe, rx2, packetsize, this);
+				usb_host_port->queue_Data_Transfer(rxpipe, rx2, packetsize, this);
 				rxstate |= 0x02;
 			}
 		}
@@ -1097,7 +1097,7 @@ void USBSerialBase::tx_data(const Transfer_t *transfer)
 		tail = len - 1;
 	}
 	txtail = tail;
-	queue_Data_Transfer(txpipe, p, count, this);
+	usb_host_port->queue_Data_Transfer(txpipe, p, count, this);
 	debugDigitalWrite(5, LOW);
 }
 
@@ -1109,11 +1109,11 @@ void USBSerialBase::flush()
  		return;  // empty.
  	}
  	debugDigitalWrite(32, HIGH);
-	NVIC_DISABLE_IRQ(IRQ_USBHS);
+	NVIC_DISABLE_IRQ(IRQ_USBHS_(usb_host_port->host_port));
 	txtimer.stop();  		// Stop longer timer.
 	txtimer.start(100);		// Start a mimimal timeout
 //	timer_event(nullptr);   // Try calling direct - fails to work 
-	NVIC_ENABLE_IRQ(IRQ_USBHS);
+	NVIC_ENABLE_IRQ(IRQ_USBHS_(usb_host_port->host_port));
 	while (txstate & 3) ; // wait for all of the USB packets to be sent. 
 	println(" completed");
  	debugDigitalWrite(32, LOW);
@@ -1175,8 +1175,8 @@ void USBSerialBase::timer_event(USBDriverTimer *whichTimer)
 	txtail = tail;
 	print("  TX data (", count);
 	print(") ");
-	print_hexbytes(p, count);
-	queue_Data_Transfer(txpipe, p, count, this);
+	PrintDebug::print_hexbytes(p, count);
+	usb_host_port->queue_Data_Transfer(txpipe, p, count, this);
 	debugDigitalWrite(7, LOW);
 }
 
@@ -1188,7 +1188,7 @@ void USBSerialBase::timer_event(USBDriverTimer *whichTimer)
 
 void USBSerialBase::begin(uint32_t baud, uint32_t format)
 {
-	NVIC_DISABLE_IRQ(IRQ_USBHS);
+	NVIC_DISABLE_IRQ(IRQ_USBHS_(usb_host_port->host_port));
 	baudrate = baud;
 	bool format_changed = format != format_;
 	format_ = format; 
@@ -1201,7 +1201,7 @@ void USBSerialBase::begin(uint32_t baud, uint32_t format)
 		case CP210X: pending_control |= 0xf; break;
 	}
 	if (!control_queued) control(NULL);
-	NVIC_ENABLE_IRQ(IRQ_USBHS);
+	NVIC_ENABLE_IRQ(IRQ_USBHS_(usb_host_port->host_port));
 	// Wait until all packets have been queued before we return to caller. 
 	while (pending_control) {
 		yield();	// not sure if we want to yield or what? 
@@ -1210,7 +1210,7 @@ void USBSerialBase::begin(uint32_t baud, uint32_t format)
 
 void USBSerialBase::end(void)
 {
-	NVIC_DISABLE_IRQ(IRQ_USBHS);
+	NVIC_DISABLE_IRQ(IRQ_USBHS_(usb_host_port->host_port));
 	switch (sertype) {
 		default:
 		case CDCACM: pending_control |= 0x80; break;
@@ -1219,7 +1219,7 @@ void USBSerialBase::end(void)
 		case CH341: pending_control |= 0x80; break;
 	}
 	if (!control_queued) control(NULL);
-	NVIC_ENABLE_IRQ(IRQ_USBHS);
+	NVIC_ENABLE_IRQ(IRQ_USBHS_(usb_host_port->host_port));
 
 	// Wait until all packets have been queued before we return to caller. 
 	while (pending_control) {
@@ -1250,9 +1250,9 @@ int USBSerialBase::read(void)
 	int c = rxbuf[rxtail];
 	if (++rxtail >= rxsize) rxtail = 0;
 	if ((rxstate & 0x03) != 0x03) {
-		NVIC_DISABLE_IRQ(IRQ_USBHS);
+		NVIC_DISABLE_IRQ(IRQ_USBHS_(usb_host_port->host_port));
 		rx_queue_packets(rxhead, rxtail);
-		NVIC_ENABLE_IRQ(IRQ_USBHS);
+		NVIC_ENABLE_IRQ(IRQ_USBHS_(usb_host_port->host_port));
 	}
 	return c;
 }
@@ -1280,7 +1280,7 @@ size_t USBSerialBase::write(uint8_t c)
 	//println(", tail=", txtail);
 
 	// if full packet in buffer and tx packet ready, queue it
-	NVIC_DISABLE_IRQ(IRQ_USBHS);
+	NVIC_DISABLE_IRQ(IRQ_USBHS_(usb_host_port->host_port));
 	uint32_t tail = txtail;
 	if ((txstate & 0x03) != 0x03) {
 		// at least one packet buffer is ready to transmit
@@ -1321,16 +1321,16 @@ size_t USBSerialBase::write(uint8_t c)
 			txtail = tail;
 			//println("queue tx packet, newtail=", tail);
 			debugDigitalWrite(7, HIGH);
-			queue_Data_Transfer(txpipe, p, packetsize, this);
+			usb_host_port->queue_Data_Transfer(txpipe, p, packetsize, this);
 			debugDigitalWrite(7, LOW);
-			NVIC_ENABLE_IRQ(IRQ_USBHS);
+			NVIC_ENABLE_IRQ(IRQ_USBHS_(usb_host_port->host_port));
 			return 1;
 		}
 	}
 	// otherwise, set a latency timer to later transmit partial packet
 	txtimer.stop();
 	txtimer.start(write_timeout_);
-	NVIC_ENABLE_IRQ(IRQ_USBHS);
+	NVIC_ENABLE_IRQ(IRQ_USBHS_(usb_host_port->host_port));
 	return 1;
 }
 

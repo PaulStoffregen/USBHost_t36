@@ -29,8 +29,8 @@
 // begin responding to address zero.
 volatile bool USBHub::reset_busy = false;
 
-#define print   USBHost::print_
-#define println USBHost::println_
+#define print   PrintDebug::print_
+#define println PrintDebug::println_
 
 void USBHub::init()
 {
@@ -38,7 +38,7 @@ void USBHub::init()
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
 	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
-	driver_ready_for_device(this);
+	usb_host_port->driver_ready_for_device(this);
 }
 
 bool USBHub::claim(Device_t *dev, int type, const uint8_t *d, uint32_t len)
@@ -103,7 +103,7 @@ bool USBHub::claim(Device_t *dev, int type, const uint8_t *d, uint32_t len)
 	memset(devicelist, 0, sizeof(devicelist));
 
 	mk_setup(setup, 0xA0, 6, 0x2900, 0, sizeof(hub_desc));
-	queue_Control_Transfer(dev, &setup, hub_desc, this);
+	usb_host_port->queue_Control_Transfer(dev, &setup, hub_desc, this);
 
 	return true;
 }
@@ -121,7 +121,7 @@ void USBHub::send_poweron(uint32_t port)
 	if (port == 0 || port > numports) return;
 	if (can_send_control_now()) {
 		mk_setup(setup, 0x23, 3, 8, port, 0);
-		queue_Control_Transfer(device, &setup, NULL, this);
+		usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 		send_pending_poweron &= ~(1 << port);
 	} else {
 		send_pending_poweron |= (1 << port);
@@ -134,7 +134,7 @@ void USBHub::send_getstatus(uint32_t port)
 	if (can_send_control_now()) {
 		println("getstatus, port = ", port);
 		mk_setup(setup, ((port > 0) ? 0xA3 : 0xA0), 0, 0, port, 4);
-		queue_Control_Transfer(device, &setup, &statusbits, this);
+		usb_host_port->queue_Control_Transfer(device, &setup, &statusbits, this);
 		send_pending_getstatus &= ~(1 << port);
 	} else {
 		println("deferred getstatus, port = ", port);
@@ -147,7 +147,7 @@ void USBHub::send_clearstatus_connect(uint32_t port)
 	if (port == 0 || port > numports) return;
 	if (can_send_control_now()) {
 		mk_setup(setup, 0x23, 1, 16, port, 0); // 16=C_PORT_CONNECTION
-		queue_Control_Transfer(device, &setup, NULL, this);
+		usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 		send_pending_clearstatus_connect &= ~(1 << port);
 	} else {
 		send_pending_clearstatus_connect |= (1 << port);
@@ -159,7 +159,7 @@ void USBHub::send_clearstatus_enable(uint32_t port)
 	if (port == 0 || port > numports) return;
 	if (can_send_control_now()) {
 		mk_setup(setup, 0x23, 1, 17, port, 0); // 17=C_PORT_ENABLE
-		queue_Control_Transfer(device, &setup, NULL, this);
+		usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 		send_pending_clearstatus_enable &= ~(1 << port);
 	} else {
 		send_pending_clearstatus_enable |= (1 << port);
@@ -171,7 +171,7 @@ void USBHub::send_clearstatus_suspend(uint32_t port)
 	if (port == 0 || port > numports) return;
 	if (can_send_control_now()) {
 		mk_setup(setup, 0x23, 1, 18, port, 0); // 18=C_PORT_SUSPEND
-		queue_Control_Transfer(device, &setup, NULL, this);
+		usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 		send_pending_clearstatus_suspend &= ~(1 << port);
 	} else {
 		send_pending_clearstatus_suspend |= (1 << port);
@@ -183,7 +183,7 @@ void USBHub::send_clearstatus_overcurrent(uint32_t port)
 	if (port == 0 || port > numports) return;
 	if (can_send_control_now()) {
 		mk_setup(setup, 0x23, 1, 19, port, 0); // 19=C_PORT_OVER_CURRENT
-		queue_Control_Transfer(device, &setup, NULL, this);
+		usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 		send_pending_clearstatus_overcurrent &= ~(1 << port);
 	} else {
 		send_pending_clearstatus_overcurrent |= (1 << port);
@@ -195,7 +195,7 @@ void USBHub::send_clearstatus_reset(uint32_t port)
 	if (port == 0 || port > numports) return;
 	if (can_send_control_now()) {
 		mk_setup(setup, 0x23, 1, 20, port, 0); // 20=C_PORT_RESET
-		queue_Control_Transfer(device, &setup, NULL, this);
+		usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 		send_pending_clearstatus_reset &= ~(1 << port);
 	} else {
 		send_pending_clearstatus_reset |= (1 << port);
@@ -208,7 +208,7 @@ void USBHub::send_setreset(uint32_t port)
 	println("send_setreset");
 	if (can_send_control_now()) {
 		mk_setup(setup, 0x23, 3, 4, port, 0); // set feature PORT_RESET
-		queue_Control_Transfer(device, &setup, NULL, this);
+		usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 		send_pending_setreset &= ~(1 << port);
 	} else {
 		send_pending_setreset |= (1 << port);
@@ -219,7 +219,7 @@ void USBHub::send_setinterface()
 {
 	// assumes not already sending another control transfer
 	mk_setup(setup, 1, 11, altsetting, interface_number, 0);
-	queue_Control_Transfer(device, &setup, NULL, this);
+	usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 	sending_control_transfer = 1;
 }
 
@@ -231,7 +231,7 @@ static uint32_t lowestbit(uint32_t bitmask)
 void USBHub::control(const Transfer_t *transfer)
 {
 	println("USBHub control callback");
-	print_hexbytes(transfer->buffer, transfer->length);
+	PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 
 	sending_control_transfer = 0;
 	uint32_t port = transfer->setup.wIndex;
@@ -256,10 +256,10 @@ void USBHub::control(const Transfer_t *transfer)
 		if (port == numports && changepipe == NULL) {
 			println("power turned on to all ports");
 			println("device addr = ", device->address);
-			changepipe = new_Pipe(device, 3, endpoint, 1, 1, interval);
+			changepipe = usb_host_port->new_Pipe(device, 3, endpoint, 1, 1, interval);
 			println("pipe cap1 = ", changepipe->qh.capabilities[0], HEX);
 			changepipe->callback_function = callback;
-			queue_Data_Transfer(changepipe, &changebits, 1, this);
+			usb_host_port->queue_Data_Transfer(changepipe, &changebits, 1, this);
 		}
 		break;
 
@@ -327,7 +327,7 @@ void USBHub::status_change(const Transfer_t *transfer)
 			send_getstatus(i);
 		}
 	}
-	queue_Data_Transfer(changepipe, &changebits, 1, this);
+	usb_host_port->queue_Data_Transfer(changepipe, &changebits, 1, this);
 }
 
 void USBHub::new_port_status(uint32_t port, uint32_t status)
@@ -377,13 +377,13 @@ void USBHub::new_port_status(uint32_t port, uint32_t status)
 	  case PORT_DEBOUNCE5:
 		if (status & 0x0001) {
 			if (++state > PORT_DEBOUNCE5) {
-				if (USBHub::reset_busy || USBHost::enumeration_busy) {
+				if (reset_busy || usb_host_port->enumeration_busy) {
 					// wait in debounce state if another port is
 					// resetting or a device is busy enumerating
 					state = PORT_DEBOUNCE5;
 					break;
 				}
-				USBHub::reset_busy = true;
+				reset_busy = true;
 				stop_debounce_timer(port);
 				state = PORT_RESET;
 				println("sending reset");
@@ -407,20 +407,20 @@ void USBHub::new_port_status(uint32_t port, uint32_t status)
 			resettimer.start(25000);
 		} else if (!(status & 0x0001)) {
 			send_clearstatus_connect(port);
-			USBHub::reset_busy = false;
+			reset_busy = false;
 			state = PORT_DISCONNECT;
 		}
 		break;
 	  case PORT_RECOVERY:
 		if (!(status & 0x0001)) {
 			send_clearstatus_connect(port);
-			USBHub::reset_busy = false;
+			reset_busy = false;
 			state = PORT_DISCONNECT;
 		}
 		break;
 	  case PORT_ACTIVE:
 		if (!(status & 0x0001)) {
-			disconnect_Device(devicelist[port-1]);
+			usb_host_port->disconnect_Device(devicelist[port-1]);
 			devicelist[port-1] = NULL;
 			send_clearstatus_connect(port);
 			state = PORT_DISCONNECT;
@@ -459,14 +459,14 @@ void USBHub::timer_event(USBDriverTimer *timer)
 				println("PORT_RECOVERY");
 				// begin enumeration process
 				uint8_t speed = port_doing_reset_speed;
-				devicelist[port-1] = new_Device(speed, device->address, port);
+				devicelist[port-1] = usb_host_port->new_Device(speed, device->address, port);
 				// TODO: if return is NULL, what to do?  Panic?
 				// Can we disable the port?  Will this device
 				// play havoc if it sits unconfigured responding
 				// to address zero?  Does that even matter?  Maybe
 				// we have far worse issues when memory isn't
 				// available?!
-				USBHub::reset_busy = false;
+				reset_busy = false;
 				state = PORT_ACTIVE;
 			}
 		}
@@ -493,7 +493,7 @@ void USBHub::disconnect()
 {
 	// disconnect all downstream devices, which may be more hubs
 	for (uint32_t i=0; i < numports; i++) {
-		if (devicelist[i]) disconnect_Device(devicelist[i]);
+		if (devicelist[i]) usb_host_port->disconnect_Device(devicelist[i]);
 	}
 	numports = 0;
 	changepipe = NULL;

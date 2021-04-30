@@ -27,8 +27,8 @@
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
 
-#define print   USBHost::print_
-#define println USBHost::println_
+#define print   PrintDebug::print_
+#define println PrintDebug::println_
 
 // Uncomment this to display function usage and sequencing.
 #define DBGprint 0
@@ -44,7 +44,7 @@ void msController::init()
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
 	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
-	driver_ready_for_device(this);
+	usb_host_port->driver_ready_for_device(this);
 }
 
 bool msController::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
@@ -55,7 +55,7 @@ bool msController::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 	if (type != 1) return false;
 	if (len < 9+7+7) return false; // Interface descriptor + 2 endpoint decriptors 
 
-	print_hexbytes(descriptors, len);
+	PrintDebug::print_hexbytes(descriptors, len);
 
 	uint32_t numendpoint = descriptors[4];
 	if (numendpoint < 1) return false; 
@@ -99,8 +99,8 @@ bool msController::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 
 	println("polling intervalIn = ", intervalIn);
 	println("polling intervalOut = ", intervalOut);
-	datapipeIn = new_Pipe(dev, 2, endpointIn, 1, packetSizeIn, intervalIn);
-	datapipeOut = new_Pipe(dev, 2, endpointOut, 0, packetSizeOut, intervalOut);
+	datapipeIn = usb_host_port->new_Pipe(dev, 2, endpointIn, 1, packetSizeIn, intervalIn);
+	datapipeOut = usb_host_port->new_Pipe(dev, 2, endpointOut, 0, packetSizeOut, intervalOut);
 	datapipeIn->callback_function = callbackIn;
 	datapipeOut->callback_function = callbackOut;
 
@@ -144,7 +144,7 @@ void msController::disconnect()
 void msController::control(const Transfer_t *transfer)
 {
 	println("control CallbackIn (msController)");
-	print_hexbytes(report, 8);
+	PrintDebug::print_hexbytes(report, 8);
 	msControlCompleted = true;
 
 }
@@ -173,7 +173,7 @@ void msController::new_dataOut(const Transfer_t *transfer)
 {
 	uint32_t len = transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF);
 	println("msController dataOut (static)", len, DEC);
-	print_hexbytes((uint8_t*)transfer->buffer, (len < 32)? len : 32 );
+	PrintDebug::print_hexbytes((uint8_t*)transfer->buffer, (len < 32)? len : 32 );
 	msOutCompleted = true; // Last out transaction is completed.
 }
 
@@ -181,14 +181,14 @@ void msController::new_dataIn(const Transfer_t *transfer)
 {
 	uint32_t len = transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF);
 	println("msController dataIn (static): ", len, DEC);
-	print_hexbytes((uint8_t*)transfer->buffer, (len < 32)? len : 32 );
+	PrintDebug::print_hexbytes((uint8_t*)transfer->buffer, (len < 32)? len : 32 );
 	msInCompleted = true; // Last in transaction is completed.
 }
 
 // Initialize Mass Storage Device
 uint8_t msController::mscInit(void) {
 #ifdef DBGprint
-	println("mscIint()");
+	println("mscInit()");
 #endif
 	uint8_t msResult = MS_CBW_PASS;
 
@@ -197,6 +197,9 @@ uint8_t msController::mscInit(void) {
 	// Check if device is connected.
 	do {
 		if((millis() - start) >= MSC_CONNECT_TIMEOUT) {
+#ifdef DBGprint
+			println("MSC connect timeout");
+#endif
 			return MS_NO_MEDIA_ERR;  // Not connected Error.
 		}
 		yield();
@@ -241,7 +244,7 @@ void msController::msReset(void) {
 	println("msReset()");
 #endif
 	mk_setup(setup, 0x21, 0xff, 0, bInterfaceNumber, 0);
-	queue_Control_Transfer(device, &setup, NULL, this);
+	usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 	while (!msControlCompleted) yield();
 	msControlCompleted = false;
 }
@@ -254,7 +257,7 @@ uint8_t msController::msGetMaxLun(void) {
 #endif
 	report[0] = 0;
 	mk_setup(setup, 0xa1, 0xfe, 0, bInterfaceNumber, 1);
-	queue_Control_Transfer(device, &setup, report, this);
+	usb_host_port->queue_Control_Transfer(device, &setup, report, this);
 	while (!msControlCompleted) yield();
 	msControlCompleted = false;
 	maxLUN = report[0];
@@ -281,7 +284,7 @@ uint8_t msController::WaitMediaReady() {
 uint8_t msController::checkConnectedInitialized(void) {
 	uint8_t msResult = MS_CBW_PASS;
 #ifdef DBGprint
-	print("checkConnectedInitialized()");
+	println("checkConnectedInitialized()");
 #endif
 	if(!msDriveInfo.connected) {
 		return MS_NO_MEDIA_ERR;
@@ -304,15 +307,15 @@ uint8_t msController::msDoCommand(msCommandBlockWrapper_t *CBW,	void *buffer)
 	println("msDoCommand()");
 #endif	
 	if(CBWTag == 0xFFFFFFFF) CBWTag = 1;
-	queue_Data_Transfer(datapipeOut, CBW, sizeof(msCommandBlockWrapper_t), this); // Command stage.
+	usb_host_port->queue_Data_Transfer(datapipeOut, CBW, sizeof(msCommandBlockWrapper_t), this); // Command stage.
 	while(!msOutCompleted) yield();
 	msOutCompleted = false;
 	if((CBW->Flags == CMD_DIR_DATA_IN)) { // Data stage from device.
-		queue_Data_Transfer(datapipeIn, buffer, CBW->TransferLength, this);
+		usb_host_port->queue_Data_Transfer(datapipeIn, buffer, CBW->TransferLength, this);
 	while(!msInCompleted) yield();
 	msInCompleted = false;
 	} else {							  // Data stage to device.
-		queue_Data_Transfer(datapipeOut, buffer, CBW->TransferLength, this);
+		usb_host_port->queue_Data_Transfer(datapipeOut, buffer, CBW->TransferLength, this);
 	while(!msOutCompleted) yield();
 	msOutCompleted = false;
 	}
@@ -344,7 +347,7 @@ uint8_t msController::msGetCSW(void) {
 		.DataResidue = 0, // TODO: Proccess this if received.
 		.Status = 0
 	};
-	queue_Data_Transfer(datapipeIn, &StatusBlockWrapper, sizeof(StatusBlockWrapper), this);
+	usb_host_port->queue_Data_Transfer(datapipeIn, &StatusBlockWrapper, sizeof(StatusBlockWrapper), this);
 	while(!msInCompleted) yield();
 	msInCompleted = false;
 	mscTransferComplete = true;
@@ -369,7 +372,7 @@ uint8_t msController::msTestReady() {
 		.CommandLength      = 6,
 		.CommandData        = {CMD_TEST_UNIT_READY, 0x00, 0x00, 0x00, 0x00, 0x00}
 	};
-	queue_Data_Transfer(datapipeOut, &CommandBlockWrapper, sizeof(CommandBlockWrapper), this);
+	usb_host_port->queue_Data_Transfer(datapipeOut, &CommandBlockWrapper, sizeof(CommandBlockWrapper), this);
 	while(!msOutCompleted) yield();
 	msOutCompleted = false;
 	return msGetCSW();
@@ -391,7 +394,7 @@ uint8_t msController::msStartStopUnit(uint8_t mode) {
 		.CommandLength      = 6,
 		.CommandData        = {CMD_START_STOP_UNIT, 0x01, 0x00, 0x00, mode, 0x00}
 	};
-	queue_Data_Transfer(datapipeOut, &CommandBlockWrapper, sizeof(CommandBlockWrapper), this);
+	usb_host_port->queue_Data_Transfer(datapipeOut, &CommandBlockWrapper, sizeof(CommandBlockWrapper), this);
 	while(!msOutCompleted) yield();
 	msOutCompleted = false;
 	return msGetCSW();
@@ -570,7 +573,7 @@ uint8_t msController::msProcessError(uint8_t msStatus) {
 			return MS_CSW_SIG_ERROR;
 			break;
 		case MS_CBW_FAIL:
-			if(msResult = msRequestSense(&msSense)) {
+			if((msResult = msRequestSense(&msSense))) {
 				print("Failed to get sense codes. Returned code: ");
 				println(msResult);
 			}
