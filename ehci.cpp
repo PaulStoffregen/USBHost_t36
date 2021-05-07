@@ -166,9 +166,9 @@ void USBHost::begin()
 	// turn on USB clocks (should already be on)
 	CCM_CCGR6 |= CCM_CCGR6_USBOH3(CCM_CCGR_ON);
 	// turn on USB PHY
-	USBPHYX_CTRL_CLR_(host_port) = USBPHY_CTRL_SFTRST | USBPHY_CTRL_CLKGATE;
-	USBPHYX_CTRL_SET_(host_port) = USBPHY_CTRL_ENUTMILEVEL2 | USBPHY_CTRL_ENUTMILEVEL3;
-	USBPHYX_PWD_(host_port) = 0;
+	USBPHY_CTRL_CLR_(host_port) = USBPHY_CTRL_SFTRST | USBPHY_CTRL_CLKGATE;
+	USBPHY_CTRL_SET_(host_port) = USBPHY_CTRL_ENUTMILEVEL2 | USBPHY_CTRL_ENUTMILEVEL3;
+	USBPHY_PWD_(host_port) = 0;
 	#ifdef ARDUINO_TEENSY41
 	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_40 = 5;
 	IOMUXC_SW_PAD_CTL_PAD_GPIO_EMC_40 = 0x0008; // slow speed, weak 150 ohm drive
@@ -267,7 +267,7 @@ void USBHostPort::isr()
 	uint32_t stat = USBHS_USBSTS_(host_port);
 	USBHS_USBSTS_(host_port) = stat; // clear pending interrupts
 	//stat &= USBHS_USBINTR_(host_port); // mask away unwanted interrupts
-#if 0
+#if 1
 	println();
 	println("ISR: ", stat, HEX);
 	//if (stat & USBHS_USBSTS_UI)  println(" USB Interrupt");
@@ -635,6 +635,7 @@ Pipe_t * USBHostPort::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 static void init_qTD(volatile Transfer_t *t, void *buf, uint32_t len,
               uint32_t pid, uint32_t data01, bool irq)
 {
+	Serial.printf("init_qTD: %d\n", irq);
 	t->qtd.alt_next = 1; // 1=terminate
 	if (data01) data01 = 0x80000000;
 	t->qtd.token = data01 | (len << 16) | (irq ? 0x8000 : 0) | (pid << 8) | 0x80;
@@ -656,7 +657,7 @@ bool USBHostPort::queue_Control_Transfer(Device_t *dev, setup_t *setup, void *bu
 	Transfer_t *transfer, *data, *status;
 	uint32_t status_direction;
 
-	//println("new_Control_Transfer");
+	println("queue_Control_Transfer");
 	if (setup->wLength > 16384) return false; // max 16K data for control
 	transfer = allocate_Transfer();
 	if (!transfer) {
@@ -711,7 +712,7 @@ bool USBHostPort::queue_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, 
 
 	// TODO: option for zero length packet?  Maybe in Pipe_t fields?
 
-	//println("new_Data_Transfer");
+	println("queue_Data_Transfer");
 	// allocate qTDs
 	transfer = allocate_Transfer();
 	if (!transfer) return false;
@@ -809,6 +810,12 @@ bool USBHostPort::queue_Transfer(Pipe_t *pipe, Transfer_t *transfer)
 	}
 	// old halt becomes new transfer, this commits all new qTDs to QH
 	halt->qtd.token = token;
+	
+	while (!(halt->qtd.token & 0x40)) {
+		println("TOKEN: ", halt->qtd.token, HEX);
+		halt = (Transfer_t *)(halt->qtd.next);
+	}
+	
 	return true;
 }
 
