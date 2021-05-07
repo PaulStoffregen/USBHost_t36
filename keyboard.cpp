@@ -99,8 +99,8 @@ static const keyboard_force_boot_protocol_t keyboard_forceBootMode[] = {
 };
 
 
-#define print   USBHost::print_
-#define println USBHost::println_
+#define print   PrintDebug::print_
+#define println PrintDebug::println_
 
 
 
@@ -110,7 +110,7 @@ void KeyboardController::init()
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
 	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
-	driver_ready_for_device(this);
+	usb_host_port->driver_ready_for_device(this);
 	USBHIDParser::driver_ready_for_hid_collection(this);
 	BluetoothController::driver_ready_for_bluetooth(this);
 	force_boot_protocol = false;	// start off assuming not
@@ -123,7 +123,7 @@ bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descripto
 	// only claim at interface level
 	if (type != 1) return false;
 	if (len < 9+9+7) return false;
-	print_hexbytes(descriptors, len);
+	PrintDebug::print_hexbytes(descriptors, len);
 
 	uint32_t numendpoint = descriptors[4];
 	if (numendpoint < 1) return false;
@@ -151,9 +151,9 @@ bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descripto
 	uint32_t interval = descriptors[24];
 #endif
 	println("polling interval = ", interval);
-	datapipe = new_Pipe(dev, 3, endpoint, 1, 8, interval);
+	datapipe = usb_host_port->new_Pipe(dev, 3, endpoint, 1, 8, interval);
 	datapipe->callback_function = callback;
-	queue_Data_Transfer(datapipe, report, 8, this);
+	usb_host_port->queue_Data_Transfer(datapipe, report, 8, this);
 
 	// see if this device in list of devices that need to be set in
 	// boot protocol mode
@@ -173,7 +173,7 @@ bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descripto
 	} else {
 		mk_setup(setup, 0x21, 10, 0, 0, 0); // 10=SET_IDLE
 	}
-	queue_Control_Transfer(dev, &setup, NULL, this);
+	usb_host_port->queue_Control_Transfer(dev, &setup, NULL, this);
 	control_queued = true;
 	return true;
 }
@@ -182,7 +182,7 @@ void KeyboardController::control(const Transfer_t *transfer)
 {
 	println("control callback (keyboard)");
 	control_queued = false;
-	print_hexbytes(transfer->buffer, transfer->length);
+	PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 	// To decode hex dump to human readable HID report summary:
 	//   http://eleccelerator.com/usbdescreqparser/
 	uint32_t mesg = transfer->setup.word1;
@@ -190,7 +190,7 @@ void KeyboardController::control(const Transfer_t *transfer)
 	if (mesg == 0x00B21 && transfer->length == 0) { // SET_PROTOCOL
 		mk_setup(setup, 0x21, 10, 0, 0, 0); // 10=SET_IDLE
 		control_queued = true;
-		queue_Control_Transfer(device, &setup, NULL, this);
+		usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);
 	} else if (force_boot_protocol) {
 		forceBootProtocol();	// lets setup to do the boot protocol
 		force_boot_protocol = false;	// turn back off
@@ -210,7 +210,7 @@ void KeyboardController::forceBootProtocol()
 	if (device && !control_queued) {
 		mk_setup(setup, 0x21, 11, 0, 0, 0); // 11=SET_PROTOCOL  BOOT
 		control_queued = true;
-		queue_Control_Transfer(device, &setup, NULL, this);		
+		usb_host_port->queue_Control_Transfer(device, &setup, NULL, this);		
 	} else {
 		force_boot_protocol = true;	// let system know we want to force this.
 	}
@@ -243,7 +243,7 @@ void KeyboardController::new_data(const Transfer_t *transfer)
 {
 	println("KeyboardController Callback (member)");
 	print("  KB Data: ");
-	print_hexbytes(transfer->buffer, 8);
+	PrintDebug::print_hexbytes(transfer->buffer, 8);
 	for (int i=2; i < 8; i++) {
 		uint32_t key = prev_report[i];
 		if (key >= 4 && !contains(key, report)) {
@@ -282,7 +282,7 @@ void KeyboardController::new_data(const Transfer_t *transfer)
 		}
 	}
 	memcpy(prev_report, report, 8);
-	queue_Data_Transfer(datapipe, report, 8, this);
+	usb_host_port->queue_Data_Transfer(datapipe, report, 8, this);
 }
 
 
@@ -412,7 +412,7 @@ void KeyboardController::updateLEDS() {
 	if (device != nullptr) {
 		// Only do it this way if we are a standard USB device
 		mk_setup(setup, 0x21, 9, 0x200, 0, sizeof(leds_.byte)); // hopefully this sets leds
-		queue_Control_Transfer(device, &setup, &leds_.byte, this);
+		usb_host_port->queue_Control_Transfer(device, &setup, &leds_.byte, this);
 	} else {
 		// Bluetooth, need to setup back channel to Bluetooth controller. 
 	}
@@ -565,7 +565,7 @@ bool KeyboardController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 	USBHDBGSerial.printf("KeyboardController::process_bluetooth_HID_data\n");
 	if (data[0] != 1) return false;
 	print("  KB Data: ");
-	print_hexbytes(data, length);
+	PrintDebug::print_hexbytes(data, length);
 	for (int i=2; i < length; i++) {
 		uint32_t key = prev_report[i];
 		if (key >= 4 && !contains(key, report)) {

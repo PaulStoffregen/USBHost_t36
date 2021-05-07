@@ -34,18 +34,18 @@
 #define ANTPLUS_2_PID   0x1008
 #define ANTPLUS_M_PID   0x1009
 
-#define print   USBHost::print_
-#define println USBHost::println_
+#define print   PrintDebug::print_
+#define println PrintDebug::println_
 
 
 #define ENABLE_SERIALPRINTF   1
 
 #if ENABLE_SERIALPRINTF
 #undef printf
-#define printf(...) Serial.printf(__VA_ARGS__); Serial.write("\r\n")
+#define printf_(...) Serial.printf(__VA_ARGS__); Serial.write("\r\n")
 #else
 #undef printf
-#define printf(...)    
+#define printf_(...)    
 #endif
 
 
@@ -54,7 +54,7 @@ void AntPlus::init()
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
 	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
-	driver_ready_for_device(this);
+	usb_host_port->driver_ready_for_device(this);
 	user_onStatusChange = NULL;
 	user_onDeviceID = NULL;
 	user_onHeartRateMonitor = NULL;
@@ -87,9 +87,9 @@ bool AntPlus::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_
 			uint8_t epType = p[3] & 0x03;
 			uint16_t epSize = p[4] | (p[5] << 8);
 			if (epType == 2 && (epAddr & 0xF0) == 0x00) { // Bulk OUT
-				txpipe = new_Pipe(dev, 2, epAddr, 0, epSize);
+				txpipe = usb_host_port->new_Pipe(dev, 2, epAddr, 0, epSize);
 			} else if (epType == 2 && (epAddr & 0xF0) == 0x80) { // Bulk IN
-				rxpipe = new_Pipe(dev, 2, epAddr & 0x0F, 1, epSize);
+				rxpipe = usb_host_port->new_Pipe(dev, 2, epAddr & 0x0F, 1, epSize);
 			}
 		}
 		p += descriptorLength;
@@ -105,7 +105,7 @@ bool AntPlus::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_
 		first_update = true;
 		txready = true;
 		updatetimer.start(500000);
-		queue_Data_Transfer(rxpipe, rxpacket, 64, this);
+		usb_host_port->queue_Data_Transfer(rxpipe, rxpacket, 64, this);
 		rxlen = 0;
 		do_polling = false;
 		return true;
@@ -136,9 +136,9 @@ void AntPlus::rx_data(const Transfer_t *transfer)
 {
 	uint32_t len = transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF);
 	//println("ant rx, len=", len);
-	//print_hexbytes(transfer->buffer, len);
+	//PrintDebug::print_hexbytes(transfer->buffer, len);
 	if (len < 1 || len > 64) {
-		queue_Data_Transfer(rxpipe, rxpacket, 64, this);
+		usb_host_port->queue_Data_Transfer(rxpipe, rxpacket, 64, this);
 		rxlen = 0;
 	} else {
 		rxlen = len; // signal arrival of data to Task()
@@ -170,7 +170,7 @@ size_t AntPlus::write(const void *data, const size_t size)
 {
 	//print("write ", size);
 	//print(" bytes: ");
-	//print_hexbytes(data, size);
+	//PrintDebug::print_hexbytes(data, size);
 	if (size > 64) return 0;
 	uint32_t head = txhead;
 	if (++head >= sizeof(txbuffer)) head = 0;
@@ -194,10 +194,10 @@ size_t AntPlus::write(const void *data, const size_t size)
 	txhead = head + size;
 	//print("head=", txhead);
 	//println(", tail=", txtail);
-	//print_hexbytes(txbuffer, 60);
-	NVIC_DISABLE_IRQ(IRQ_USBHS);
+	//PrintDebug::print_hexbytes(txbuffer, 60);
+	NVIC_DISABLE_IRQ(IRQ_USBHS_(usb_host_port->host_port));
 	transmit();
-	NVIC_ENABLE_IRQ(IRQ_USBHS);
+	NVIC_ENABLE_IRQ(IRQ_USBHS_(usb_host_port->host_port));
 	return size;
 }
 
@@ -221,7 +221,7 @@ void AntPlus::transmit()
 		//println("tx size=", size);
 	}
 	//txtail = tail + size;
-	queue_Data_Transfer(txpipe, txbuffer + tail + 1, size, this);
+	usb_host_port->queue_Data_Transfer(txpipe, txbuffer + tail + 1, size, this);
 	//txtimer.start(8000);
 	txready = false;
 }
@@ -252,17 +252,17 @@ void AntPlus::Task()
 	uint32_t len = rxlen;
 	if (len) {
 		handleMessages(rxpacket, len);
-		NVIC_DISABLE_IRQ(IRQ_USBHS);
-		queue_Data_Transfer(rxpipe, rxpacket, 64, this);
+		NVIC_DISABLE_IRQ(IRQ_USBHS_(usb_host_port->host_port));
+		usb_host_port->queue_Data_Transfer(rxpipe, rxpacket, 64, this);
 		rxlen = 0;
-		NVIC_ENABLE_IRQ(IRQ_USBHS);
+		NVIC_ENABLE_IRQ(IRQ_USBHS_(usb_host_port->host_port));
 	}
 	if (do_polling) {
 		do_polling = false;
 		for (int i = 0; i < PROFILE_TOTAL; i++) {
 			TDCONFIG *cfg = &ant.dcfg[i];
 			if (!(cfg->flags.profileValid)) continue;
-			//printf("#### %i %i: %i %i %i ####", i, cfg->channel,
+			//printf_("#### %i %i: %i %i %i ####", i, cfg->channel,
 			// cfg->flags.channelStatus, cfg->flags.keyAccepted,
 			// cfg->flags.chanIdOnce);
 			if (cfg->flags.channelStatus) {
@@ -331,7 +331,7 @@ int AntPlus::msgCheckIntegrity(uint8_t *stream, const int len)
 		crc ^= stream[STREAM_DATA+mlen];
 	} while (++mlen < stream[STREAM_LENGTH]);
 
-	//printf("crc == 0x%X: msg crc = 0x%X\n", crc, stream[stream[STREAM_LENGTH] + 3]);
+	//printf_("crc == 0x%X: msg crc = 0x%X\n", crc, stream[stream[STREAM_LENGTH] + 3]);
 	return (crc == stream[stream[STREAM_LENGTH] + 3]);
 }
 
@@ -355,19 +355,19 @@ int AntPlus::handleMessages(uint8_t *buffer, int tBytes)
 	while (tBytes > 0){
 		stream = findStreamSync(stream, tBytes, &syncOffset);
 		if (stream == NULL){
-			//printf("stream sync not found {size:%i}\n", tBytes);
+			//printf_("stream sync not found {size:%i}\n", tBytes);
 			return 0;
 		}
 		tBytes -= syncOffset;
 
 		if (!msgCheckIntegrity(stream, tBytes)){
-			//printf("stream integrity failed {size:%i}\n", tBytes);
+			//printf_("stream integrity failed {size:%i}\n", tBytes);
 			return 0;
 		}
 
 		//we have a valid message
 		//if (dispatchMessage(stream, tBytes) == -1){
-			//printf("quiting..\n");
+			//printf_("quiting..\n");
 			//return 0;
 		//}
 		message_event(stream[STREAM_CHANNEL], stream[STREAM_MESSAGE],
@@ -395,26 +395,26 @@ void AntPlus::sendMessageChannelStatus(TDCONFIG *cfg, const uint32_t channelStat
 void AntPlus::message_channel(const int chan, const int eventId,
 	const uint8_t *payload, const size_t dataLength)
 {
-	//printf(" $ chan event: chan:%i, msgId:0x%.2X, payload:%p, dataLen:%i, uPtr:%p", chan, eventId, payload, (int)dataLength, uPtr);
+	//printf_(" $ chan event: chan:%i, msgId:0x%.2X, payload:%p, dataLen:%i, uPtr:%p", chan, eventId, payload, (int)dataLength, uPtr);
 	//dump_hexbytes(payload, dataLength);
 
 	TDCONFIG *cfg = &(ant.dcfg[chan]);
 
 	switch (eventId){
 	  case EVENT_RX_SEARCH_TIMEOUT:
-	  	printf(" $ event RX search timeout");
+	  	printf_(" $ event RX search timeout");
 	  	break;
 
 	  case EVENT_RX_FAIL:
-	  	//printf(" $ event RX fail");
+	  	//printf_(" $ event RX fail");
 	  	break;
 
 	  case EVENT_TX:
-	  	//printf(" $ event TX");
+	  	//printf_(" $ event TX");
 	  	break;
 
 	  case EVENT_RX_BROADCAST:
-	  	//printf(" $ event RX broadcast ");
+	  	//printf_(" $ event RX broadcast ");
 	  	if (!cfg->flags.chanIdOnce) {
 	  		cfg->flags.chanIdOnce = 1;
 	  		RequestMessage(cfg->channel, MESG_CHANNEL_ID_ID);
@@ -428,17 +428,17 @@ void AntPlus::message_channel(const int chan, const int eventId,
 void AntPlus::message_response(const int chan, const int msgId,
 	const uint8_t *payload, const size_t dataLength)
 {
-	//printf(" # response event: msgId:0x%.2X, payload:%p, dataLen:%i, uPtr:%p", msgId, payload, dataLength, uPtr);
+	//printf_(" # response event: msgId:0x%.2X, payload:%p, dataLen:%i, uPtr:%p", msgId, payload, dataLength, uPtr);
 	TDCONFIG *cfg = (TDCONFIG*)&(ant.dcfg[chan]);
 
 	switch (msgId){
 	  case MESG_EVENT_ID:
-	  	//printf(" * event");
+	  	//printf_(" * event");
 	  	message_channel(chan, payload[STREAM_EVENT_EVENTID], payload, dataLength);
 	  	break;
 
 	  case MESG_NETWORK_KEY_ID:
-	  	printf("[%i] * network key accepted", chan);
+	  	printf_("[%i] * network key accepted", chan);
 	  	cfg->flags.keyAccepted = 1;
 	  	if (cfg->transType == ANT_TRANSMISSION_MASTER)
 	  		AssignChannel(cfg->channel, PARAMETER_TX_NOT_RX, cfg->networkNumber);
@@ -447,37 +447,37 @@ void AntPlus::message_response(const int chan, const int msgId,
 	  	break;
 
 	  case MESG_ASSIGN_CHANNEL_ID:
-	  	printf("[%i]  * channel assign accepted", chan);
+	  	printf_("[%i]  * channel assign accepted", chan);
 	  	SetChannelPeriod(cfg->channel, cfg->channelPeriod);
 	  	break;
 
 	  case MESG_CHANNEL_MESG_PERIOD_ID:
-		printf("[%i]  * channel mesg period accepted", chan);
+		printf_("[%i]  * channel mesg period accepted", chan);
 		SetChannelSearchTimeout(cfg->channel, cfg->searchTimeout);
 		break;
 
 	  case MESG_CHANNEL_SEARCH_TIMEOUT_ID:
-	  	printf("[%i]  * search timeout period accepted", chan);
+	  	printf_("[%i]  * search timeout period accepted", chan);
 	  	SetChannelRFFreq(cfg->channel, cfg->RFFreq);
 	  	break;
 
 	  case MESG_CHANNEL_RADIO_FREQ_ID:
-	  	printf("[%i]  * radio freq accepted", chan);
+	  	printf_("[%i]  * radio freq accepted", chan);
 	  	SetSearchWaveform(cfg->channel, cfg->searchWaveform);
 	  	break;
 
 	  case MESG_SEARCH_WAVEFORM_ID:
-	  	printf("[%i]  * search waveform accepted", chan);
+	  	printf_("[%i]  * search waveform accepted", chan);
 	  	SetChannelId(cfg->channel, cfg->deviceNumber, cfg->deviceType, cfg->transType);
 	  	break;
 
 	  case MESG_CHANNEL_ID_ID:
-	  	printf("[%i]  * set channel id accepted", chan);
+	  	printf_("[%i]  * set channel id accepted", chan);
 	  	OpenChannel(cfg->channel);
 	  	break;
 
 	  case MESG_OPEN_CHANNEL_ID:
-	  	printf("[%i]  * open channel accepted", chan);
+	  	printf_("[%i]  * open channel accepted", chan);
 	  	//cfg->flags.channelStatus = 1;
 	  	RequestMessage(cfg->channel, MESG_CHANNEL_STATUS_ID);
 	  	RequestMessage(cfg->channel, MESG_CAPABILITIES_ID);
@@ -485,69 +485,69 @@ void AntPlus::message_response(const int chan, const int msgId,
 	  	break;
 
  	  case MESG_UNASSIGN_CHANNEL_ID:
-		printf("[%i]  * channel Unassigned", chan);
+		printf_("[%i]  * channel Unassigned", chan);
 		break;
 
 	  case MESG_CLOSE_CHANNEL_ID:
-		printf("[%i]  * channel CLOSED", chan);
+		printf_("[%i]  * channel CLOSED", chan);
 		cfg->flags.keyAccepted = 0;
 		sendMessageChannelStatus(cfg, ANT_CHANNEL_STATUS_UNASSIGNED);
 		break;
 
  	  case CHANNEL_IN_WRONG_STATE:
-		printf("[%i]  * channel in wrong state", chan);
+		printf_("[%i]  * channel in wrong state", chan);
 		break;
 
  	  case CHANNEL_NOT_OPENED:
-		printf("[%i]  * channel not opened", chan);
+		printf_("[%i]  * channel not opened", chan);
 		break;
 
  	  case CHANNEL_ID_NOT_SET: //??
-		printf("[%i]  * channel ID not set", chan);
+		printf_("[%i]  * channel ID not set", chan);
 		break;
 
  	  case CLOSE_ALL_CHANNELS: // Start RX Scan mode
-		printf("[%i]  * close all channels", chan);
+		printf_("[%i]  * close all channels", chan);
 		break;
 
  	  case TRANSFER_IN_PROGRESS: // TO ack message ID
-		printf("[%i]  * tranfer in progress", chan);
+		printf_("[%i]  * tranfer in progress", chan);
 		break;
 
  	  case TRANSFER_SEQUENCE_NUMBER_ERROR:
-		printf("[%i]  * transfer sequence number error", chan);
+		printf_("[%i]  * transfer sequence number error", chan);
 		break;
 
  	  case TRANSFER_IN_ERROR:
-		printf("[%i]  * transfer in error", chan);
+		printf_("[%i]  * transfer in error", chan);
 		break;
 
  	  case INVALID_MESSAGE:
-		printf("[%i]  * invalid message", chan);
+		printf_("[%i]  * invalid message", chan);
 		break;
 
  	  case INVALID_NETWORK_NUMBER:
-		printf("[%i]  * invalid network number", chan);
+		printf_("[%i]  * invalid network number", chan);
 		break;
 
  	  case INVALID_LIST_ID:
-		printf("[%i]  * invalid list ID", chan);
+		printf_("[%i]  * invalid list ID", chan);
 		break;
 
  	  case INVALID_SCAN_TX_CHANNEL:
-		printf("[%i]  * invalid Scanning transmit channel", chan);
+		printf_("[%i]  * invalid Scanning transmit channel", chan);
 		break;
 
  	  case INVALID_PARAMETER_PROVIDED:
-		printf("[%i]  * invalid parameter provided", chan);
+		printf_("[%i]  * invalid parameter provided", chan);
    		break;
 
  	  case EVENT_QUE_OVERFLOW:
-		printf("[%i]  * queue overflow", chan);
+		printf_("[%i]  * queue overflow", chan);
 		break;
 
 	  default:
-	  	printf("[i] #### unhandled response id %i", chan, msgId);
+	  	printf_("[i] #### unhandled response id %i", chan, msgId);
 		;
 	};
 }
@@ -556,7 +556,7 @@ void AntPlus::message_response(const int chan, const int msgId,
 void AntPlus::message_event(const int channel, const int msgId,
 	const uint8_t *payload, const size_t dataLength)
 {
-	//printf(" @ msg event cb: Chan:%i, Id:0x%.2X, payload:%p, len:%i, ptr:%p", channel, msgId, payload, (int)dataLength, uPtr);
+	//printf_(" @ msg event cb: Chan:%i, Id:0x%.2X, payload:%p, len:%i, ptr:%p", channel, msgId, payload, (int)dataLength, uPtr);
 	//dump_hexbytes(payload, dataLength);
 
 	uint8_t chan = 0;
@@ -564,14 +564,14 @@ void AntPlus::message_event(const int channel, const int msgId,
 
 	switch(msgId) {
 	  case MESG_BROADCAST_DATA_ID:
-	  	//printf(" @ broadcast data \n");
+	  	//printf_(" @ broadcast data \n");
 		//dumpPayload(payload, dataLength);
 		message_channel(chan, EVENT_RX_BROADCAST, payload, dataLength);
 	  	break;
 
 	  case MESG_STARTUP_MESG_ID:
 	  	// reason == ANT_STARTUP_RESET_xxxx
-	  	//printf(" @ start up mesg reason: 0x%X", payload[STREAM_STARTUP_REASON]);
+	  	//printf_(" @ start up mesg reason: 0x%X", payload[STREAM_STARTUP_REASON]);
 	  	//TDCONFIG *cfg = &(ant.dcfg[0]);
 		//SetNetworkKey(cfg->networkNumber, getAntKey(cfg->keyIdx));
 		SetNetworkKey(ant.dcfg[0].networkNumber, getAntKey(ant.key));
@@ -583,23 +583,23 @@ void AntPlus::message_event(const int channel, const int msgId,
 	  	break;
 
 	  case MESG_CHANNEL_STATUS_ID:
-	  	//printf(" @ channel status for channel %i is %i",
+	  	//printf_(" @ channel status for channel %i is %i",
 		//   payload[STREAM_CHANNEL_ID], payload[STREAM_CHANNEL_STATUS]);
 	  	//TDCONFIG *cfg = (TDCONFIG*)&ant->dcfg[payload[STREAM_CHANNEL_ID]];
 	  	sendMessageChannelStatus(&(ant.dcfg[payload[STREAM_CHANNEL_ID]]),
 			payload[STREAM_CHANNELSTATUS_STATUS] & ANT_CHANNEL_STATUS_MASK);
 		//if (cfg->flags.channelStatus != STATUS_TRACKING_CHANNEL)
-		//	printf("channel %i status: %s", payload[STREAM_CHANNEL_ID],
+		//	printf_("channel %i status: %s", payload[STREAM_CHANNEL_ID],
 		//	 channelStatusStr[cfg->flags.channelStatus]);
 	  	break;
 
 	  case MESG_CAPABILITIES_ID:
-		printf(" @ capabilities:");
-		printf("   Max ANT Channels: %i",payload[STREAM_CAP_MAXCHANNELS]);
-		printf("   Max ANT Networks: %i",payload[STREAM_CAP_MAXNETWORKS]);
-		printf("   Std. option: 0x%X",payload[STREAM_CAP_STDOPTIONS]);
-		printf("   Advanced: 0x%X",payload[STREAM_CAP_ADVANCED]);
-		printf("   Advanced2: 0x%X",payload[STREAM_CAP_ADVANCED2]);
+		printf_(" @ capabilities:");
+		printf_("   Max ANT Channels: %i",payload[STREAM_CAP_MAXCHANNELS]);
+		printf_("   Max ANT Networks: %i",payload[STREAM_CAP_MAXNETWORKS]);
+		printf_("   Std. option: 0x%X",payload[STREAM_CAP_STDOPTIONS]);
+		printf_("   Advanced: 0x%X",payload[STREAM_CAP_ADVANCED]);
+		printf_("   Advanced2: 0x%X",payload[STREAM_CAP_ADVANCED2]);
 	  	break;
 
 	case MESG_CHANNEL_ID_ID:
@@ -607,7 +607,7 @@ void AntPlus::message_event(const int channel, const int msgId,
         	//ant.dcfg[chan].dev.deviceId = payload[STREAM_CHANNELID_DEVNO_LO] | (payload[STREAM_CHANNELID_DEVNO_HI] << 8);
 		//ant.dcfg[chan].dev.deviceType = payload[STREAM_CHANNELID_DEVTYPE];
 		//ant.dcfg[chan].dev.transType = payload[STREAM_CHANNELID_TRANTYPE];
-		//printf(" @ CHANNEL ID: channel %i, deviceId:%i, deviceType:%i, transType:%i)", chan, cfg->dev.deviceId, cfg->dev.deviceType, cfg->dev.transType);
+		//printf_(" @ CHANNEL ID: channel %i, deviceId:%i, deviceType:%i, transType:%i)", chan, cfg->dev.deviceId, cfg->dev.deviceType, cfg->dev.transType);
 		if (user_onDeviceID) {
 			int devid = payload[STREAM_CHANNELID_DEVNO_LO];
 			devid |= payload[STREAM_CHANNELID_DEVNO_HI] << 8;
@@ -617,8 +617,8 @@ void AntPlus::message_event(const int channel, const int msgId,
 		}
 #if 0
 		if (cfg->dev.scidDeviceType != cfg->deviceType){
-			printf(" @ CHANNEL ID: this is not the device we're looking for");
-			printf(" @ CHANNEL ID: expecting 0x%X but found 0x%X", cfg->deviceType, cfg->dev.scidDeviceType);
+			printf_(" @ CHANNEL ID: this is not the device we're looking for");
+			printf_(" @ CHANNEL ID: expecting 0x%X but found 0x%X", cfg->deviceType, cfg->dev.scidDeviceType);
          		//CloseChannel(cfg->channel);
          		return;
          	}
@@ -626,7 +626,7 @@ void AntPlus::message_event(const int channel, const int msgId,
 		break;
 
 	case MESG_VERSION_ID:
-		printf(" @ version: '%s'", (char*)&payload[STREAM_VERSION_STRING]);
+		printf_(" @ version: '%s'", (char*)&payload[STREAM_VERSION_STRING]);
 		break;
 	};
 }
@@ -1119,7 +1119,7 @@ void AntPlus::payload_HRM(TDCONFIG *cfg, const uint8_t *data, const size_t dataL
 	hrm.previous.time = time;
 	hrm.previous.sequence = sequence;
 	hrm.previous.bpm = bpm;
-	//printf("payload_HRM: page:%i, Sequence:%i, BPM:%i, %i %i",
+	//printf_("payload_HRM: page:%i, Sequence:%i, BPM:%i, %i %i",
 	//  data[1]&0x0F, sequence, bpm, time, interval);
 }
 
@@ -1151,13 +1151,13 @@ void AntPlus::payload_SPDCAD(TDCONFIG *cfg, const uint8_t *data, const size_t da
 	spdcad.previous.cadenceCt = cadenceCt;
 	spdcad.previous.speedTime = speedTime;
 	spdcad.previous.speedCt = speedCt;
-	//printf("payload_SPDCAD: speed: %.2f, cadence: %i, total distance: %.2f",
+	//printf_("payload_SPDCAD: speed: %.2f, cadence: %i, total distance: %.2f",
 	//  speed, cadence, spdcad.distance);
 }
 
 void AntPlus::payload_POWER(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength)
 {
-	//printf("payload_POWER: len:%i", dataLength);
+	//printf_("payload_POWER: len:%i", dataLength);
 #if 0
 	uint8_t eventCount = data[2];
 	uint8_t pedalPowerContribution = ((data[3] != 0xFF) && (data[3]&0x80)) ; // left/right is defined if NOT 0xFF (= no Pedal Power) AND BIT 7 is set
@@ -1171,7 +1171,7 @@ void AntPlus::payload_POWER(TDCONFIG *cfg, const uint8_t *data, const size_t dat
 
 void AntPlus::payload_STRIDE(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength)
 {
-	//printf("payload_STRIDE: len:%i", dataLength);
+	//printf_("payload_STRIDE: len:%i", dataLength);
 	int page = data[1];
 	if (page == 0) {
 		//stride.current.strides = data[7];
@@ -1188,7 +1188,7 @@ void AntPlus::payload_STRIDE(TDCONFIG *cfg, const uint8_t *data, const size_t da
 
 void AntPlus::payload_SPEED(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength)
 {
-	//printf("payload_SPEED: len:%i", dataLength);
+	//printf_("payload_SPEED: len:%i", dataLength);
 	uint16_t speedTime = data[5] | (data[6] << 8);
 	uint16_t speedCt = data[7] | (data[8] << 8);
 	if (speedTime == spd.previous.speedTime && speedCt == spd.previous.speedCt) {
@@ -1211,7 +1211,7 @@ void AntPlus::payload_SPEED(TDCONFIG *cfg, const uint8_t *data, const size_t dat
 
 void AntPlus::payload_CADENCE(TDCONFIG *cfg, const uint8_t *data, const size_t dataLength)
 {
-	//printf("payload_CADENCE: len:%i", dataLength);
+	//printf_("payload_CADENCE: len:%i", dataLength);
 	uint16_t cadenceTime = data[5] | (data[6] << 8);
 	uint16_t cadenceCt = data[7] | (data[8] << 8);
 	if (cadenceTime == cad.previous.cadenceTime

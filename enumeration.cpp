@@ -28,45 +28,29 @@
 // USB devices are managed from this file.
 
 
-// List of all connected devices, regardless of their status.  If
-// it's connected to the EHCI port or any port on any hub, it needs
-// to be linked into this list.
-static Device_t  *devlist=NULL;
+static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen)
+{
+	pipe->qh.capabilities[0] = (pipe->qh.capabilities[0] & 0xF800FFFF) | (maxlen << 16);
+}
 
-// List of all inactive drivers.  At the end of enumeration, when
-// drivers claim the device or its interfaces, they are removed
-// from this list and linked into the list of active drivers on
-// that device.  When devices disconnect, the drivers are returned
-// to this list, making them again available for enumeration of new
-// devices.
-static USBDriver *available_drivers = NULL;
+static void pipe_set_addr(Pipe_t *pipe, uint32_t addr)
+{
+	pipe->qh.capabilities[0] = (pipe->qh.capabilities[0] & 0xFFFFFF80) | addr;
+}
 
-// Static buffers used during enumeration.  One a single USB device
-// may enumerate at once, because USB address zero is used, and
-// because this static buffer & state info can't be shared.
-static uint8_t enumbuf[512] __attribute__ ((aligned(16)));
-static setup_t enumsetup __attribute__ ((aligned(16)));
-static uint16_t enumlen;
-
-// True while any device is present but not yet fully configured.
-// Only one USB device may be in this state at a time (responding
-// to address zero) and using the enumeration static buffer.
-volatile bool USBHost::enumeration_busy = false;
+#define print   PrintDebug::print_
+#define println PrintDebug::println_
 
 
+void convertStringDescriptorToASCIIString(uint8_t string_index, Device_t *dev, const Transfer_t *transfer);
 
-static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen);
-static void pipe_set_addr(Pipe_t *pipe, uint32_t addr);
-
-#define print   USBHost::print_
-#define println USBHost::println_
 
 // The main user function to cause internal state to update.  Since we do
 // almost everything with DMA and interrupts, the only work to do here is
 // call all the active driver Task() functions.
 void USBHost::Task()
 {
-	for (Device_t *dev = devlist; dev; dev = dev->next) {
+	for (Device_t *dev = usb_host_port->devlist; dev; dev = dev->next) {
 		for (USBDriver *driver = dev->drivers; driver; driver = driver->next) {
 			(driver->Task)();
 		}
@@ -79,23 +63,29 @@ void USBHost::Task()
 // or even printing debug messages should be avoided here.  Just initialize
 // lists and return.
 //
-void USBHost::driver_ready_for_device(USBDriver *driver)
+void USBHostPort::driver_ready_for_device(USBDriver *driver)
 {
 	driver->device = NULL;
 	driver->next = NULL;
 	if (available_drivers == NULL) {
 		available_drivers = driver;
-	} else {
+	} else if (available_drivers != driver) {
 		// append to end of list
 		USBDriver *last = available_drivers;
-		while (last->next) last = last->next;
+		while (last->next) {
+			if (last == driver) {
+				// Driver already in list (avoid infinite loop if added twice)
+				return;
+			}
+			last = last->next;
+		}
 		last->next = driver;
 	}
 }
 
 // Create a new device and begin the enumeration process
 //
-Device_t * USBHost::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port)
+Device_t * USBHostPort::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port)
 {
 	Device_t *dev;
 
@@ -120,11 +110,11 @@ Device_t * USBHost::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_p
 		return NULL;
 	}
 	dev->strbuf = allocate_string_buffer();  // try to allocate a string buffer; 
-	dev->control_pipe->callback_function = &enumeration;
+	dev->control_pipe->callback_function = enumeration_callback;
 	dev->control_pipe->direction = 1; // 1=IN
 	// Here is where the enumeration process officially begins.
 	// Only a single device can enumerate at a time.
-	USBHost::enumeration_busy = true;
+	enumeration_busy = true;
 	mk_setup(enumsetup, 0x80, 6, 0x0100, 0, 8); // 6=GET_DESCRIPTOR
 	queue_Control_Transfer(dev, &enumsetup, enumbuf, NULL);
 	if (devlist == NULL) {
@@ -144,7 +134,7 @@ Device_t * USBHost::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_p
 // Otherwise, the control transfer is part of the enumeration process,
 // which is implemented here.
 //
-void USBHost::enumeration(const Transfer_t *transfer)
+void USBHostPort::enumeration(const Transfer_t *transfer)
 {
 	Device_t *dev;
 	uint32_t len;
@@ -156,7 +146,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 	}
 
 	println("enumeration:");
-	//print_hexbytes(transfer->buffer, transfer->length);
+	//PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
 	//print(transfer);
 	dev = transfer->pipe->device;
 
@@ -183,7 +173,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 2;
 			return;
 		case 2: // parse 18 device desc bytes
-			print_device_descriptor(enumbuf);
+			PrintDebug::print_device_descriptor(enumbuf);
 			dev->bDeviceClass = enumbuf[4];
 			dev->bDeviceSubClass = enumbuf[5];
 			dev->bDeviceProtocol = enumbuf[6];
@@ -222,7 +212,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 6;
 			return;
 		case 6: // parse Manufacturer string
-			print_string_descriptor("Manufacturer: ", enumbuf + 4);
+			PrintDebug::print_string_descriptor("Manufacturer: ", enumbuf + 4);
 			convertStringDescriptorToASCIIString(0, dev, transfer);
 			// TODO: receive the string...
 			if (enumbuf[1]) dev->enum_state = 7;
@@ -236,7 +226,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 8;
 			return;
 		case 8: // parse Product string
-			print_string_descriptor("Product: ", enumbuf + 4);
+			PrintDebug::print_string_descriptor("Product: ", enumbuf + 4);
 			convertStringDescriptorToASCIIString(1, dev, transfer);
 			if (enumbuf[2]) dev->enum_state = 9;
 			else dev->enum_state = 11;
@@ -248,7 +238,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 10;
 			return;
 		case 10: // parse Serial Number string
-			print_string_descriptor("Serial Number: ", enumbuf + 4);
+			PrintDebug::print_string_descriptor("Serial Number: ", enumbuf + 4);
 			convertStringDescriptorToASCIIString(2, dev, transfer);
 			dev->enum_state = 11;
 			break;
@@ -269,7 +259,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->enum_state = 13;
 			return;
 		case 13: // read all config desc, send set config
-			print_config_descriptor(enumbuf, sizeof(enumbuf));
+			PrintDebug::print_config_descriptor(enumbuf, sizeof(enumbuf));
 			dev->bmAttributes = enumbuf[7];
 			dev->bMaxPower = enumbuf[8];
 			// TODO: actually do something with interface descriptor?
@@ -284,7 +274,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			// more devices are waiting, the hub driver is responsible
 			// for resetting their ports and starting their enumeration
 			// when the port enables.
-			USBHost::enumeration_busy = false;
+			enumeration_busy = false;
 			return;
 		case 15: // control transfers for other stuff?
 			// TODO: handle other standard control: set/clear feature, etc
@@ -294,7 +284,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 	}
 }
 
-void  USBHost::convertStringDescriptorToASCIIString(uint8_t string_index, Device_t *dev, const Transfer_t *transfer) {
+void convertStringDescriptorToASCIIString(uint8_t string_index, Device_t *dev, const Transfer_t *transfer) {
 	strbuf_t *strbuf = dev->strbuf; 
 	if (!strbuf) return;	// don't have a buffer
 
@@ -324,7 +314,7 @@ void  USBHost::convertStringDescriptorToASCIIString(uint8_t string_index, Device
 }
 
 
-void USBHost::claim_drivers(Device_t *dev)
+void USBHostPort::claim_drivers(Device_t *dev)
 {
 	USBDriver *driver, *prev=NULL;
 
@@ -394,7 +384,7 @@ void USBHost::claim_drivers(Device_t *dev)
 	}
 }
 
-static bool address_in_use(uint32_t addr)
+bool USBHostPort::address_in_use(uint32_t addr)
 {
 	for (Device_t *p = devlist; p; p = p->next) {
 		if (p->address == addr) return true;
@@ -402,7 +392,7 @@ static bool address_in_use(uint32_t addr)
 	return false;
 }
 
-uint32_t USBHost::assign_address(void)
+uint32_t USBHostPort::assign_address(void)
 {
 	static uint8_t last_assigned_address=0;
 	uint32_t addr = last_assigned_address;
@@ -415,18 +405,8 @@ uint32_t USBHost::assign_address(void)
 	}
 }
 
-static void pipe_set_maxlen(Pipe_t *pipe, uint32_t maxlen)
-{
-	pipe->qh.capabilities[0] = (pipe->qh.capabilities[0] & 0xF800FFFF) | (maxlen << 16);
-}
 
-static void pipe_set_addr(Pipe_t *pipe, uint32_t addr)
-{
-	pipe->qh.capabilities[0] = (pipe->qh.capabilities[0] & 0xFFFFFF80) | addr;
-}
-
-
-void USBHost::disconnect_Device(Device_t *dev)
+void USBHostPort::disconnect_Device(Device_t *dev)
 {
 	if (!dev) return;
 	println("disconnect_Device:");
@@ -434,8 +414,8 @@ void USBHost::disconnect_Device(Device_t *dev)
 	// Disconnect all drivers using this device.  If this device is
 	// a hub, the hub driver is responsible for recursively calling
 	// this function to disconnect its downstream devices.
-	print_driverlist("available_drivers", available_drivers);
-	print_driverlist("dev->drivers", dev->drivers);
+	PrintDebug::print_driverlist("available_drivers", available_drivers);
+	PrintDebug::print_driverlist("dev->drivers", dev->drivers);
 	for (USBDriver *p = dev->drivers; p; ) {
 		println("disconnect driver ", (uint32_t)p, HEX);
 		p->disconnect();
@@ -445,7 +425,7 @@ void USBHost::disconnect_Device(Device_t *dev)
 		available_drivers = p;
 		p = next;
 	}
-	print_driverlist("available_drivers", available_drivers);
+	PrintDebug::print_driverlist("available_drivers", available_drivers);
 
 	// delete all the pipes
 	for (Pipe_t *p = dev->data_pipes; p; ) {

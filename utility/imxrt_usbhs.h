@@ -1,28 +1,58 @@
 #ifndef IMXRT_USBHS_H_
 #define IMXRT_USBHS_H_
 
+
+// Use capture-free lambdas to create function pointers that chain-call the
+// isr() and enumeration() functions of each of the USBHostPort instances
+// (can't use instance methods as function pointers, needed for callbacks)
+#define NEW_USB_HOST_PORT(p) (new USBHostPort((p), \
+		[](void) -> void {usb_host_ports[(p)-1]->isr();}, \
+		[](const Transfer_struct *transfer) -> void {usb_host_ports[(p)-1]->enumeration(transfer);}))
+
+
 #if defined(__IMXRT1052__) || defined(__IMXRT1062__)
- 
-// Allow USB host code written for "USBHS" on Teensy 3.6 to compile for "USB2" on Teensy 4.0
+// Allow USB host code written for "USBHS" on Teensy 3.6 to compile for "USB2" on Teensy 4.x
 
-#define IRQ_USBHS		IRQ_USB2
+// Teensy 4.x has two USB OTC ports, so both are host-capable.
+// USB2 is configured to be a host port by default, and USB1 is configured to be a device port by default.
+#define NUM_USB_HOST_PORTS 	2
+#define DEFAULT_HOST_PORT	2
+#define USB_HOST_PORTS_ARR	{ NEW_USB_HOST_PORT(1), NEW_USB_HOST_PORT(2) }
 
-#define USBPHY_CTRL		USBPHY2_CTRL
-#define USBPHY_CTRL_CLR		USBPHY2_CTRL_CLR
-#define USBPHY_CTRL_SET		USBPHY2_CTRL_SET
+// Registers and constants that are host-port-specific: (p) is USB host port number
+// (p)==2 (USB2) is the default host port on Teensy 4.x
+#define IRQ_USBHS_(p)				((p)==1 ? IRQ_USB1 : IRQ_USB2)
+#define USBPHY_CTRL_(p)				((p)==1 ? USBPHY1_CTRL : USBPHY2_CTRL)
+#define USBPHY_CTRL_CLR_(p)			((p)==1 ? USBPHY1_CTRL_CLR : USBPHY2_CTRL_CLR)
+#define USBPHY_CTRL_SET_(p)			((p)==1 ? USBPHY1_CTRL_SET : USBPHY2_CTRL_SET)
+#define USBPHY_PWD_(p)				((p)==1 ? USBPHY1_PWD : USBPHY2_PWD)
+#define USBHS_USBCMD_(p)			((p)==1 ? USB1_USBCMD : USB2_USBCMD)
+#define USBHS_USBSTS_(p)			((p)==1 ? USB1_USBSTS : USB2_USBSTS)
+#define USBHS_USBINTR_(p)			((p)==1 ? USB1_USBINTR : USB2_USBINTR)
+#define USBHS_FRINDEX_(p)			((p)==1 ? USB1_FRINDEX : USB2_FRINDEX)
+#define USBHS_PERIODICLISTBASE_(p)		((p)==1 ? USB1_PERIODICLISTBASE : USB2_PERIODICLISTBASE)
+#define USBHS_ASYNCLISTADDR_(p)			((p)==1 ? USB1_ASYNCLISTADDR : USB2_ASYNCLISTADDR)
+#define USBHS_PORTSC1_(p)			((p)==1 ? USB1_PORTSC1 : USB2_PORTSC1)
+#define USBHS_USBMODE_(p)			((p)==1 ? USB1_USBMODE : USB2_USBMODE)
+#define USBHS_GPTIMER0CTL_(p)			((p)==1 ? USB1_GPTIMER0CTRL : USB2_GPTIMER0CTRL)
+#define USBHS_GPTIMER0LD_(p)			((p)==1 ? USB1_GPTIMER0LD : USB2_GPTIMER0LD)
+#define USBHS_GPTIMER1CTL_(p)			((p)==1 ? USB1_GPTIMER1CTRL : USB2_GPTIMER1CTRL)
+#define USBHS_GPTIMER1LD_(p)			((p)==1 ? USB1_GPTIMER1LD : USB2_GPTIMER1LD)
+#define CCM_ANALOG_PLL_USB_(p)			((p)==1 ? CCM_ANALOG_PLL_USB1 : CCM_ANALOG_PLL_USB2)
+#define CCM_ANALOG_PLL_USB_DIV_SELECT_(p)	((p)==1 ? CCM_ANALOG_PLL_USB1_DIV_SELECT : CCM_ANALOG_PLL_USB2_DIV_SELECT)
+#define CCM_ANALOG_PLL_USB_CLR_(p)		((p)==1 ? CCM_ANALOG_PLL_USB1_CLR : CCM_ANALOG_PLL_USB2_CLR)
+#define CCM_ANALOG_PLL_USB_SET_(p)		((p)==1 ? CCM_ANALOG_PLL_USB1_SET : CCM_ANALOG_PLL_USB2_SET)
+#define CCM_ANALOG_PLL_USB_BYPASS_(p)		((p)==1 ? CCM_ANALOG_PLL_USB1_BYPASS : CCM_ANALOG_PLL_USB2_BYPASS)
+#define CCM_ANALOG_PLL_USB_POWER_(p)		((p)==1 ? CCM_ANALOG_PLL_USB1_POWER : CCM_ANALOG_PLL_USB2_POWER)
+#define CCM_ANALOG_PLL_USB_DIV_SELECT_(p)	((p)==1 ? CCM_ANALOG_PLL_USB1_DIV_SELECT : CCM_ANALOG_PLL_USB2_DIV_SELECT)
+#define CCM_ANALOG_PLL_USB_ENABLE_(p)		((p)==1 ? CCM_ANALOG_PLL_USB1_ENABLE : CCM_ANALOG_PLL_USB2_ENABLE)
+#define CCM_ANALOG_PLL_USB_EN_USB_CLKS_(p)	((p)==1 ? CCM_ANALOG_PLL_USB1_EN_USB_CLKS : CCM_ANALOG_PLL_USB2_EN_USB_CLKS)
+#define CCM_ANALOG_PLL_USB_LOCK_(p)		((p)==1 ? CCM_ANALOG_PLL_USB1_LOCK : CCM_ANALOG_PLL_USB2_LOCK)
 
-#define USBHS_USBCMD		USB2_USBCMD
-#define USBHS_USBSTS		USB2_USBSTS
-#define USBHS_USBINTR		USB2_USBINTR
-#define USBHS_FRINDEX		USB2_FRINDEX
-#define USBHS_PERIODICLISTBASE	USB2_PERIODICLISTBASE
-#define USBHS_ASYNCLISTADDR	USB2_ASYNCLISTADDR
-#define USBHS_PORTSC1		USB2_PORTSC1
-#define USBHS_USBMODE		USB2_USBMODE
-#define USBHS_GPTIMER0CTL	USB2_GPTIMER0CTRL
-#define USBHS_GPTIMER0LD	USB2_GPTIMER0LD
-#define USBHS_GPTIMER1CTL	USB2_GPTIMER1CTRL
-#define USBHS_GPTIMER1LD	USB2_GPTIMER1LD
+// TODO: what is the best setting for this register on IMXRT ???
+#define USBHS_USB_SBUSCFG_(p)	((p)==1 ? USB1_SBUSCFG : USB2_SBUSCFG)
+
+#define USBHS_USBMODE_CM(n)	USB_USBMODE_CM(n)
 
 #define USBHS_USBCMD_ASE	USB_USBCMD_ASE
 #define USBHS_USBCMD_IAA	USB_USBCMD_IAA
@@ -33,7 +63,7 @@
 #define USBHS_USBCMD_ASPE	USB_USBCMD_ASPE
 #define USBHS_USBCMD_PSE	USB_USBCMD_PSE
 #define USBHS_USBCMD_FS2	USB_USBCMD_FS_2
-#define USBHS_USBCMD_FS(n)	USB_USBCMD_FS_1(n)		
+#define USBHS_USBCMD_FS(n)	USB_USBCMD_FS_1(n)
 
 #define USBHS_USBSTS_AAI	USB_USBSTS_AAI
 #define USBHS_USBSTS_AS		USB_USBSTS_AS
@@ -72,11 +102,43 @@
 #define USBHS_GPTIMERCTL_RST	USB_GPTIMERCTRL_GPTRST
 #define USBHS_GPTIMERCTL_RUN	USB_GPTIMERCTRL_GPTRUN
 
-#define USBHS_USBMODE_CM(n)	USB_USBMODE_CM(n)
+#else // not __IMXRT1052__ or __IMXRT1062__
 
-// TODO: what is the best setting for this register on IMXRT ???
-#define USBHS_USB_SBUSCFG	USB2_SBUSCFG
+// Teensy 3.6 has just one USB host-capable port
+#define NUM_USB_HOST_PORTS	1
+#define DEFAULT_HOST_PORT	1
+#define USB_HOST_PORTS_ARR	{ NEW_USB_HOST_PORT(1) }
 
+// On Teensy 3.6, ignore host port number (p)
+#define IRQ_USBHS_(p)				IRQ_USBHS
+#define USBPHY_CTRL_(p)				USBPHY_CTRL
+#define USBPHY_CTRL_CLR_(p)			USBPHY_CTRL_CLR
+#define USBPHY_CTRL_SET_(p)			USBPHY_CTRL_SET
+#define USBPHY_PWD_(p)				USBPHY_PWD
+#define USBHS_USBCMD_(p)			USBHS_USBCMD
+#define USBHS_USBSTS_(p)			USBHS_USBSTS
+#define USBHS_USBINTR_(p)			USBHS_USBINTR
+#define USBHS_FRINDEX_(p)			USBHS_FRINDEX
+#define USBHS_PERIODICLISTBASE_(p)		USBHS_PERIODICLISTBASE
+#define USBHS_ASYNCLISTADDR_(p)			USBHS_ASYNCLISTADDR
+#define USBHS_PORTSC1_(p)			USBHS_PORTSC1
+#define USBHS_USBMODE_(p)			USBHS_USBMODE
+#define USBHS_GPTIMER0CTL_(p)			USBHS_GPTIMER0CTL
+#define USBHS_GPTIMER0LD_(p)			USBHS_GPTIMER0LD
+#define USBHS_GPTIMER1CTL_(p)			USBHS_GPTIMER1CTL
+#define USBHS_GPTIMER1LD_(p)			USBHS_GPTIMER1LD
+#define CCM_ANALOG_PLL_USB_(p)			CCM_ANALOG_PLL_USB
+#define CCM_ANALOG_PLL_USB_DIV_SELECT_(p)	CCM_ANALOG_PLL_USB_DIV_SELECT
+#define CCM_ANALOG_PLL_USB_CLR_(p)		CCM_ANALOG_PLL_USB_CLR
+#define CCM_ANALOG_PLL_USB_SET_(p)		CCM_ANALOG_PLL_USB_SET
+#define CCM_ANALOG_PLL_USB_BYPASS_(p)		CCM_ANALOG_PLL_USB_BYPASS
+#define CCM_ANALOG_PLL_USB_POWER_(p) 		CCM_ANALOG_PLL_USB_POWER
+#define CCM_ANALOG_PLL_USB_DIV_SELECT_(p)	CCM_ANALOG_PLL_USB_DIV_SELECT
+#define CCM_ANALOG_PLL_USB_ENABLE_(p)		CCM_ANALOG_PLL_USB_ENABLE
+#define CCM_ANALOG_PLL_USB_EN_USB_CLKS_(p)	CCM_ANALOG_PLL_USB_EN_USB_CLKS
+#define CCM_ANALOG_PLL_USB_LOCK_(p)		CCM_ANALOG_PLL_USB_LOCK
+
+#define USBHS_USB_SBUSCFG_(p)			USB_SBUSCFG
 
 #endif // __IMXRT1052__ or __IMXRT1062__
 #endif // IMXRT_USBHS_H_

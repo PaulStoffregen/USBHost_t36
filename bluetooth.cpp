@@ -27,8 +27,8 @@
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
 
-#define print   USBHost::print_
-#define println USBHost::println_//#define DEBUG_BT
+#define print   PrintDebug::print_
+#define println PrintDebug::println_//#define DEBUG_BT
 
 #define DEBUG_BT
 //#define DEBUG_BT_VERBOSE
@@ -201,7 +201,7 @@ void BluetoothController::init()
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
 	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
-	driver_ready_for_device(this);
+	usb_host_port->driver_ready_for_device(this);
 }
 
 bool BluetoothController::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
@@ -286,24 +286,24 @@ bool BluetoothController::claim(Device_t *dev, int type, const uint8_t *descript
 	print("), txep=", txep);
 	print("(", tx_size_);
 	println(")");
-	rxpipe_ = new_Pipe(dev, 3, rxep & 15, 1, rx_size_, rx_interval);
+	rxpipe_ = usb_host_port->new_Pipe(dev, 3, rxep & 15, 1, rx_size_, rx_interval);
 	if (!rxpipe_) return false;
-	txpipe_ = new_Pipe(dev, 3, txep, 0, tx_size_, tx_interval);
+	txpipe_ = usb_host_port->new_Pipe(dev, 3, txep, 0, tx_size_, tx_interval);
 	if (!txpipe_) {
 		//free_Pipe(rxpipe_);
 		return false;
 	}
-	rx2pipe_ = new_Pipe(dev, 2, rx2ep & 15, 1, rx2_size_, rx2_interval);
+	rx2pipe_ = usb_host_port->new_Pipe(dev, 2, rx2ep & 15, 1, rx2_size_, rx2_interval);
 	if (!rx2pipe_)  {
 		// Free other pipes...
 		return false;
 	}
 
 	rxpipe_->callback_function = rx_callback;
-	queue_Data_Transfer(rxpipe_, rxbuf_, rx_size_, this);
+	usb_host_port->queue_Data_Transfer(rxpipe_, rxbuf_, rx_size_, this);
 
 	rx2pipe_->callback_function = rx2_callback;
-	queue_Data_Transfer(rx2pipe_, rx2buf_, rx2_size_, this);
+	usb_host_port->queue_Data_Transfer(rx2pipe_, rx2buf_, rx2_size_, this);
 
 	txpipe_->callback_function = tx_callback;
 
@@ -371,7 +371,7 @@ void BluetoothController::tx_callback(const Transfer_t *transfer)
 void BluetoothController::rx_data(const Transfer_t *transfer)
 {
 	uint32_t len = transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF);
-	print_hexbytes((uint8_t*)transfer->buffer, len);
+	PrintDebug::print_hexbytes((uint8_t*)transfer->buffer, len);
 	DBGPrintf("BT rx_data(%d): ", len);
 	uint8_t *buffer = (uint8_t*)transfer->buffer;
 	for (uint8_t i=0; i < len; i++) DBGPrintf("%x ", buffer[i]);
@@ -440,10 +440,10 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
 				break;
 	    }
 		// Start read at start of buffer. 
-		queue_Data_Transfer(rxpipe_, rxbuf_, rx_size_, this);
+		usb_host_port->queue_Data_Transfer(rxpipe_, rxbuf_, rx_size_, this);
 	} else {
 		// Continue the read - Todo - maybe verify len == rx_size_
-		queue_Data_Transfer(rxpipe_, buffer + rx_size_, rx_size_, this);
+		usb_host_port->queue_Data_Transfer(rxpipe_, buffer + rx_size_, rx_size_, this);
 		return;		// Don't process the message yet as we still have data to receive. 
 	}
 }
@@ -1066,7 +1066,7 @@ void BluetoothController::rx2_data(const Transfer_t *transfer)
 	
 
 	// Queue up for next read...
-	queue_Data_Transfer(rx2pipe_, rx2buf_, rx2_size_, this);
+	usb_host_port->queue_Data_Transfer(rx2pipe_, rx2buf_, rx2_size_, this);
 }
 
 
@@ -1082,7 +1082,7 @@ void BluetoothController::sendHCICommand(uint16_t hciCommand, uint16_t cParams, 
 	for (uint8_t i=0; i< nbytes; i++) DBGPrintf("%02x ", txbuf_[i]);
 	DBGPrintf(")\n");
 	mk_setup(setup, 0x20, 0x0, 0, 0, nbytes);
-	queue_Control_Transfer(device, &setup, txbuf_, this);
+	usb_host_port->queue_Control_Transfer(device, &setup, txbuf_, this);
 }
 
 //---------------------------------------------
@@ -1409,7 +1409,7 @@ void BluetoothController::sendL2CapCommand(uint16_t handle, uint8_t* data, uint8
 	for (uint8_t i=0; i< nbytes; i++) DBGPrintf("%02x ", txbuf_[i]);
 	DBGPrintf(")\n");
 	
-	if (!queue_Data_Transfer(txpipe_, txbuf_, nbytes, this)) {
+	if (!usb_host_port->queue_Data_Transfer(txpipe_, txbuf_, nbytes, this)) {
 		println("sendL2CapCommand failed");
 	}
 }

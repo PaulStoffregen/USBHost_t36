@@ -24,8 +24,8 @@
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
 
-#define print   USBHost::print_
-#define println USBHost::println_
+#define print   PrintDebug::print_
+#define println PrintDebug::println_
 
 //#define DEBUG_JOYSTICK
 #ifdef  DEBUG_JOYSTICK
@@ -57,7 +57,7 @@ void JoystickController::init()
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
 	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
-	driver_ready_for_device(this);
+	usb_host_port->driver_ready_for_device(this);
 	USBHIDParser::driver_ready_for_hid_collection(this);
 	BluetoothController::driver_ready_for_bluetooth(this);
 }
@@ -151,7 +151,7 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
 			txbuf_[10] = 0xff; // Length of pulse
 			txbuf_[11] = 0x00; // Period between pulses			
 			txbuf_[12] = 0x00; // Repeat			
-			if (!queue_Data_Transfer(txpipe_, txbuf_, 13, this)) {
+			if (!usb_host_port->queue_Data_Transfer(txpipe_, txbuf_, 13, this)) {
 				println("XBoxOne rumble transfer fail");
 			}
 			return true;	// 
@@ -168,7 +168,7 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
 			txbuf_[9] = 0x00;
 			txbuf_[10] = 0x00;
 			txbuf_[11] = 0x00;
-			if (!queue_Data_Transfer(txpipe_, txbuf_, 12, this)) {
+			if (!usb_host_port->queue_Data_Transfer(txpipe_, txbuf_, 12, this)) {
 				println("XBox360 rumble transfer fail");
 			}
 			return true;
@@ -199,7 +199,7 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
 	    		txbuf_[9+6] = rValue;
     		}
 
-			if (!queue_Data_Transfer(txpipe_, txbuf_, 18, this)) {
+			if (!usb_host_port->queue_Data_Transfer(txpipe_, txbuf_, 18, this)) {
 				println("switch rumble transfer fail");
 				Serial.printf("Switch Rumble transfer fail\n");
 			}
@@ -242,7 +242,7 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
 				txbuf_[9] = 0x00;
 				txbuf_[10] = 0x00;
 				txbuf_[11] = 0x00;
-				if (!queue_Data_Transfer(txpipe_, txbuf_, 12, this)) {
+				if (!usb_host_port->queue_Data_Transfer(txpipe_, txbuf_, 12, this)) {
 					println("XBox360 set leds fail");
 				}
 				return true;
@@ -268,8 +268,8 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
         		txbuf_[9+9] = 0x30;	// LED Command
         		txbuf_[9+10] = lr;
        			println("Switch set leds: driver? ", (uint32_t)driver_, HEX);
-				print_hexbytes((uint8_t*)txbuf_, 20);
-				if (!queue_Data_Transfer(txpipe_, txbuf_, 20, this)) {
+				PrintDebug::print_hexbytes((uint8_t*)txbuf_, 20);
+				if (!usb_host_port->queue_Data_Transfer(txpipe_, txbuf_, 20, this)) {
 					println("switch set leds fail");
 				}
 
@@ -548,7 +548,7 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 
 	// Try claiming at the interface level.
 	if (type != 1) return false;
-	print_hexbytes(descriptors, len);
+	PrintDebug::print_hexbytes(descriptors, len);
 
 	JoystickController::joytype_t jtype = mapVIDPIDtoJoystickType(dev->idVendor, dev->idProduct, true);
 	println("Jtype=", (uint8_t)jtype, DEC);
@@ -623,26 +623,26 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
 	print("), txep=", txep);
 	print("(", tx_size_);
 	println(")");
-	rxpipe_ = new_Pipe(dev, 3, rx_ep_ & 15, 1, rx_size_, rx_interval);
+	rxpipe_ = usb_host_port->new_Pipe(dev, 3, rx_ep_ & 15, 1, rx_size_, rx_interval);
 	if (!rxpipe_) return false;
-	txpipe_ = new_Pipe(dev, 3, txep, 0, tx_size_, tx_interval);
+	txpipe_ = usb_host_port->new_Pipe(dev, 3, txep, 0, tx_size_, tx_interval);
 	if (!txpipe_) {
 		//free_Pipe(rxpipe_);
 		return false;
 	}
 	rxpipe_->callback_function = rx_callback;
-	queue_Data_Transfer(rxpipe_, rxbuf_, rx_size_, this);
+	usb_host_port->queue_Data_Transfer(rxpipe_, rxbuf_, rx_size_, this);
 
 	txpipe_->callback_function = tx_callback;
 
 	if (jtype == XBOXONE) {
-		queue_Data_Transfer(txpipe_, xboxone_start_input, sizeof(xboxone_start_input), this);
+		usb_host_port->queue_Data_Transfer(txpipe_, xboxone_start_input, sizeof(xboxone_start_input), this);
 		connected_ = true;		// remember that hardware is actually connected...
 	} else if (jtype == XBOX360) {
-		queue_Data_Transfer(txpipe_, xbox360w_inquire_present, sizeof(xbox360w_inquire_present), this);
+		usb_host_port->queue_Data_Transfer(txpipe_, xbox360w_inquire_present, sizeof(xbox360w_inquire_present), this);
 		connected_ = 0;		// remember that hardware is actually connected...
 	} else if (jtype == SWITCH) {
-		queue_Data_Transfer(txpipe_, switch_start_input, sizeof(switch_start_input), this);
+		usb_host_port->queue_Data_Transfer(txpipe_, switch_start_input, sizeof(switch_start_input), this);
 		connected_ = true;		// remember that hardware is actually connected...
 	}
 	memset(axis, 0, sizeof(axis));	// clear out any data. 
@@ -739,7 +739,7 @@ void JoystickController::rx_data(const Transfer_t *transfer)
 	#ifdef  DEBUG_JOYSTICK
 	print("JoystickController::rx_data (", joystickType_, DEC);
 	print("): ");
-	print_hexbytes((uint8_t*)transfer->buffer, transfer->length);
+	PrintDebug::print_hexbytes((uint8_t*)transfer->buffer, transfer->length);
 	#endif
 
 	if (joystickType_ == XBOXONE) {
@@ -852,7 +852,7 @@ void JoystickController::rx_data(const Transfer_t *transfer)
 		if (anychange) joystickEvent = true;
 	}
 
-	queue_Data_Transfer(rxpipe_, rxbuf_, rx_size_, this);
+	usb_host_port->queue_Data_Transfer(rxpipe_, rxbuf_, rx_size_, this);
 }
 
 void JoystickController::tx_data(const Transfer_t *transfer)
@@ -903,7 +903,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 	// May have to look at this one with other controllers...
 	if (data[0] == 1) {
 		//print("  Joystick Data: ");
-		// print_hexbytes(data, length);
+		// PrintDebug::print_hexbytes(data, length);
 		if (length > TOTAL_AXIS_COUNT) length = TOTAL_AXIS_COUNT;	// don't overflow arrays...
 		DBGPrintf("  Joystick Data: ");
 		for(uint16_t i =0; i < length; i++) DBGPrintf("%02x ", data[i]);

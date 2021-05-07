@@ -24,8 +24,8 @@
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
 
-#define print   USBHost::print_
-#define println USBHost::println_
+#define print   PrintDebug::print_
+#define println PrintDebug::println_
 
 void MIDIDeviceBase::init()
 {
@@ -56,7 +56,7 @@ void MIDIDeviceBase::init()
 	rx_tail = 0;
 	rxpipe = NULL;
 	txpipe = NULL;
-	driver_ready_for_device(this);
+	usb_host_port->driver_ready_for_device(this);
 }
 
 // Audio Class-Specific Descriptor Types (audio 1.0, page 99)
@@ -188,10 +188,10 @@ bool MIDIDeviceBase::claim(Device_t *dev, int type, const uint8_t *descriptors, 
 	}
 	// if an IN endpoint was found, create its pipe
 	if (rx_ep && rx_size <= max_packet_size) {
-		rxpipe = new_Pipe(dev, rx_ep_type, rx_ep, 1, rx_size);
+		rxpipe = usb_host_port->new_Pipe(dev, rx_ep_type, rx_ep, 1, rx_size);
 		if (rxpipe) {
 			rxpipe->callback_function = rx_callback;
-			queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
+			usb_host_port->queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
 			rx_packet_queued = true;
 		}
 	} else {
@@ -199,7 +199,7 @@ bool MIDIDeviceBase::claim(Device_t *dev, int type, const uint8_t *descriptors, 
 	}
 	// if an OUT endpoint was found, create its pipe
 	if (tx_ep && tx_size <= max_packet_size) {
-		txpipe = new_Pipe(dev, tx_ep_type, tx_ep, 0, tx_size);
+		txpipe = usb_host_port->new_Pipe(dev, tx_ep_type, tx_ep, 0, tx_size);
 		if (txpipe) {
 			txpipe->callback_function = tx_callback;
 			tx1_count = 0;
@@ -238,7 +238,7 @@ void MIDIDeviceBase::rx_data(const Transfer_t *transfer)
 	println("MIDIDevice Receive");
 	print("  MIDI Data: ");
 	uint32_t len = (transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF)) >> 2;
-	print_hexbytes(transfer->buffer, len * 4);
+	PrintDebug::print_hexbytes(transfer->buffer, len * 4);
 	uint32_t head = rx_head;
 	uint32_t tail = rx_tail;
 	for (uint32_t i=0; i < len; i++) {
@@ -256,7 +256,7 @@ void MIDIDeviceBase::rx_data(const Transfer_t *transfer)
 	if (avail >= (uint32_t)(rx_size>>2)) {
 		// enough space to accept another full packet
 		println("queue another receive packet");
-		queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
+		usb_host_port->queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
 		rx_packet_queued = true;
 	} else {
 		// queue can't accept another packet's data, so leave
@@ -270,7 +270,7 @@ void MIDIDeviceBase::tx_data(const Transfer_t *transfer)
 {
 	println("MIDIDevice transmit complete");
 	print("  MIDI Data: ");
-	print_hexbytes(transfer->buffer, tx_size);
+	PrintDebug::print_hexbytes(transfer->buffer, tx_size);
 	if (transfer->buffer == tx_buffer1) {
 		tx1_count = 0;
 	} else if (transfer->buffer == tx_buffer2) {
@@ -303,7 +303,7 @@ void MIDIDeviceBase::write_packed(uint32_t data)
 			tx1_count = tx1;
 			txtimer.stop();
 			if (tx1 >= tx_max) {
-				queue_Data_Transfer(txpipe, tx_buffer1, tx_max*4, this);
+				usb_host_port->queue_Data_Transfer(txpipe, tx_buffer1, tx_max*4, this);
 			} else {
 				txtimer.start(tx_max >= 128 ? 200 : 1500);
 			}
@@ -316,7 +316,7 @@ void MIDIDeviceBase::write_packed(uint32_t data)
 			tx2_count = tx2;
 			txtimer.stop();
 			if (tx2 >= tx_max) {
-				queue_Data_Transfer(txpipe, tx_buffer2, tx_max*4, this);
+				usb_host_port->queue_Data_Transfer(txpipe, tx_buffer2, tx_max*4, this);
 			} else {
 				txtimer.start(tx_max >= 128 ? 200 : 1500);
 			}
@@ -334,12 +334,12 @@ void MIDIDeviceBase::timer_event(USBDriverTimer *timer)
 	uint32_t tx1 = tx1_count;
 	if (tx1 > 0) {
 		tx1_count = tx_max;
-		queue_Data_Transfer(txpipe, tx_buffer1, tx1*4, this);
+		usb_host_port->queue_Data_Transfer(txpipe, tx_buffer1, tx1*4, this);
 	}
 	uint32_t tx2 = tx2_count;
 	if (tx2 > 0) {
 		tx2_count = tx_max;
-		queue_Data_Transfer(txpipe, tx_buffer2, tx2*4, this);
+		usb_host_port->queue_Data_Transfer(txpipe, tx_buffer2, tx2*4, this);
 	}
 }
 
@@ -406,7 +406,7 @@ bool MIDIDeviceBase::read(uint8_t channel)
 	        avail = (head < tail) ? tail - head - 1 : rx_queue_size - 1 - head + tail;
 		if (avail >= (uint32_t)(rx_size>>2)) {
 			__disable_irq();
-			queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
+			usb_host_port->queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
 			__enable_irq();
 		}
 	}
