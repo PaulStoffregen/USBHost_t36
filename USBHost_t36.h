@@ -2072,6 +2072,7 @@ public:
 
 	uint8_t msReadBlocks(const uint32_t BlockAddress, const uint16_t Blocks,
 						 const uint16_t BlockSize, void * sectorBuffer);
+	uint8_t msReadSectorsWithCB(const uint32_t BlockAddress, const uint16_t Blocks, void (*callback)(uint32_t token, uint8_t* data), uint32_t token);
 	uint8_t msWriteBlocks(const uint32_t BlockAddress, const uint16_t Blocks,
                         const uint16_t BlockSize,	const void * sectorBuffer);
 protected:
@@ -2113,6 +2114,14 @@ private:
 	volatile bool msControlCompleted = false;
 	uint32_t CBWTag = 0;
 	bool deviceAvailable = false;
+	// experiment with transfers with callbacks.
+	void (*_read_sectors_callback)(uint32_t token, uint8_t* data) = nullptr;
+	uint32_t _read_sectors_token = 0;
+	uint16_t _read_sectors_remaining = 0;
+	enum {READ_CALLBACK_TIMEOUT_MS=250};
+    elapsedMillis _emlastRead;
+	uint8_t _read_sector_buffer1[512];
+	uint8_t _read_sector_buffer2[512];
 };
 
 #endif
