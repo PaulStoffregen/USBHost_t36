@@ -203,12 +203,19 @@ bool USBSerialBase::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 		baudrate = 115200;
 		// Wish I could just call Control to do the output... Maybe can defer until the user calls begin()
 		// control requires that device is setup which is not until this call completes...
+#if 0
 		println("Control - CDCACM DTR...");
 		// Need to setup  the data the line coding data
 		mk_setup(setup, 0x21, 0x22, 3, 0, 0);
 		queue_Control_Transfer(dev, &setup, NULL, this);
 		control_queued = true;
 		pending_control = 0x0;	// Maybe don't need to do...
+		dtr_rts_ = 3;
+#else
+		control_queued = false;
+		pending_control = 0x0;	// Maybe don't need to do...
+		dtr_rts_ = 0;
+#endif		
 		return true;
 	}
 
@@ -485,6 +492,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			mk_setup(setup, 0x40, 1, 0x0101, 0, 0);
 			queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
+			dtr_rts_ = 1;
 			return;
 		}
 		// clear DTR
@@ -494,6 +502,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			mk_setup(setup, 0x40, 1, 0x0100, 0, 0);
 			queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
+			dtr_rts_ = 0;
 			return;
 		}
 
@@ -526,6 +535,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			// Need to setup  the data the line coding data
 			mk_setup(setup, 0x21, 0x22, 3, 0, 0);
 			queue_Control_Transfer(device, &setup, NULL, this);
+			dtr_rts_ = 3;
 			control_queued = true;
 			return;
 		}
@@ -535,6 +545,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			// Need to setup  the data the line coding data
 			mk_setup(setup, 0x21, 0x22, 0, 0, 0);
 			queue_Control_Transfer(device, &setup, NULL, this);
+			dtr_rts_ = 0;
 			control_queued = true;
 			return;
 		}
@@ -694,6 +705,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			println("PL2303: 0x21, 0x22, 0x3");
 			mk_setup(setup, 0x21, 0x22, 3, 0, 0); // 
 			queue_Control_Transfer(device, &setup, NULL, this);
+			dtr_rts_ = 3;
 			control_queued = true;
 			return;
 		}
@@ -709,6 +721,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			println("PL2303: 0x21, 0x22, 0x0");  // Clear DTR/RTS
 			mk_setup(setup, 0x21, 0x22, 0, 0, 0); // 
 			queue_Control_Transfer(device, &setup, NULL, this);
+			dtr_rts_ = 0;
 			control_queued = true;
 		}
 	}
@@ -901,6 +914,18 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			println("CP210x 0x41, 7, 0x0303");
+			dtr_rts_ = 3;
+			return;
+		}
+
+		if (pending_control & 0x80) {
+			pending_control &= ~0x80;
+			println("CP210x 0x41, 7, 0x0300");
+			// clear dtr
+			mk_setup(setup, 0x41, 7, 0x0300, 0, 0);
+			queue_Control_Transfer(device, &setup, NULL, this);
+			control_queued = true;
+			dtr_rts_ = 0;
 			return;
 		}
 	}
@@ -1240,15 +1265,17 @@ int USBSerialBase::peek(void)
 {
 	if (!device) return -1;
 	if (rxhead == rxtail) return -1;
-	return rxbuf[rxtail];
+	uint16_t tail = rxtail + 1;
+	if (tail >= rxsize) tail = 0;
+	return rxbuf[tail];
 }
 
 int USBSerialBase::read(void)
 {
 	if (!device) return -1;
 	if (rxhead == rxtail) return -1;
-	int c = rxbuf[rxtail];
 	if (++rxtail >= rxsize) rxtail = 0;
+	int c = rxbuf[rxtail];
 	if ((rxstate & 0x03) != 0x03) {
 		NVIC_DISABLE_IRQ(IRQ_USBHS);
 		rx_queue_packets(rxhead, rxtail);
@@ -1334,5 +1361,87 @@ size_t USBSerialBase::write(uint8_t c)
 	return 1;
 }
 
+bool USBSerialBase::setDTR(bool fSet)
+{
+	println("setDTR: ", fSet, DEC);
+	if (!device) return false;
+	// NOT sure if we should check pending control and not allow it? OR???
+	if (fSet) dtr_rts_ |= 1;
+	else dtr_rts_ &= ~1;
 
+	switch (sertype) {
+		default: 
+			return false; // Not sure how to do...
+		case PL2303:
+		case CDCACM: 
+			mk_setup(setup, 0x21, 0x22, dtr_rts_, 0, 0);
+			break;
+		case FTDI: 
+			println("  >>FTDI");
+			// The high 8 is mask and low 8 is setting. 
+			mk_setup(setup, 0x40, 1, fSet? 0x0101 : 0x0100, 0, 0);
+			break;
+		// not sure yet on these	
+		//case CH341: 
+		case CP210X: 
+			// DTR(1) RTS(2)
+			mk_setup(setup, 0x41, 7, fSet? 0x0101 : 0x0100, 0, 0);
+			break;
+	}
+
+	pending_control = 0;
+	control_queued = true;
+	queue_Control_Transfer(device, &setup, NULL, this);
+
+	// Lets wait until sent.. 
+	elapsedMillis em;
+	while (control_queued && (em < 500)) {
+		yield();	// not sure if we want to yield or what? 
+	}
+	if (control_queued)println("setDtr: message timeout");
+	return true;
+}
+
+// Lets split this up fro setting both
+bool USBSerialBase::setRTS(bool fSet)
+{
+	println("setRTS: ", fSet, DEC);
+	if (fSet) dtr_rts_ |= 2;
+	else dtr_rts_ &= ~2;
+
+	if (!device) return false;
+	// NOT sure if we should check pending control and not allow it? OR???
+
+	switch (sertype) {
+		default: 
+			return false; // Not sure how to do...
+		case PL2303:
+		case CDCACM: 
+			mk_setup(setup, 0x21, 0x22, dtr_rts_, 0, 0);
+			break;
+		case FTDI: 
+			println("  >>FTDI");
+			// The high 8 is mask and low 8 is setting. 
+			mk_setup(setup, 0x40, 1, fSet? 0x0202 : 0x0200, 0, 0);
+			break;
+		// not sure yet on these	
+		//case CH341: 
+		case CP210X: 
+			// DTR(1) RTS(2)
+			mk_setup(setup, 0x41, 7, fSet? 0x0202 : 0x0200, 0, 0);
+			break;
+	}
+
+	pending_control = 0;
+	control_queued = true;
+	queue_Control_Transfer(device, &setup, NULL, this);
+
+	// Lets wait until sent.. 
+	elapsedMillis em;
+	while (control_queued && (em < 500)) {
+		yield();	// not sure if we want to yield or what? 
+	}
+	if (control_queued)println("setRTS: message timeout");
+	return true;
+}
 
