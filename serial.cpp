@@ -1246,9 +1246,9 @@ int USBSerialBase::peek(void)
 int USBSerialBase::read(void)
 {
 	if (!device) return -1;
-	if (rxhead == rxtail) return -1;
-	int c = rxbuf[rxtail];
+	if (rxhead == rxtail) return -1;	
 	if (++rxtail >= rxsize) rxtail = 0;
+	int c = rxbuf[rxtail];
 	if ((rxstate & 0x03) != 0x03) {
 		NVIC_DISABLE_IRQ(IRQ_USBHS);
 		rx_queue_packets(rxhead, rxtail);
