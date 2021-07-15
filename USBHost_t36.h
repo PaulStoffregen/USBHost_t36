@@ -1431,6 +1431,8 @@ class USBSerialBase: public USBDriver, public Stream {
 	virtual size_t write(uint8_t c);
 	virtual void flush(void);
 
+	bool setDTR(bool fSet);
+	bool setRTS(bool fSet);
 	using Print::write;
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
@@ -1484,8 +1486,10 @@ private:
 	uint8_t pl2303_v1;		// Which version do we have
 	uint8_t pl2303_v2;
 	uint8_t interface;
-	bool 	control_queued;	// Is there already a queued control messaged
+	uint8_t dtr_rts_;		// save logical state for the two of them. 
+	volatile bool 	control_queued;	// Is there already a queued control messaged
 	typedef enum { UNKNOWN=0, CDCACM, FTDI, PL2303, CH341, CP210X } sertype_t;
+
 	sertype_t sertype;
 
 	typedef struct {
