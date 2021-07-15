@@ -136,17 +136,19 @@ int USBSerialEmu::available(void)
 int USBSerialEmu::peek(void)
 {
 	if (!driver_) return -1;
-	if (rx_head_ == rx_tail_) return -1;
-	return rx_buffer_[rx_tail_];
+	if (rx_head_ == rx_tail_) return -1;	
+	uint16_t tail = rx_tail_ + 1;
+	if (tail >= RX_BUFFER_SIZE) tail = 0;
+	return rx_buffer_[tail];
 }
 
 int USBSerialEmu::read(void)
 {
 	if (!driver_) return -1;
 	if (rx_head_ == rx_tail_) return -1;
-	int c = rx_buffer_[rx_tail_];
 	if (++rx_tail_ >= RX_BUFFER_SIZE) rx_tail_ = 0;
-
+	
+	int c = rx_buffer_[rx_tail_];
 	return c;
 }
 
