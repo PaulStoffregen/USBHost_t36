@@ -19,6 +19,7 @@ JoystickController joystick1(myusb);
 BluetoothController bluet(myusb);   // version assumes it already was paired
 int user_axis[64];
 uint32_t buttons_prev = 0;
+int hat_prev = 0;
 uint32_t buttons;
 RawHIDController rawhid1(myusb);
 RawHIDController rawhid2(myusb, 0xffc90004);
@@ -44,15 +45,15 @@ const char * bthid_driver_names[CNT_HIDDEVICES] = {"joystick"};
 bool bthid_driver_active[CNT_HIDDEVICES] = {false};
 
 
-bool show_changed_only = false;
+bool show_short_form_data = false;
 bool show_raw_data = false;
-bool show_changed_data = false;
 
 uint8_t joystick_left_trigger_value = 0;
 uint8_t joystick_right_trigger_value = 0;
 uint64_t joystick_full_notify_mask = (uint64_t) - 1;
 
 int psAxis[64];
+int psAxis_prev[64];
 bool first_joystick_message = true;
 uint8_t last_bdaddr[6] = {0, 0, 0, 0, 0, 0};
 
@@ -99,12 +100,12 @@ void loop()
       joystick1.axisChangeNotifyMask(joystick_full_notify_mask);
 
     } else {
-      if (show_changed_only) {
-        show_changed_only = false;
-        Serial.println("\n*** Show All fields mode ***");
+      if (show_short_form_data) {
+        show_short_form_data = false;
+        Serial.println("\n*** Show Full Data mode ***");
       } else {
-        show_changed_only = true;
-        Serial.println("\n*** Show only changed fields mode ***");
+        show_short_form_data = true;
+        Serial.println("\n*** Show short form mode ***");
       }
     }
   }
@@ -130,6 +131,7 @@ void loop()
     }
 
     for (uint8_t i = 0; i < 64; i++) {
+      psAxis_prev[i] = psAxis[i]; 
       psAxis[i] = joystick1.getAxis(i);
     }
     switch (joystick1.joystickType()) {
@@ -179,6 +181,7 @@ void loop()
 // UpdateActiveDeviceInfo
 //=============================================================================
 void UpdateActiveDeviceInfo() {
+  
   for (uint8_t i = 0; i < CNT_DEVICES; i++) {
     if (*drivers[i] != driver_active[i]) {
       if (driver_active[i]) {
@@ -198,7 +201,7 @@ void UpdateActiveDeviceInfo() {
         if (drivers[i] == &bluet) {
           const uint8_t *bdaddr = bluet.myBDAddr();
           // remember it...
-          Serial.printf("  BDADDR: %x:%x:%x:%x:%x:%x\n", bdaddr[0], bdaddr[1], bdaddr[2], bdaddr[3], bdaddr[4], bdaddr[5]);
+          Serial.printf("  BDADDR: %02X:%02X:%02X:%02X:%02X:%02X\n", bdaddr[5], bdaddr[4], bdaddr[3], bdaddr[2], bdaddr[1], bdaddr[0]);
           for (uint8_t i = 0; i < 6; i++) last_bdaddr[i] = bdaddr[i];
         }
       }
@@ -260,14 +263,34 @@ void UpdateActiveDeviceInfo() {
 //=============================================================================
 void displayPS4Data()
 {
-  buttons = joystick1.getButtons();
-  Serial.printf("LX: %d, LY: %d, RX: %d, RY: %d \r\n", psAxis[0], psAxis[1], psAxis[2], psAxis[5]);
-  Serial.printf("L-Trig: %d, R-Trig: %d\r\n", psAxis[3], psAxis[4]);
-  Serial.printf("Buttons: %x\r\n", buttons);
-  Serial.printf("Battery Status: %d\n", ((psAxis[30] & ((1 << 4) - 1))*10));
-  printAngles();
-  Serial.println();
 
+  buttons = joystick1.getButtons();
+
+  // Hack to guess if connected direct or BT...
+  int hat = bluet? psAxis[10] : psAxis[9];  // get hat - up/dwn buttons
+
+  if (show_short_form_data) {
+    // only if something changes we are interested in
+    bool something_changed = (buttons != buttons_prev) || (hat != hat_prev) ||(psAxis[30] != psAxis_prev[30]);
+    for (uint8_t i = 0; i<6; i++) {
+      if (psAxis[i] != psAxis_prev[i]) {something_changed = true; break; }
+    }
+    if (something_changed) {
+      Serial.printf("LX: %d, LY: %d, RX: %d, RY: %d", psAxis[0], psAxis[1], psAxis[2], psAxis[5]);
+      Serial.printf(" L-Trig: %d, R-Trig: %d", psAxis[3], psAxis[4]);
+      Serial.printf(" Buttons: %x, Hat: %x", buttons, hat);
+      Serial.printf(" Battery Status: %d\n", ((psAxis[30] & ((1 << 4) - 1))*10));
+    }
+  } else {
+    // Long form...
+    Serial.printf("LX: %d, LY: %d, RX: %d, RY: %d \r\n", psAxis[0], psAxis[1], psAxis[2], psAxis[5]);
+    Serial.printf("L-Trig: %d, R-Trig: %d\r\n", psAxis[3], psAxis[4]);
+    Serial.printf("Buttons: %x Hat: %x\r\n", buttons, hat);
+    Serial.printf("Battery Status: %d\n", ((psAxis[30] & ((1 << 4) - 1))*10));
+    printAngles();
+    Serial.println();
+  }
+  hat_prev = hat;
   uint8_t ltv;
   uint8_t rtv;
 
@@ -281,18 +304,39 @@ void displayPS4Data()
     joystick1.setRumble(ltv, rtv);
   }
    
+  // See about maybe pair...
+  if ((buttons & 0x100) && !(buttons_prev & 0x100) && (buttons & 0x30)) {
+    // so far just try call temporary pair info call...
+      uint8_t bdaddr_cur[10];
+      Serial.print("\nPS4 Pairing Request");
+      if (!last_bdaddr[0] && !last_bdaddr[1] && !last_bdaddr[2] && !last_bdaddr[3] && !last_bdaddr[4] && !last_bdaddr[5]) {
+        Serial.println(" - failed - no Bluetooth adapter has been plugged in");
+      } else {
+        Serial.println("\n*** Try getting BT Pairing information ***");        
+        if (!joystick1.PS4GetCurrentPairing(bdaddr_cur)) {
+          Serial.println(" - failed - Could not read pairing information");
+          } else {
+            Serial.printf("Current BTADDR: %02X:%02X:%02X:%02X:%02X:%02X\n", bdaddr_cur[5],bdaddr_cur[4],bdaddr_cur[3],bdaddr_cur[2],bdaddr_cur[1],bdaddr_cur[0]);
+            if (! joystick1.PS4Pair(last_bdaddr)) {
+              Serial.println("  Pairing call Failed");
+            } else {
+              Serial.println("  Pairing complete (I hope), make sure Bluetooth adapter is plugged in and try PS4 without USB");
+            }
 
-  if (buttons != buttons_prev) {
+          }
+      }
+
+  } else if (buttons != buttons_prev) {
       uint8_t lr = 0;
       uint8_t lg = 0;
       uint8_t lb = 0;
-      if(buttons == 0x10008){//Srq
+      if(buttons == 1){//Srq
         lr = 0xff;
       }
-      if(buttons == 0x40008){//Circ
+      if(buttons == 4){//Circ
         lg = 0xff;
       }
-      if(buttons == 0x80008){//Tri
+      if(buttons == 8){//Tri
         lb = 0xff;
       }
       
@@ -301,8 +345,8 @@ void displayPS4Data()
       Serial.print(lg); Serial.print(", "); 
       Serial.println(lb); 
       joystick1.setLEDs(lr, lg, lb);
-      buttons_prev = buttons;  
   }
+  buttons_prev = buttons;  
 
 }
 
@@ -317,7 +361,7 @@ void displayPS3Data()
 
   // Use L3 (Left joystick button) to toggle Show Raw or not...
   if ((buttons & 0x02) && !(buttons_prev & 0x02)) show_raw_data = !show_raw_data;
-  if ((buttons & 0x04) && !(buttons_prev & 0x04)) show_changed_data = !show_changed_data;
+  if ((buttons & 0x04) && !(buttons_prev & 0x04)) show_short_form_data = !show_short_form_data;
 
   // See about maybe pair...
   if ((buttons & 0x10000) && !(buttons_prev & 0x10000) && (buttons & 0x0C01)) {
@@ -329,7 +373,7 @@ void displayPS3Data()
     } else if (!hiddrivers[0]) {  // Kludge see if we are connected as HID?
       Serial.println(" - failed - PS3 device not plugged into USB");
     } else {
-      Serial.printf(" - Attempt pair to: %x:%x:%x:%x:%x:%x\n", last_bdaddr[0], last_bdaddr[1], last_bdaddr[2], last_bdaddr[3], last_bdaddr[4], last_bdaddr[5]);
+      Serial.printf(" - Attempt pair to: %02X:%02X:%02X:%02X:%02X:%02X\n", last_bdaddr[5], last_bdaddr[4], last_bdaddr[3], last_bdaddr[2], last_bdaddr[1], last_bdaddr[0]);
 
       if (! joystick1.PS3Pair(last_bdaddr)) {
         Serial.println("  Pairing call Failed");
@@ -392,7 +436,7 @@ void displayPS3MotionData()
 
   // Use Select button to choose raw or not
   if ((buttons & 0x01) && !(buttons_prev & 0x01)) show_raw_data = !show_raw_data;
-  if ((buttons & 0x04) && !(buttons_prev & 0x04)) show_changed_data = !show_changed_data;
+  if ((buttons & 0x04) && !(buttons_prev & 0x04)) show_short_form_data = !show_short_form_data;
 
   if (show_raw_data)  {
     displayRawData();
@@ -431,7 +475,7 @@ void displayXBoxData()
 
   // Use L3 (Left joystick button) to toggle Show Raw or not...
   if ((buttons & 0x4000) && !(buttons_prev & 0x4000)) show_raw_data = !show_raw_data;
-  if ((buttons & 0x8000) && !(buttons_prev & 0x8000)) show_changed_data = !show_changed_data;
+  if ((buttons & 0x8000) && !(buttons_prev & 0x8000)) show_short_form_data = !show_short_form_data;
 
   if (show_raw_data)  {
     displayRawData();
@@ -475,7 +519,7 @@ void displayRawData() {
 
   if (!changed_mask && (buttons == buttons_prev)) return;
 
-  if (show_changed_data) {
+  if (show_short_form_data) {
     if (!changed_mask) return;
     changed_mask &= 0xfffffffffL; // try reducing which ones show...
     Serial.printf("%0x - ", joystick1.getButtons());

@@ -105,6 +105,7 @@ void inline VDBGPrintf(...) {};
 #define HCI_LE_Supported_States				0x201c
 
 /* Bluetooth L2CAP PSM - see http://www.bluetooth.org/Technical/AssignedNumbers/logical_link.htm */
+#define SDP_PSM         0x01 // Service Discovery Protocol PSM Value
 #define HID_CTRL_PSM    0x11 // HID_Control PSM Value
 #define HID_INTR_PSM    0x13 // HID_Interrupt PSM Value
 
@@ -150,7 +151,8 @@ enum {PC_RESET = 1, PC_WRITE_CLASS_DEVICE, PC_READ_BDADDR, PC_READ_LOCAL_VERSION
 
 
 // Setup some states for the TX pipe where we need to chain messages
-enum {STATE_TX_SEND_CONNECT_INT=200, STATE_TX_SEND_CONECT_RSP_SUCCESS, STATE_TX_SEND_CONFIG_REQ, STATE_TX_SEND_CONECT_ISR_RSP_SUCCESS, STATE_TX_SEND_CONFIG_ISR_REQ};
+enum {STATE_TX_SEND_CONNECT_INT=200, STATE_TX_SEND_CONECT_RSP_SUCCESS, STATE_TX_SEND_CONFIG_REQ, STATE_TX_SEND_CONECT_ISR_RSP_SUCCESS, STATE_TX_SEND_CONFIG_ISR_REQ, 
+	STATE_TX_SEND_CONECT_SDP_RSP_SUCCESS, STATE_TX_SEND_CONFIG_SDP_REQ};
 
 // This is a list of all the drivers inherited from the BTHIDInput class.
 // Unlike the list of USBDriver (managed in enumeration.cpp), drivers stay
@@ -372,9 +374,10 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
 {
 	uint32_t len = transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF);
 	print_hexbytes((uint8_t*)transfer->buffer, len);
-	DBGPrintf("BT rx_data(%d): ", len);
+//	DBGPrintf("<<(00 : %d): ", len);
+	DBGPrintf("<<(01):");
 	uint8_t *buffer = (uint8_t*)transfer->buffer;
-	for (uint8_t i=0; i < len; i++) DBGPrintf("%x ", buffer[i]);
+	for (uint8_t i=0; i < len; i++) DBGPrintf("%02X ", buffer[i]);
 	DBGPrintf("\n");
 
 	// Note the logical packets returned from the device may be larger
@@ -819,10 +822,16 @@ void BluetoothController::handle_hci_connection_complete() {
 		sendHCIAuthenticationRequested();
 		pending_control_ = PC_AUTHENTICATION_REQUESTED;
 	} else if (connections_[current_connection_].device_driver_ && (connections_[current_connection_].device_driver_->special_process_required & BTHIDInput::SP_NEED_CONNECT)) {
-		DBGPrintf("   Needs connect to device(PS4?)\n");
+		DBGPrintf("   Needs connect to device(PS4?)");
 		// The PS4 requires a connection request to it. 
-		delay(1);
-		sendl2cap_ConnectionRequest(connections_[current_connection_].device_connection_handle_, connections_[current_connection_].connection_rxid_, connections_[current_connection_].control_dcid_, HID_CTRL_PSM);
+		// But maybe not clones
+		if (connections_[current_connection_].device_class_ == 0x2508) {
+			DBGPrintf(" Yes\n");
+			delay(1);
+			sendl2cap_ConnectionRequest(connections_[current_connection_].device_connection_handle_, connections_[current_connection_].connection_rxid_, connections_[current_connection_].control_dcid_, HID_CTRL_PSM);
+		} else {
+			DBGPrintf(" No - Clone\n");
+		}
 #if 0		
 		delay(1);
 		
@@ -1013,9 +1022,9 @@ void BluetoothController::handle_hci_remote_version_information_complete() {
 void BluetoothController::rx2_data(const Transfer_t *transfer)
 {
 	uint32_t len = transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF);
-	DBGPrintf("\n=====================\nBT rx2_data(%d): ", len);
+	DBGPrintf("\n=====================\n<<(02):");
 	uint8_t *buffer = (uint8_t*)transfer->buffer;
-	for (uint8_t i=0; i < len; i++) DBGPrintf("%x ", buffer[i]);
+	for (uint8_t i=0; i < len; i++) DBGPrintf("%02X ", buffer[i]);
 	DBGPrintf("\n");
 
 	// call backs.  See if this is an L2CAP reply. example
@@ -1079,8 +1088,9 @@ void BluetoothController::sendHCICommand(uint16_t hciCommand, uint16_t cParams, 
 		memcpy(&txbuf_[3], data, cParams);	// copy in the commands parameters.
 	}
 	uint8_t nbytes = cParams+3;
-	for (uint8_t i=0; i< nbytes; i++) DBGPrintf("%02x ", txbuf_[i]);
-	DBGPrintf(")\n");
+	DBGPrintf(">>(00):");
+	for (uint8_t i=0; i< nbytes; i++) DBGPrintf("%02X ", txbuf_[i]);
+	DBGPrintf("\n");
 	mk_setup(setup, 0x20, 0x0, 0, 0, nbytes);
 	queue_Control_Transfer(device, &setup, txbuf_, this);
 }
@@ -1088,13 +1098,13 @@ void BluetoothController::sendHCICommand(uint16_t hciCommand, uint16_t cParams, 
 //---------------------------------------------
 void  BluetoothController::sendHCIHCIWriteInquiryMode(uint8_t inquiry_mode) {
 	// Setup Inquiry mode 
-	DBGPrintf("HCI_WRITE_INQUIRY_MODE called (");
+	DBGPrintf("HCI_WRITE_INQUIRY_MODE\n");
 	sendHCICommand(HCI_WRITE_INQUIRY_MODE, 1, &inquiry_mode);	
 }
 
 void BluetoothController::sendHCISetEventMask() {
 	// Setup Inquiry mode 
-	DBGPrintf("HCI_Set_Event_Mask called (");
+	DBGPrintf("HCI_Set_Event_Mask\n");
 	static const uint8_t hci_event_mask_data[8] = {
 		// Default: 0x0000 1FFF FFFF FFFF 
 		0xff,0xff, 0xff,0xff, 0xff,0x5f, 0x00,0x00};  // default plus extended inquiry mode
@@ -1104,7 +1114,7 @@ void BluetoothController::sendHCISetEventMask() {
 //---------------------------------------------
 void BluetoothController::sendHCI_INQUIRY() {
 	// Start unlimited inqury, set timeout to max and 
-	DBGPrintf("HCI_INQUIRY called (");
+	DBGPrintf("HCI_INQUIRY\n");
 	static const uint8_t hci_inquiry_data[ ] = {
 			0x33, 0x8B, 0x9E, 	// Bluetooth assigned number LAP 0x9E8B33 General/unlimited inquiry Access mode
 			0x30, 0xa};			// Max inquiry time little over minute and up to 10 responses
@@ -1113,13 +1123,13 @@ void BluetoothController::sendHCI_INQUIRY() {
 
 //---------------------------------------------
 void BluetoothController::sendHCIInquiryCancel() {
-	DBGPrintf("HCI_INQUIRY_CANCEL called (");
+	DBGPrintf("HCI_INQUIRY_CANCEL\n");
 	sendHCICommand(HCI_INQUIRY_CANCEL, 0, nullptr);	
 }
 
 //---------------------------------------------
 void BluetoothController::sendHCICreateConnection() {
-	DBGPrintf("HCI_CREATE_CONNECTION called (");
+	DBGPrintf("HCI_CREATE_CONNECTION\n");
 	uint8_t connection_data[13];
 	//  0    1    2    3    4    5    6    7    8   9    10   11   12
 	// BD   BD   BD   BD   BD   BD   PT   PT  PRS   0    CS   CS   ARS
@@ -1140,7 +1150,7 @@ void BluetoothController::sendHCICreateConnection() {
 
 //---------------------------------------------
 void BluetoothController::sendHCIAcceptConnectionRequest() {
-	DBGPrintf("HCI_OP_ACCEPT_CONN_REQ called (");
+	DBGPrintf("HCI_OP_ACCEPT_CONN_REQ\n");
 	uint8_t connection_data[7];
 
 	//  0    1    2    3    4    5    6    7    8   9    10   11   12
@@ -1153,7 +1163,7 @@ void BluetoothController::sendHCIAcceptConnectionRequest() {
 
 //---------------------------------------------
 void BluetoothController::sendHCIAuthenticationRequested() {
-	DBGPrintf("HCI_AUTH_REQUESTED called (");
+	DBGPrintf("HCI_AUTH_REQUESTED\n");
 	uint8_t connection_data[2];
 	connection_data[0] = connections_[current_connection_].device_connection_handle_ & 0xff;
 	connection_data[1] = (connections_[current_connection_].device_connection_handle_>>8) & 0xff;
@@ -1162,7 +1172,7 @@ void BluetoothController::sendHCIAuthenticationRequested() {
 
 //---------------------------------------------
 void BluetoothController::sendHCILinkKeyNegativeReply() {
-	DBGPrintf("HCI_LINK_KEY_NEG_REPLY called (");
+	DBGPrintf("HCI_LINK_KEY_NEG_REPLY\n");
 	uint8_t connection_data[6];
 	for (uint8_t i=0; i<6; i++) connection_data[i] = connections_[current_connection_].device_bdaddr_[i];
 	sendHCICommand(HCI_LINK_KEY_NEG_REPLY, sizeof(connection_data), connection_data);	
@@ -1173,7 +1183,7 @@ void BluetoothController::sendHCILinkKeyNegativeReply() {
 
 void BluetoothController::sendHCIPinCodeReply() {
 	// 0x0D 0x04 0x17 0x79 0x22 0x23 0x0A 0xC5 0xCC 0x04 0x30 0x30 0x30 0x30 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
-	DBGPrintf("HCI_PIN_CODE_REPLY called (");
+	DBGPrintf("HCI_PIN_CODE_REPLY\n");
 	uint8_t connection_data[23];
 	uint8_t i;
 
@@ -1187,33 +1197,33 @@ void BluetoothController::sendHCIPinCodeReply() {
 
 //---------------------------------------------
 void BluetoothController::sendResetHCI() {
-	DBGPrintf("HCI_RESET called (");
+	DBGPrintf("HCI_RESET\n");
 	sendHCICommand(HCI_RESET, 0, nullptr);	
 }
 
 void BluetoothController::sendHDCWriteClassOfDev() {
 	// 0x24 0x0C 0x03 0x04 0x08 0x00
 	const static uint8_t device_class_data[] = {BT_CLASS_DEVICE & 0xff, (BT_CLASS_DEVICE >> 8) & 0xff, (BT_CLASS_DEVICE >> 16) & 0xff};
-	DBGPrintf("HCI_WRITE_CLASS_OF_DEV called (");
+	DBGPrintf("HCI_WRITE_CLASS_OF_DEV\n");
 	sendHCICommand(HCI_WRITE_CLASS_OF_DEV, sizeof(device_class_data), device_class_data);	
 }
 
 
 
 void BluetoothController::sendHCIReadBDAddr() {
-	DBGPrintf("HCI_Read_BD_ADDR called (");
+	DBGPrintf("HCI_Read_BD_ADDR\n");
 	sendHCICommand(HCI_Read_BD_ADDR, 0, nullptr);	
 }
 
 void BluetoothController::sendHCIReadLocalVersionInfo() {
-	DBGPrintf("HCI_Read_Local_Version_Information called (");
+	DBGPrintf("HCI_Read_Local_Version_Information\n");
 	sendHCICommand(HCI_Read_Local_Version_Information, 0, nullptr);	
 }
 
 
 void BluetoothController::sendHCIWriteScanEnable(uint8_t scan_op)	{//				0x0c1a
 // 0x1A 0x0C 0x01 0x02
-	DBGPrintf("HCI_WRITE_SCAN_ENABLE called(");
+	DBGPrintf("HCI_WRITE_SCAN_ENABLE\n");
 	sendHCICommand(HCI_WRITE_SCAN_ENABLE, 1, &scan_op);
 }
 
@@ -1221,7 +1231,7 @@ void BluetoothController::sendHCIRemoteNameRequest() {		// 0x0419
 	//               BD   BD   BD   BD   BD   BD   PS   0    CLK   CLK
 	//0x19 0x04 0x0A 0x79 0x22 0x23 0x0A 0xC5 0xCC 0x01 0x00 0x00 0x00
 
-	DBGPrintf("HCI_OP_REMOTE_NAME_REQ called (");
+	DBGPrintf("HCI_OP_REMOTE_NAME_REQ\n");
 	uint8_t connection_data[10];
 	for (uint8_t i=0; i<6; i++) connection_data[i] = connections_[current_connection_].device_bdaddr_[i];
 	connection_data[6] = 1;	// page scan repeat mode...
@@ -1235,7 +1245,7 @@ void BluetoothController::sendHCIRemoteVersionInfoRequest() {		// 0x041D
 	//               BD   BD   BD   BD   BD   BD   PS   0    CLK   CLK
 	//0x19 0x04 0x0A 0x79 0x22 0x23 0x0A 0xC5 0xCC 0x01 0x00 0x00 0x00
 
-	DBGPrintf("HCI_OP_READ_REMOTE_VERSION_INFORMATION called (");
+	DBGPrintf("HCI_OP_READ_REMOTE_VERSION_INFORMATION\n");
 	uint8_t connection_data[2];
 	connection_data[0] = connections_[current_connection_].device_connection_handle_ & 0xff;
 	connection_data[1] = (connections_[current_connection_].device_connection_handle_>>8) & 0xff;
@@ -1258,7 +1268,7 @@ void BluetoothController::sendl2cap_ConnectionResponse(uint16_t handle, uint8_t 
     l2capbuf[10] = 0x00; // No further information
     l2capbuf[11] = 0x00;
 
-	DBGPrintf("L2CAP_CMD_CONNECTION_RESPONSE called(");
+	DBGPrintf("L2CAP_CMD_CONNECTION_RESPONSE\n");
     sendL2CapCommand(handle, l2capbuf, sizeof(l2capbuf));
 }
 
@@ -1275,7 +1285,7 @@ void BluetoothController::sendl2cap_ConnectionRequest(uint16_t handle, uint8_t r
     l2capbuf[6] = scid & 0xff; // Source CID
     l2capbuf[7] = (scid >> 8) & 0xff;
 
-	DBGPrintf("ConnectionRequest called(");
+	DBGPrintf("ConnectionRequest\n");
     sendL2CapCommand(handle, l2capbuf, sizeof(l2capbuf));
 }
 
@@ -1294,7 +1304,7 @@ void BluetoothController::sendl2cap_ConfigRequest(uint16_t handle, uint8_t rxid,
         l2capbuf[10] = 0xFF; // MTU
         l2capbuf[11] = 0xFF;
 
-		DBGPrintf("L2CAP_ConfigRequest called(");
+		DBGPrintf("L2CAP_ConfigRequest\n");
         sendL2CapCommand(handle, l2capbuf, sizeof(l2capbuf));
 }
 
@@ -1315,7 +1325,7 @@ void BluetoothController::sendl2cap_ConfigResponse(uint16_t handle, uint8_t rxid
         l2capbuf[12] = 0xA0;
         l2capbuf[13] = 0x02;
 
-		DBGPrintf("L2CAP_ConfigResponse called(");
+		DBGPrintf("L2CAP_ConfigResponse\n");
         sendL2CapCommand(handle, l2capbuf, sizeof(l2capbuf));
 }
 
@@ -1360,6 +1370,17 @@ void BluetoothController::tx_data(const Transfer_t *transfer)
 		sendl2cap_ConfigRequest(connections_[current_connection_].device_connection_handle_, connections_[current_connection_].connection_rxid_, connections_[current_connection_].interrupt_scid_);
 		pending_control_tx_ = 0;
 		break;
+	case STATE_TX_SEND_CONECT_SDP_RSP_SUCCESS:
+		delay(1);
+		sendl2cap_ConnectionResponse(connections_[current_connection_].device_connection_handle_, connections_[current_connection_].connection_rxid_, connections_[current_connection_].sdp_dcid_, connections_[current_connection_].sdp_scid_, SUCCESSFUL);
+		pending_control_tx_ = STATE_TX_SEND_CONFIG_SDP_REQ;
+		break;
+	case STATE_TX_SEND_CONFIG_SDP_REQ:
+		delay(1);
+		sendl2cap_ConfigRequest(connections_[current_connection_].device_connection_handle_, connections_[current_connection_].connection_rxid_, connections_[current_connection_].sdp_scid_);
+		pending_control_tx_ = 0;
+		break;
+
 	}
 }
 
@@ -1406,8 +1427,9 @@ void BluetoothController::sendL2CapCommand(uint16_t handle, uint8_t* data, uint8
 		memcpy(&txbuf_[8], data, nbytes);	// copy in the commands parameters.
 	}
 	nbytes = nbytes+8;
-	for (uint8_t i=0; i< nbytes; i++) DBGPrintf("%02x ", txbuf_[i]);
-	DBGPrintf(")\n");
+	DBGPrintf(">>(02):");
+	for (uint8_t i=0; i< nbytes; i++) DBGPrintf("%02X ", txbuf_[i]);
+	DBGPrintf("\n");
 	
 	if (!queue_Data_Transfer(txpipe_, txbuf_, nbytes, this)) {
 		println("sendL2CapCommand failed");
@@ -1435,6 +1457,11 @@ void  BluetoothController::process_l2cap_connection_request(uint8_t *data) {
 		sendl2cap_ConnectionResponse(connections_[current_connection_].device_connection_handle_, connections_[current_connection_].connection_rxid_, connections_[current_connection_].interrupt_dcid_, connections_[current_connection_].interrupt_scid_, PENDING);
 		pending_control_tx_ = STATE_TX_SEND_CONECT_ISR_RSP_SUCCESS;		
 
+	} else if (psm == SDP_PSM) {
+		DBGPrintf("        <<< SDP PSM >>>\n");
+		connections_[current_connection_].sdp_scid_ = scid;
+		sendl2cap_ConnectionResponse(connections_[current_connection_].device_connection_handle_, connections_[current_connection_].connection_rxid_, connections_[current_connection_].sdp_dcid_, connections_[current_connection_].sdp_scid_, PENDING);
+		pending_control_tx_ = STATE_TX_SEND_CONECT_SDP_RSP_SUCCESS;		
 	}
 }
 
@@ -1444,9 +1471,15 @@ void BluetoothController::process_l2cap_connection_response(uint8_t *data) {
 	uint16_t scid = data[4]+((uint16_t)data[5] << 8); 
 	uint16_t dcid = data[6]+((uint16_t)data[7] << 8); 
 
-	DBGPrintf("    L2CAP Connection Response: ID: %d, Dest:%x, Source:%x, Result:%x, Status: %x\n",
+	DBGPrintf("    L2CAP Connection Response: ID: %d, Dest:%x, Source:%x, Result:%x, Status: %x pending control: %x %x\n",
 		data[1], scid, dcid,
-		data[8]+((uint16_t)data[9] << 8), data[10]+((uint16_t)data[11] << 8));
+		data[8]+((uint16_t)data[9] << 8), data[10]+((uint16_t)data[11] << 8), pending_control_, pending_control_tx_);
+
+	// Experiment ignore if: pending_control_tx_ = STATE_TX_SEND_CONFIG_REQ;
+	if ((pending_control_tx_ == STATE_TX_SEND_CONFIG_REQ) || (pending_control_tx_ == STATE_TX_SEND_CONECT_RSP_SUCCESS)) {
+		DBGPrintf("    *** State == STATE_TX_SEND_CONFIG_REQ - try ignoring\n");
+		return;
+	}
 
 	//48 20 10 0 | c 0 1 0 | 3 0 8 0 44 0 70 0 0 0 0 0
 	if (dcid == connections_[current_connection_].interrupt_dcid_) {
@@ -1474,6 +1507,9 @@ void BluetoothController::process_l2cap_config_request(uint8_t *data) {
 	} else if (dcid == connections_[current_connection_].interrupt_dcid_) {
 		DBGPrintf("      Interrupt Configuration request\n");
 		sendl2cap_ConfigResponse(connections_[current_connection_].device_connection_handle_, data[1], connections_[current_connection_].interrupt_scid_);
+	} else if (dcid == connections_[current_connection_].sdp_dcid_) {
+		DBGPrintf("      SDP Configuration request\n");
+		sendl2cap_ConfigResponse(connections_[current_connection_].device_connection_handle_, data[1], connections_[current_connection_].sdp_scid_);
 	}
 }
 
@@ -1503,6 +1539,12 @@ void BluetoothController::process_l2cap_config_response(uint8_t *data) {
 		// Enable SCan to page mode
 		connections_[current_connection_].connection_complete_ = true;
 		sendHCIWriteScanEnable(2);
+	} else if (scid == connections_[current_connection_].sdp_dcid_) {
+		// Enable SCan to page mode
+		DBGPrintf("    SDP configuration complete\n");
+	    //l2cap_set_flag(L2CAP_FLAG_CONFIG_SDP_SUCCESS);
+		//sendHCIWriteScanEnable(2);
+		pending_control_ = 0;
 	}
 }
 

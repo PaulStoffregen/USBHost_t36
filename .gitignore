@@ -16,3 +16,6 @@
 *.xml
 *.sln
 *.buildinfo
+examples/Bluetooth/JoystickBT/Compile.cmd
+*.sublime-project
+*.sublime-workspace
