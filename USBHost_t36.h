@@ -527,6 +527,7 @@ private:
 	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
 	virtual bool hid_process_in_data(const Transfer_t *transfer) {return false;}
 	virtual bool hid_process_out_data(const Transfer_t *transfer) {return false;}
+	virtual bool hid_process_control(const Transfer_t *transfer) {return false;}
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
@@ -941,7 +942,8 @@ public:
 	// PS3 pair function. hack, requires that it be connect4ed by USB and we have the address of the Bluetooth dongle...
 	bool PS3Pair(uint8_t* bdaddr);
 
-	
+	bool PS4GetCurrentPairing(uint8_t* bdaddr);	
+	bool PS4Pair(uint8_t* bdaddr);	
 	
 protected:
 	// From USBDriver
@@ -953,9 +955,11 @@ protected:
 	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
 	virtual void hid_input_data(uint32_t usage, int32_t value);
+	virtual bool hid_process_control(const Transfer_t *transfer);
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 	virtual bool hid_process_out_data(const Transfer_t *transfer);
+	virtual bool hid_process_in_data(const Transfer_t *transfer);
 
 		// Bluetooth data
 	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName);
@@ -1018,6 +1022,7 @@ private:
 	Pipe_t 			*txpipe_;
 	uint8_t 		rxbuf_[64];	// receive circular buffer
 	uint8_t			txbuf_[64];		// buffer to use to send commands to joystick 
+	volatile bool 		send_Control_packet_active_;
 	// Mapping table to say which devices we handle
 	typedef struct {
 		uint16_t 	idVendor;
@@ -1847,9 +1852,10 @@ public:
     uint16_t		connection_rxid_ = 0;
     uint16_t		control_dcid_ = 0x70;
     uint16_t		interrupt_dcid_ = 0x71;
+		uint16_t		sdp_dcid_ = 0x40;	
     uint16_t		interrupt_scid_;
     uint16_t		control_scid_;
-
+		uint16_t		sdp_scid_;
     uint8_t			device_bdaddr_[6];// remember devices address
     uint8_t			device_ps_repetion_mode_ ; // mode
     uint8_t			device_clock_offset_[2];
