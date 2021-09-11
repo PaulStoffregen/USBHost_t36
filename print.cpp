@@ -131,7 +131,7 @@ void PrintDebug::print_(const Pipe_t *pipe)
 	//USBHDBGSerial.print();
 }
 
-void PrintDebug::PrintDebug::print_driverlist(const char *name, const USBDriver *driver)
+void PrintDebug::print_driverlist(const char *name, const USBDriver *driver)
 {
 	USBHDBGSerial.print("USBDriver (");
 	USBHDBGSerial.print(name);
@@ -193,7 +193,7 @@ static void print_class_subclass_protocol(uint8_t c, uint8_t s, uint8_t p)
 	USBHDBGSerial.println();
 }
 
-void PrintDebug::PrintDebug::print_device_descriptor(const uint8_t *p)
+void PrintDebug::print_device_descriptor(const uint8_t *p)
 {
 	USBHDBGSerial.println("Device Descriptor:");
 	USBHDBGSerial.print("  ");
@@ -215,7 +215,7 @@ void PrintDebug::PrintDebug::print_device_descriptor(const uint8_t *p)
 	USBHDBGSerial.println(p[17]);
 }
 
-void PrintDebug::PrintDebug::print_config_descriptor(const uint8_t *p, uint32_t maxlen)
+void PrintDebug::print_config_descriptor(const uint8_t *p, uint32_t maxlen)
 {
 	// Descriptor Types: (USB 2.0, page 251)
 	USBHDBGSerial.println("Configuration Descriptor:");
@@ -289,7 +289,7 @@ void PrintDebug::PrintDebug::print_config_descriptor(const uint8_t *p, uint32_t 
 	}
 }
 
-void PrintDebug::PrintDebug::print_string_descriptor(const char *name, const uint8_t *p)
+void PrintDebug::print_string_descriptor(const char *name, const uint8_t *p)
 {
 	uint32_t len = p[0];
 	if (len < 4) return;

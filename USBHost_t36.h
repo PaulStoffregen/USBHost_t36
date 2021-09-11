@@ -76,12 +76,14 @@
 // These 6 types are the key to understanding how this USB Host
 // library really works.
 
-// USBHost is a class controlling access to one host port
+// USBHostPort is a class controlling access to the hardware and
+// memory resources for one host port.
 // (USB2 is the standard host port on the Teensy 4.1; USB1 is
 // the standard device port, which may also be used as a host port)
 class USBHostPort;
 
-// USBHost is a class controlling the hardware.
+// USBHost is a class controlling the hardware via a specific
+// USBHostPort instance.
 // All common USB functionality is implemented here.
 class USBHost;
 
@@ -209,11 +211,11 @@ struct Device_struct {
 	uint16_t LanguageID;
 };
 
-// Pipe_t holes all information about each USB endpoint/pipe
+// Pipe_t holds all information about each USB endpoint/pipe
 // The first half is an EHCI QH structure for the pipe.
 struct Pipe_struct {
 	// Queue Head (QH), EHCI page 46-50
-	struct {  // must be aligned to 32 byte boundary
+	struct alignas(32) {  // must be aligned to 32 byte boundary
 		volatile uint32_t horizontal_link;
 		volatile uint32_t capabilities[2];
 		volatile uint32_t current;
@@ -253,7 +255,7 @@ struct Pipe_struct {
 // returned to the memory pool.
 struct Transfer_struct {
 	// Queue Element Transfer Descriptor (qTD), EHCI pg 40-45
-	struct {  // must be aligned to 32 byte boundary
+	struct alignas(32) {  // must be aligned to 32 byte boundary
 		volatile uint32_t next;
 		volatile uint32_t alt_next;
 		volatile uint32_t token;
@@ -405,12 +407,12 @@ public:
 
 class USBHostPort {
 public:
-	// 1 => USB1 (which is the device port by default); 2 => USB2 (which is the host port by default)
-	uint8_t host_port;
-
 	// The EHCI periodic schedule, used for interrupt pipes/endpoints
 	uint32_t periodictable[PERIODIC_LIST_SIZE] __attribute__ ((aligned(4096)));
 	uint8_t  uframe_bandwidth[PERIODIC_LIST_SIZE*8];
+
+	// 1 => USB1 (which is the device port by default); 2 => USB2 (which is the host port by default)
+	uint8_t host_port;
 
 	// State physical USB host port (PORT_STATE_*)
 	uint8_t  port_state = 0;
@@ -585,14 +587,6 @@ public:
 		return &dev->strbuf->buffer[dev->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]];
 	}
 
-	// When an unknown (not chapter 9) control transfer completes, this
-	// function is called for all drivers bound to the device.  Return
-	// true means this driver originated this control transfer, so no
-	// more drivers need to be offered an opportunity to process it.
-	// This function is optional, only needed if the driver uses control
-	// transfers and wishes to be notified when they complete.
-	virtual void control(const Transfer_t *transfer) { }
-
 protected:
 	USBDriver() : next(NULL), device(NULL) {}
 	// Check if a driver wishes to claim a device or interface or group
@@ -605,6 +599,14 @@ protected:
 	//   type is 0 for device level, 1 for interface level, 2 for IAD
 	//   descriptors points to the specific descriptor data
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
+
+	// When an unknown (not chapter 9) control transfer completes, this
+	// function is called for all drivers bound to the device.  Return
+	// true means this driver originated this control transfer, so no
+	// more drivers need to be offered an opportunity to process it.
+	// This function is optional, only needed if the driver uses control
+	// transfers and wishes to be notified when they complete.
+	virtual void control(const Transfer_t *transfer) { }
 
 	// When any of the USBDriverTimer objects a driver creates generates
 	// a timer event, this function is called.
@@ -1572,13 +1574,12 @@ class USBSerialBase: public USBDriver, public Stream {
 
 	USBSerialBase(USBHost &host, uint32_t *big_buffer, uint16_t buffer_size, 
 		uint16_t min_pipe_rxtx, uint16_t max_pipe_rxtx) :
-			usb_host_port(host.usb_host_port),
 			txtimer(this), 
 			_bigBuffer(big_buffer), 
 			_big_buffer_size(buffer_size), 
 			_min_rxtx(min_pipe_rxtx), 
-			_max_rxtx(max_pipe_rxtx)
-		{ 
+			_max_rxtx(max_pipe_rxtx),
+			usb_host_port(host.usb_host_port) { 
 			init(); 
 		}
 
@@ -1610,7 +1611,6 @@ private:
 	bool init_buffers(uint32_t rsize, uint32_t tsize);
 	void ch341_setBaud(uint8_t byte_index);
 private:
-	USBHostPort *usb_host_port;
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
@@ -1657,7 +1657,7 @@ private:
 		int			claim_at_type;
 	} product_vendor_mapping_t;
 	static product_vendor_mapping_t pid_vid_mapping[];
-
+	USBHostPort *usb_host_port;
 };
 
 class USBSerial : public USBSerialBase {
@@ -1732,7 +1732,7 @@ private:
 	size_t write(const void *data, const size_t size);
 	int read(void *data, const size_t size);
 	void transmit();
-private:
+
 	Pipe_t mypipes[2] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[3] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
@@ -1749,7 +1749,7 @@ private:
 	volatile uint8_t  rxlen;
 	volatile bool     do_polling;
 	USBHostPort *usb_host_port;
-private:
+
 	enum _eventi {
 		EVENTI_MESSAGE = 0,
 		EVENTI_CHANNEL,
@@ -1920,7 +1920,7 @@ protected:
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 private:
-	void init(USBHost&);
+	void init(USBHost &host);
 	USBHIDParser *driver_;
 	enum { MAX_PACKET_SIZE = 64 };
 	bool (*receiveCB)(uint32_t usage, const uint8_t *data, uint32_t len) = nullptr;

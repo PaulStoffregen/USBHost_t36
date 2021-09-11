@@ -289,7 +289,7 @@ void USBHostPort::isr()
 	if (stat & USBHS_USBSTS_TI0) println(" Timer0");
 	if (stat & USBHS_USBSTS_TI1) println(" Timer1");
 #endif
-	println("isr ", stat, HEX);
+
 	if (stat & USBHS_USBSTS_UAI) { // completed qTD(s) from the async schedule
 		println("Async Followup");
 		//print(async_followup_first, async_followup_last);
@@ -608,12 +608,16 @@ Pipe_t * USBHostPort::new_Pipe(Device_t *dev, uint32_t type, uint32_t endpoint,
 			pipe->qh.horizontal_link = (uint32_t)&(pipe->qh) | 2; // 2=QH
 			USBHS_ASYNCLISTADDR_(host_port) = (uint32_t)&(pipe->qh);
 			USBHS_USBCMD_(host_port) |= USBHS_USBCMD_ASE; // enable async schedule
-			//println("  first in async list");
+			println("ASYNCLISTADDR: ", (uint32_t)&USBHS_ASYNCLISTADDR_(host_port), HEX);
+			println("&pipe->qh: ", (uint32_t)&(pipe->qh), HEX);
+			println("USBCMD: ", (uint32_t)&USBHS_USBCMD_(host_port), HEX);
+			println("ASE: ", USBHS_USBCMD_ASE, HEX);
+			println("  first in async list");
 		} else {
 			// EHCI 1.0: section 4.8.1, page 72
 			pipe->qh.horizontal_link = list->qh.horizontal_link;
 			list->qh.horizontal_link = (uint32_t)&(pipe->qh) | 2;
-			//println("  added to async list");
+			println("  added to async list");
 		}
 	} else if (type == 3) {
 		// interrupt: add to periodic schedule
@@ -690,6 +694,7 @@ bool USBHostPort::queue_Control_Transfer(Device_t *dev, setup_t *setup, void *bu
 	//println("setup address ", (uint32_t)setup, HEX);
 	init_qTD(transfer, setup, 8, 2, 0, false);
 	init_qTD(status, NULL, 0, status_direction, 1, true);
+	println("STATUS qTD: ", status->qtd.token, HEX);
 	status->pipe = dev->control_pipe;
 	status->buffer = buf;
 	status->length = setup->wLength;
@@ -809,6 +814,8 @@ bool USBHostPort::queue_Transfer(Pipe_t *pipe, Transfer_t *transfer)
 		add_to_periodic_followup_list(halt, p);
 	}
 	// old halt becomes new transfer, this commits all new qTDs to QH
+	println("Old token: ", halt->qtd.token, HEX);
+	println("New token: ", token, HEX);
 	halt->qtd.token = token;
 	
 	while (!(halt->qtd.token & 0x40)) {
@@ -822,7 +829,7 @@ bool USBHostPort::queue_Transfer(Pipe_t *pipe, Transfer_t *transfer)
 bool USBHostPort::followup_Transfer(Transfer_t *transfer)
 {
 	print("  Followup ", (uint32_t)transfer, HEX);
-	//println("    token=", transfer->qtd.token, HEX);
+	println("    token=", transfer->qtd.token, HEX);
 
 	if (!(transfer->qtd.token & 0x80)) {
 		// TODO: check error status
