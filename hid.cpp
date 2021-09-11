@@ -159,6 +159,12 @@ void USBHIDParser::control(const Transfer_t *transfer)
 {
 	println("control callback (hid)");
 	PrintDebug::print_hexbytes(transfer->buffer, transfer->length);
+	if (topusage_drivers[0]) {
+		if (topusage_drivers[0]->hid_process_control(transfer)) {
+			return; // the called function can tell us they processed it.
+		}
+	}
+
 	// To decode hex dump to human readable HID report summary:
 	//   http://eleccelerator.com/usbdescreqparser/
 	uint32_t mesg = transfer->setup.word1;
@@ -242,6 +248,7 @@ void USBHIDParser::in_data(const Transfer_t *transfer)
 
 void USBHIDParser::out_data(const Transfer_t *transfer)
 {
+	Serial.printf(">>>USBHIDParser::out_data\n");
 	println("USBHIDParser:out_data called (instance)");
 	// A packet completed. lets mark it as done and call back
 	// to top reports handler.  We unmark our checkmark to
@@ -301,8 +308,11 @@ bool USBHIDParser::sendControlPacket(uint32_t bmRequestType, uint32_t bRequest,
 			uint32_t wValue, uint32_t wIndex, uint32_t wLength, void *buf)
 {
 	// Use setup structure to build packet 
+	Serial.printf(">>> SendControlPacket: %x %x %x %x %d", bmRequestType, bRequest, wValue, wIndex, wLength);
 	mk_setup(setup, bmRequestType, bRequest, wValue, wIndex, wLength); // ps3 tell to send report 1?
-	return usb_host_port->queue_Control_Transfer(device, &setup, buf, this);
+	bool fReturn = usb_host_port->queue_Control_Transfer(device, &setup, buf, this);
+	Serial.printf(" return: %u\n", fReturn);
+	return fReturn;
 }
 
 

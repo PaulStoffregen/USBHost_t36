@@ -687,6 +687,7 @@ private:
 	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
 	virtual bool hid_process_in_data(const Transfer_t *transfer) {return false;}
 	virtual bool hid_process_out_data(const Transfer_t *transfer) {return false;}
+	virtual bool hid_process_control(const Transfer_t *transfer) {return false;}
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
@@ -1102,7 +1103,8 @@ public:
 	// PS3 pair function. hack, requires that it be connect4ed by USB and we have the address of the Bluetooth dongle...
 	bool PS3Pair(uint8_t* bdaddr);
 
-	
+	bool PS4GetCurrentPairing(uint8_t* bdaddr);	
+	bool PS4Pair(uint8_t* bdaddr);	
 	
 protected:
 	// From USBDriver
@@ -1114,9 +1116,11 @@ protected:
 	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
 	virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
 	virtual void hid_input_data(uint32_t usage, int32_t value);
+	virtual bool hid_process_control(const Transfer_t *transfer);
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 	virtual bool hid_process_out_data(const Transfer_t *transfer);
+	virtual bool hid_process_in_data(const Transfer_t *transfer);
 
 		// Bluetooth data
 	virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName);
@@ -1179,6 +1183,7 @@ private:
 	Pipe_t 			*txpipe_;
 	uint8_t 		rxbuf_[64];	// receive circular buffer
 	uint8_t			txbuf_[64];		// buffer to use to send commands to joystick 
+	volatile bool 		send_Control_packet_active_;
 	// Mapping table to say which devices we handle
 	typedef struct {
 		uint16_t 	idVendor;
@@ -1594,6 +1599,8 @@ class USBSerialBase: public USBDriver, public Stream {
 	virtual size_t write(uint8_t c);
 	virtual void flush(void);
 
+	bool setDTR(bool fSet);
+	bool setRTS(bool fSet);
 	using Print::write;
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
@@ -1646,8 +1653,10 @@ private:
 	uint8_t pl2303_v1;		// Which version do we have
 	uint8_t pl2303_v2;
 	uint8_t interface;
-	bool 	control_queued;	// Is there already a queued control messaged
+	uint8_t dtr_rts_;		// save logical state for the two of them. 
+	volatile bool 	control_queued;	// Is there already a queued control messaged
 	typedef enum { UNKNOWN=0, CDCACM, FTDI, PL2303, CH341, CP210X } sertype_t;
+
 	sertype_t sertype;
 
 	typedef struct {
@@ -2006,9 +2015,10 @@ public:
     uint16_t		connection_rxid_ = 0;
     uint16_t		control_dcid_ = 0x70;
     uint16_t		interrupt_dcid_ = 0x71;
+		uint16_t		sdp_dcid_ = 0x40;	
     uint16_t		interrupt_scid_;
     uint16_t		control_scid_;
-
+		uint16_t		sdp_scid_;
     uint8_t			device_bdaddr_[6];// remember devices address
     uint8_t			device_ps_repetion_mode_ ; // mode
     uint8_t			device_clock_offset_[2];
@@ -2235,6 +2245,7 @@ public:
 
 	uint8_t msReadBlocks(const uint32_t BlockAddress, const uint16_t Blocks,
 						 const uint16_t BlockSize, void * sectorBuffer);
+	uint8_t msReadSectorsWithCB(const uint32_t BlockAddress, const uint16_t Blocks, void (*callback)(uint32_t token, uint8_t* data), uint32_t token);
 	uint8_t msWriteBlocks(const uint32_t BlockAddress, const uint16_t Blocks,
                         const uint16_t BlockSize,	const void * sectorBuffer);
 protected:
@@ -2276,6 +2287,14 @@ private:
 	volatile bool msControlCompleted = false;
 	uint32_t CBWTag = 0;
 	volatile bool deviceAvailable = false;
+	// experiment with transfers with callbacks.
+	void (*_read_sectors_callback)(uint32_t token, uint8_t* data) = nullptr;
+	uint32_t _read_sectors_token = 0;
+	uint16_t _read_sectors_remaining = 0;
+	enum {READ_CALLBACK_TIMEOUT_MS=250};
+    elapsedMillis _emlastRead;
+	uint8_t _read_sector_buffer1[512];
+	uint8_t _read_sector_buffer2[512];
 	USBHostPort *usb_host_port;
 };
 
