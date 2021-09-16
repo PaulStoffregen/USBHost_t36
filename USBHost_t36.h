@@ -711,10 +711,11 @@ private:
 	setup_t setup;
 	uint8_t descriptor[800];
 	uint8_t report[64];
+	uint8_t report2[64];
 	uint16_t descsize;
 	bool use_report_id;
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
-	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
+	Transfer_t mytransfers[5] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
 	uint8_t txstate = 0;
 	uint8_t *tx1 = nullptr;
