@@ -6,7 +6,7 @@
 
 // You can have this one only output to the USB type Keyboard and
 // not show the keyboard data on Serial...
-//#define SHOW_KEYBOARD_DATA
+#define SHOW_KEYBOARD_DATA
 
 USBHost myusb;
 USBHub hub1(myusb);
@@ -51,6 +51,9 @@ void OnHIDExtrasPress(uint32_t top, uint16_t key)
 #ifdef KEYBOARD_INTERFACE
   if (top == 0xc0000) {
     Keyboard.press(0XE400 | key);
+    #ifndef KEYMEDIA_INTERFACE
+    #error "KEYMEDIA_INTERFACE is Not defined"
+    #endif
   }
 #endif
 #ifdef SHOW_KEYBOARD_DATA
