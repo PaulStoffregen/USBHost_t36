@@ -16,6 +16,7 @@ USBHIDParser hid2(myusb);
 
 #ifdef KEYBOARD_INTERFACE
 uint8_t keyboard_last_leds = 0;
+uint8_t keyboard_modifiers = 0;  // try to keep a reasonable value
 #elif !defined(SHOW_KEYBOARD_DATA)
 #Warning: "USB type does not have Serial, so turning on SHOW_KEYBOARD_DATA"
 #define SHOW_KEYBOARD_DATA
@@ -51,9 +52,9 @@ void OnHIDExtrasPress(uint32_t top, uint16_t key)
 #ifdef KEYBOARD_INTERFACE
   if (top == 0xc0000) {
     Keyboard.press(0XE400 | key);
-    #ifndef KEYMEDIA_INTERFACE
-    #error "KEYMEDIA_INTERFACE is Not defined"
-    #endif
+#ifndef KEYMEDIA_INTERFACE
+#error "KEYMEDIA_INTERFACE is Not defined"
+#endif
   }
 #endif
 #ifdef SHOW_KEYBOARD_DATA
@@ -83,14 +84,47 @@ void OnRawPress(uint8_t keycode) {
     keyboard_last_leds = keyboard_leds;
     keyboard1.LEDS(keyboard_leds);
   }
-
-  Keyboard.set_modifier(keyboard1.getModifiers());
-  Keyboard.press(0XF000 | keycode);
+  if (keycode >= 103 && keycode < 111) {
+    // one of the modifier keys was pressed, so lets turn it
+    // on global..
+    uint8_t keybit = 1 << (keycode - 103);
+    keyboard_modifiers |= keybit;
+    Keyboard.set_modifier(keyboard_modifiers);
+  } else {
+    if (keyboard1.getModifiers() != keyboard_modifiers) {
+      #ifdef SHOW_KEYBOARD_DATA
+      Serial.printf("Mods mismatch: %x != %x\n", keyboard_modifiers, keyboard1.getModifiers());
+      #endif
+      keyboard_modifiers = keyboard1.getModifiers();
+      Keyboard.set_modifier(keyboard_modifiers);
+    }
+    Keyboard.press(0XF000 | keycode);
+  }
+#endif
+#ifdef SHOW_KEYBOARD_DATA
+  Serial.print("OnRawPress keycode: ");
+  Serial.print(keycode, HEX);
+  Serial.print(" Modifiers: ");
+  Serial.println(keyboard_modifiers, HEX);
 #endif
 }
 void OnRawRelease(uint8_t keycode) {
 #ifdef KEYBOARD_INTERFACE
-  Keyboard.release(0XF000 | keycode);
+  if (keycode >= 103 && keycode < 111) {
+    // one of the modifier keys was pressed, so lets turn it
+    // on global..
+    uint8_t keybit = 1 << (keycode - 103);
+    keyboard_modifiers &= ~keybit;
+    Keyboard.set_modifier(keyboard_modifiers);
+  } else {
+    Keyboard.release(0XF000 | keycode);
+  }
+#endif
+#ifdef SHOW_KEYBOARD_DATA
+  Serial.print("OnRawRelease keycode: ");
+  Serial.print(keycode, HEX);
+  Serial.print(" Modifiers: ");
+  Serial.println(keyboard1.getModifiers(), HEX);
 #endif
 }
 
@@ -138,8 +172,8 @@ void ShowUpdatedDeviceListInfo()
       }
     }
   }
-#endif  
-} 
+#endif
+}
 
 #ifdef SHOW_KEYBOARD_DATA
 void OnPress(int key)
