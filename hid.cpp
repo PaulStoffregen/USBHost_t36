@@ -173,6 +173,7 @@ void USBHIDParser::control(const Transfer_t *transfer)
 		println("  got report descriptor");
 		parse();
 		queue_Data_Transfer(in_pipe, report, in_size, this);
+		queue_Data_Transfer(in_pipe, report2, in_size, this);
 		if (device->idVendor == 0x054C && 
 				((device->idProduct == 0x0268) || (device->idProduct == 0x042F)/* || (device->idProduct == 0x03D5)*/)) {
 			println("send special PS3 feature command");
@@ -242,7 +243,8 @@ void USBHIDParser::in_data(const Transfer_t *transfer)
 			}
 		}
 	}
-	queue_Data_Transfer(in_pipe, report, in_size, this);
+	if (buf == report2) queue_Data_Transfer(in_pipe, report2, in_size, this);
+	else queue_Data_Transfer(in_pipe, report, in_size, this);
 }
 
 
