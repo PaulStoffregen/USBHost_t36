@@ -29,8 +29,8 @@
 #if !defined(__MK66FX1M0__) && !defined(__IMXRT1052__) && !defined(__IMXRT1062__)
 #error "USBHost_t36 only works with Teensy 3.6 or Teensy 4.x.  Please select it in Tools > Boards"
 #endif
-#include "utility/imxrt_usbhs.h"
-#include "utility/msc.h"
+#include "msc/imxrt_usbhs.h"
+#include "msc/msc.h"
 
 // Dear inquisitive reader, USB is a complex protocol defined with
 // very specific terminology.  To have any chance of understand this
@@ -2134,5 +2134,6 @@ private:
 	uint8_t _read_sector_buffer1[512];
 	uint8_t _read_sector_buffer2[512];
 };
+
 
 #endif
