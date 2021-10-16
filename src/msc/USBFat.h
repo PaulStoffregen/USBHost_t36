@@ -60,9 +60,9 @@ class UsbBase : public Vol {
    * \return true for success or false for failure.
    */
   bool mscBegin(msController *pDrive, bool setCwv = true, uint8_t part = 1) {
-//    Serial.printf("UsbBase::mscBegin called %x %x %d\n", (uint32_t)pDrive, setCwv, part);
+    Serial.printf("UsbBase::mscBegin called %x %x %d\n", (uint32_t)pDrive, setCwv, part); Serial.flush();
     if (!usbDriveBegin(pDrive)) return false;
-//    Serial.println("    After usbDriveBegin");
+    Serial.println("    After usbDriveBegin"); Serial.flush();
     return Vol::begin((USBMSCDevice*)m_USBmscDrive, setCwv, part);
   }
   //----------------------------------------------------------------------------

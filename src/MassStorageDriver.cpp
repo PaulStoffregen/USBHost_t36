@@ -122,6 +122,10 @@ bool msController::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 	print("   initialized = ");
 	println(msDriveInfo.initialized);
 #endif	
+	
+	// Lets signal that we should do the claim code...
+	_claim_partitions_pending = true;
+
 	return true;
 }
 
@@ -139,6 +143,12 @@ void msController::disconnect()
 	print("   initialized ");
 	println(msDriveInfo.initialized);
 #endif
+	for (msFSDriver *pfsd = available_msFSDriver_list; pfsd != nullptr; pfsd = pfsd->next) {
+		if (pfsd->controller_ == this) {
+			pfsd->release_partition();
+			pfsd->controller_ = nullptr;
+		}
+	}
 }
 
 void msController::control(const Transfer_t *transfer)
@@ -691,3 +701,50 @@ uint8_t msController::msProcessError(uint8_t msStatus) {
 			return msStatus;
 	}
 }
+
+// Driver list
+//---------------------------------------------------------------------------
+
+msFSDriver *msController::available_msFSDriver_list = nullptr;
+
+void msController::filesystem_ready_for_controller(msFSDriver *driver)
+{
+	driver->next = NULL;
+	if (available_msFSDriver_list == NULL) {
+		available_msFSDriver_list = driver;
+	} else {
+		msFSDriver *last = available_msFSDriver_list;
+		while (last->next) last = last->next;
+		last->next = driver;
+	}
+}
+
+//---------------------------------------------------------------------------
+void msController::Task()
+{
+	if (_claim_partitions_pending) {
+#ifdef DBGprint
+		println("msController::Task()");
+#endif
+		_claim_partitions_pending = false;
+		// Now lets see if we have a list of msFDriver items to maybe to bind to
+		// First version play stupid and ask each one in list to see if they want
+		// it, even if we might be able to deduce that they already are in use
+		// for another partition..
+		// Also we don't actaully look here to see if we have a valid paritition
+		println("Loop to claim partitions");
+		msFSDriver *pfsd;
+	    for (uint8_t part = 1; part < 5; part++) {
+	    	for (pfsd = available_msFSDriver_list; pfsd != nullptr; pfsd = pfsd->next) {
+	    		if (pfsd->claim_partition(this, part)) {
+	    			// found object that says it wants this one.
+	    			pfsd->controller_ = this;
+	    			pfsd->part_ = part;
+	    			break;
+	    		}
+	    	}
+    	}
+
+	}
+}
+

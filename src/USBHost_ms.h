@@ -32,13 +32,13 @@
 
 //--------------------------------------------------------------------------
 // MSC FS object to process one partition of a 
-class msFilesystem : public FS {
+class msFilesystem : public FS, public msFSDriver {
 public:
 	msFilesystem(USBHost &host) { init(); }
 	msFilesystem(USBHost *host) { init(); }
 
 	bool begin(msController *pDrive, bool setCwv = true, uint8_t part = 1);
-	void init() {};
+	void init();
 
 	File open(const char *filepath, uint8_t mode = FILE_READ);
 	bool exists(const char *filepath);
@@ -50,6 +50,10 @@ public:
 	uint64_t totalSize();
 	bool format(int type=0, char progressChar=0, Print& pr=Serial);
 	bool mediaPresent();	
+private: 
+    bool claim_partition(msController *controller, uint8_t part);
+    void release_partition();
+
 public: // allow access, so users can mix MSC & SdFat APIs
 	UsbFs mscfs;
 protected:

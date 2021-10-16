@@ -533,7 +533,6 @@ private:
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 	virtual void hid_timer_event(USBDriverTimer *whichTimer) { }
-	void add_to_list();
 	USBHIDInput *next = NULL;
 	friend class USBHIDParser;
 protected:
@@ -562,7 +561,6 @@ private:
 	virtual void release_bluetooth() {};
 	virtual bool remoteNameComplete(const uint8_t *remoteName) {return true;}
 	virtual void connectionComplete(void) {};
-	void add_to_list();
 	BTHIDInput *next = NULL;
 	friend class BluetoothController;
 protected:
@@ -2047,11 +2045,16 @@ private:
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
 };
 
+class msFSDriver;
+
+
 //--------------------------------------------------------------------------
 class msController : public USBDriver {
 public:
 	msController(USBHost &host) { init(); }
 	msController(USBHost *host) { init(); }
+
+	static void filesystem_ready_for_controller(msFSDriver *driver);
 
 	msSCSICapacity_t msCapacity;
 	msInquiryResponse_t msInquiry;
@@ -2087,6 +2090,7 @@ public:
 	uint8_t msWriteBlocks(const uint32_t BlockAddress, const uint16_t Blocks,
                         const uint16_t BlockSize,	const void * sectorBuffer);
 protected:
+	virtual void Task();
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
 	virtual void disconnect();
@@ -2098,6 +2102,7 @@ protected:
 	uint8_t msDoCommand(msCommandBlockWrapper_t *CBW, void *buffer);
 	uint8_t msGetCSW(void);
 private:
+	friend class msFSDriver;
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
@@ -2133,7 +2138,36 @@ private:
     elapsedMillis _emlastRead;
 	uint8_t _read_sector_buffer1[512];
 	uint8_t _read_sector_buffer2[512];
+
+	static msFSDriver *available_msFSDriver_list;
+	bool _claim_partitions_pending = false;
+
 };
+
+class msFSDriver {
+public:
+	operator bool() { return (controller_ != nullptr); }
+	uint16_t idVendor() { return (controller_ != nullptr) ? controller_->idVendor : 0; }
+	uint16_t idProduct() { return (controller_ != nullptr) ? controller_->idProduct : 0; }
+	uint8_t partition() {return (controller_ != nullptr)? part_ : 0xff; }
+
+	const uint8_t *manufacturer()
+		{  return  (controller_ == nullptr) ? nullptr : controller_->manufacturer(); }
+	const uint8_t *product()
+		{  return  (controller_ == nullptr) ? nullptr : controller_->product(); }
+	const uint8_t *serialNumber()
+		{  return  (controller_ == nullptr) ? nullptr : controller_->serialNumber(); }
+
+private:
+	virtual bool claim_partition(msController *controller, uint8_t part) {return false;}
+	virtual void release_partition() {}
+	msFSDriver *next = NULL;
+	friend class msController;
+protected:
+	msController *controller_ = NULL;
+	uint8_t part_; 
+};
+
 
 
 #endif

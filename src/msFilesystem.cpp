@@ -2,6 +2,11 @@
 #include <USBHost_ms.h>
 #include "msc/mscFS.h"
 
+
+void msFilesystem::init() {
+	msController::filesystem_ready_for_controller(this);
+}
+
 bool msFilesystem::begin(msController *pDrive, bool setCwv, uint8_t part) {
 	return mscfs.begin(pDrive, setCwv, part);
 }
@@ -71,3 +76,24 @@ bool msFilesystem::format(int type, char progressChar, Print& pr) { return false
 bool msFilesystem::mediaPresent() {
 	return true; // need to work on this...
 }
+
+//Glue code...
+bool msFilesystem::claim_partition(msController *controller, uint8_t part) {
+	#ifdef USBHOST_PRINT_DEBUG
+	USBHDBGSerial.printf("msFilesystem::claim_partition = %x %x %u\n", (uint32_t)this, (uint32_t)controller, part);
+	USBHDBGSerial.flush();
+	#endif
+	if (controller_ != nullptr) return false; // only grab one partition. 
+	bool status = begin(controller, false, part);	
+	#ifdef USBHOST_PRINT_DEBUG
+	USBHDBGSerial.printf("  begin returned: %u", status);
+	USBHDBGSerial.flush();
+	#endif
+	return status;
+}
+
+void msFilesystem::release_partition() {
+	// Not sure but... 
+	mscfs.end();
+}
+
