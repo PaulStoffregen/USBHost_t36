@@ -73,10 +73,6 @@ uint64_t msFilesystem::totalSize() {
 
 PFsLib pfsLIB1;
 bool msFilesystem::format(int type, char progressChar, Print& pr) {
-  if (mscfs.fatType() == FAT_TYPE_FAT12) {
-    pr.printf("    Fat12 not supported\n");
-    return false;
-  }
   bool success = pfsLIB1.formatter(mscfs, 0, false, false, pr);
 
   return success;

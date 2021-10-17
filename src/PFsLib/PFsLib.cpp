@@ -222,7 +222,7 @@ bool PFsLib::formatter(PFsVolume &partVol, uint8_t fat_type, bool dump_drive, bo
     free(bpb_area); 
   }
   else {
-    Serialx.println("Cannot format an invalid partition");
+    Serialx.println("Formatting of Fat12 partition not supported");
     return false;
   }
   return true;
