@@ -70,7 +70,18 @@ uint64_t msFilesystem::usedSize() {
 uint64_t msFilesystem::totalSize() {
 	return (uint64_t)mscfs.clusterCount() * (uint64_t)mscfs.bytesPerCluster();
 }
-bool msFilesystem::format(int type, char progressChar, Print& pr) { return false; }
+
+PFsLib pfsLIB1;
+bool msFilesystem::format(int type, char progressChar, Print& pr) {
+  if (mscfs.fatType() == FAT_TYPE_FAT12) {
+    pr.printf("    Fat12 not supported\n");
+    return false;
+  }
+  bool success = pfsLIB1.formatter(mscfs, 0, false, false, pr);
+
+  return success;
+}
+
 
 
 bool msFilesystem::mediaPresent() {

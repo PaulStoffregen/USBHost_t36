@@ -153,7 +153,7 @@ void PFsLib::InitializeDrive(BlockDeviceInterface *dev, uint8_t fat_type, print_
 }
 
 
-bool PFsLib::formatter(PFsVolume &partVol, uint8_t fat_type, bool dump_drive, bool g_exfat_dump_changed_sectors, Stream &Serialx)
+bool PFsLib::formatter(PFsVolume &partVol, uint8_t fat_type, bool dump_drive, bool g_exfat_dump_changed_sectors, Print &Serialx)
 {
   uint8_t  sectorBuffer[512];
 
