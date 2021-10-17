@@ -171,7 +171,7 @@ bool PFsLib::formatter(PFsVolume &partVol, uint8_t fat_type, bool dump_drive, bo
     // I am going to read in 24 sectors for EXFat.. 
     uint8_t *bpb_area = (uint8_t*)malloc(512*24); 
     if (!bpb_area) {
-      Serialx.println("Unable to allocate dump memory");
+      writeMsg("Unable to allocate dump memory");
       return false;
     }
     // Lets just read in the top 24 sectors;
@@ -185,13 +185,13 @@ bool PFsLib::formatter(PFsVolume &partVol, uint8_t fat_type, bool dump_drive, bo
       sector_buffer = bpb_area;
       
       for (uint32_t i = 0; i < 12; i++) {
-        Serialx.printf("\nSector %u(%u)\n", i, sector);
+        DBGPrintf("\nSector %u(%u)\n", i, sector);
         dump_hexbytes(sector_buffer, 512);
         sector++;
         sector_buffer += 512;
       }
       for (uint32_t i = 12; i < 24; i++) {
-        Serialx.printf("\nSector %u(%u)\n", i, sector);
+        DBGPrintf("\nSector %u(%u)\n", i, sector);
         compare_dump_hexbytes(sector_buffer, sector_buffer - (512*12), 512);
         sector++;
         sector_buffer += 512;
@@ -201,17 +201,17 @@ bool PFsLib::formatter(PFsVolume &partVol, uint8_t fat_type, bool dump_drive, bo
       if (fat_type != FAT_TYPE_EXFAT) {
         PFsFatFormatter::format(partVol, fat_type, sectorBuffer, &Serialx);
       } else {
-        Serialx.println("ExFatFormatter - WIP");
+        //DBGPrintf("ExFatFormatter - WIP\n");
         PFsExFatFormatter::format(partVol, sectorBuffer, &Serial);
         if (g_exfat_dump_changed_sectors) {
           // Now lets see what changed
           uint8_t *sector_buffer = bpb_area;
           for (uint32_t i = 0; i < 24; i++) {
             partVol.blockDevice()->readSector(sector, buffer);
-            Serialx.printf("Sector %u(%u)\n", i, sector);
+            DBGPrintf("Sector %u(%u)\n", i, sector);
             if (memcmp(buffer, sector_buffer, 512)) {
               compare_dump_hexbytes(buffer, sector_buffer, 512);
-              Serialx.println();
+              DBGPrintf("\n");
             }
             sector++;
             sector_buffer += 512;
@@ -222,7 +222,7 @@ bool PFsLib::formatter(PFsVolume &partVol, uint8_t fat_type, bool dump_drive, bo
     free(bpb_area); 
   }
   else {
-    Serialx.println("Formatting of Fat12 partition not supported");
+    writeMsg("Formatting of Fat12 partition not supported");
     return false;
   }
   return true;
