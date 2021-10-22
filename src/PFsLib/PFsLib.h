@@ -46,7 +46,7 @@ class PFsLib : public PFsFatFormatter, public PFsExFatFormatter
 
  private:
 	BlockDevice* m_dev;
-	print_t*m_pr;
+	print_t* m_pr;
 
 };
  
