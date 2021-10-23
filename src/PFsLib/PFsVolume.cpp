@@ -33,7 +33,7 @@ bool PFsVolume::begin(USBMSCDevice* dev, bool setCwv, uint8_t part) {
 }
 
 bool PFsVolume::begin(BlockDevice* blockDev, bool setCwv, uint8_t part) {
-  //Serial.printf("PFsVolume::begin(%x, %u)\n", (uint32_t)blockDev, part);
+  Serial.printf("PFsVolume::begin(%x, %u)\n", (uint32_t)blockDev, part);
   if ((m_blockDev != blockDev) && (m_blockDev != nullptr)) m_usmsci = nullptr; // 
   m_blockDev = blockDev;
   m_part = part;

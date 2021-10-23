@@ -42,6 +42,7 @@ class PFsLib : public PFsFatFormatter, public PFsExFatFormatter
 	void dump_hexbytes(const void *ptr, int len);
 	void print_partion_info(PFsVolume &partVol, Stream &Serialx);
 	uint32_t mbrDmp(BlockDeviceInterface *blockDev, uint32_t device_sector_count, Stream &Serialx);
+    uint32_t gptDmp(BlockDeviceInterface *blockDev, Stream &Serialx);
 	void compare_dump_hexbytes(const void *ptr, const uint8_t *compare_buf, int len);
 
  private:
