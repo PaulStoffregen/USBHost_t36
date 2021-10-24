@@ -155,73 +155,76 @@ void PFsLib::InitializeDrive(BlockDeviceInterface *dev, uint8_t fat_type, print_
 
 bool PFsLib::formatter(PFsVolume &partVol, uint8_t fat_type, bool dump_drive, bool g_exfat_dump_changed_sectors, Print &Serialx)
 {
-  uint8_t  sectorBuffer[512];
+  uint8_t  buffer[512];
 
   m_pr = &Serialx; // I believe we need this as dump_hexbytes prints to this...
+  uint8_t *bpb_area = nullptr;
+  uint8_t *sector_buffer;
+  uint32_t sector_index = 0; 
 
   if (fat_type == 0) fat_type = partVol.fatType();
 
   if (fat_type != FAT_TYPE_FAT12) {
-    // 
-    uint8_t buffer[512];
-    MbrSector_t *mbr = (MbrSector_t *)buffer;
-    if (!partVol.blockDevice()->readSector(0, buffer)) return false;
-    MbrPart_t *pt = &mbr->part[partVol.part() - 1];
+    // only do any of this stuff if we are dumping something!
+    if (dump_drive || g_exfat_dump_changed_sectors) {
+      MbrSector_t *mbr = (MbrSector_t *)buffer;
+      if (!partVol.blockDevice()->readSector(0, buffer)) return false;
+      MbrPart_t *pt = &mbr->part[partVol.part() - 1];
 
-    uint32_t sector = getLe32(pt->relativeSectors);
+      sector_index = getLe32(pt->relativeSectors);
 
-    // I am going to read in 24 sectors for EXFat.. 
-    uint8_t *bpb_area = (uint8_t*)malloc(512*24); 
-    if (!bpb_area) {
-      writeMsg(F("Unable to allocate dump memory"));
-      return false;
+      // I am going to read in 24 sectors for EXFat.. 
+      bpb_area = (uint8_t*)malloc(512*24); 
+      if (!bpb_area) {
+        writeMsg(F("Unable to allocate dump memory"));
+        return false;
+      }
+      // Lets just read in the top 24 sectors;
+      sector_buffer = bpb_area;
+      for (uint32_t i = 0; i < 24; i++) {
+        partVol.blockDevice()->readSector(sector_index+i, sector_buffer);
+        sector_buffer += 512;
+      }
     }
-    // Lets just read in the top 24 sectors;
-    uint8_t *sector_buffer = bpb_area;
-    for (uint32_t i = 0; i < 24; i++) {
-      partVol.blockDevice()->readSector(sector+i, sector_buffer);
-      sector_buffer += 512;
-    }
-
     if (dump_drive) {
       sector_buffer = bpb_area;
       
       for (uint32_t i = 0; i < 12; i++) {
-        DBGPrintf(F("\nSector %u(%u)\n"), i, sector);
+        DBGPrintf(F("\nSector %u(%u)\n"), i, sector_index);
         dump_hexbytes(sector_buffer, 512);
-        sector++;
+        sector_index++;
         sector_buffer += 512;
       }
       for (uint32_t i = 12; i < 24; i++) {
-        DBGPrintf(F("\nSector %u(%u)\n"), i, sector);
+        DBGPrintf(F("\nSector %u(%u)\n"), i, sector_index);
         compare_dump_hexbytes(sector_buffer, sector_buffer - (512*12), 512);
-        sector++;
+        sector_index++;
         sector_buffer += 512;
       }
 
     } else {  
       if (fat_type != FAT_TYPE_EXFAT) {
-        PFsFatFormatter::format(partVol, fat_type, sectorBuffer, &Serialx);
+        PFsFatFormatter::format(partVol, fat_type, buffer, &Serialx);
       } else {
         //DBGPrintf(F("ExFatFormatter - WIP\n"));
-        PFsExFatFormatter::format(partVol, sectorBuffer, &Serial);
+        PFsExFatFormatter::format(partVol, buffer, &Serial);
         if (g_exfat_dump_changed_sectors) {
           // Now lets see what changed
           uint8_t *sector_buffer = bpb_area;
           for (uint32_t i = 0; i < 24; i++) {
-            partVol.blockDevice()->readSector(sector, buffer);
-            DBGPrintf(F("Sector %u(%u)\n"), i, sector);
+            partVol.blockDevice()->readSector(sector_index, buffer);
+            DBGPrintf(F("Sector %u(%u)\n"), i, sector_index);
             if (memcmp(buffer, sector_buffer, 512)) {
               compare_dump_hexbytes(buffer, sector_buffer, 512);
               DBGPrintf("\n");
             }
-            sector++;
+            sector_index++;
             sector_buffer += 512;
           }
         }
       }
     }
-    free(bpb_area); 
+    if (bpb_area) free(bpb_area); 
   }
   else {
     writeMsg(F("Formatting of Fat12 partition not supported"));

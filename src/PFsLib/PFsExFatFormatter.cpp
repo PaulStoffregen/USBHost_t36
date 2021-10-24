@@ -34,6 +34,7 @@
 uint16_t toUpcase(uint16_t chr);
 
 //Set to 0 for debug info
+#define DBG_PRINT  // for more printing. 
 #define DBG_Print	0
 #if defined(DBG_Print)
 #define DBGPrintf Serial.printf
@@ -68,9 +69,12 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
 #if !PRINT_FORMAT_PROGRESS
 (void)pr;
 #endif  //  !PRINT_FORMAT_PROGRESS
+
+  DBGPrintf("\n### PFsExFatFormatter::format called\n");
   checksum = 0;
 
-  MbrSector_t mbr;
+  MbrSector_t *mbr;
+  MbrPart_t *pt;
   ExFatPbs_t* pbs;
   DirUpcase_t* dup;
   DirBitmap_t* dbm;
@@ -82,23 +86,45 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
   m_pr = pr;
   m_dev = partVol.blockDevice();
   m_part = partVol.part()-1;  // convert to 0 biased. 
-    
-  if (!m_dev->readSector(0, (uint8_t*)&mbr)) {
+  if (!m_dev->readSector(0, secBuf)) {
     writeMsg(m_pr, "\nread MBR failed.\n");
     //errorPrint();
     return false;
   }
-  MbrPart_t *pt = &mbr.part[m_part];
-  
-  // Determine partition layout.  
-  m_relativeSectors = getLe32(pt->relativeSectors);
-  sectorCount = getLe32(pt->totalSectors);
+  // See if we are running on an GPT disk
+  mbr = reinterpret_cast<MbrSector_t*>(secBuf);
+  pt = &mbr->part[0];
+  if (pt->type == 0xee) {
+    // This is a GPT initialized Disk assume validation done earlier.
+    //if (!m_dev->readSector(1, secBuf)) return false; 
+    //GPTPartitionHeader_t* gptph = reinterpret_cast<GPTPartitionHeader_t*>(secBuf);
+
+    if (!m_dev->readSector(2 + (m_part >> 2), secBuf)) return false; 
+    GPTPartitionEntrySector_t *gptes = reinterpret_cast<GPTPartitionEntrySector_t*>(secBuf);
+    GPTPartitionEntryItem_t *gptei = &gptes->items[m_part & 0x3];
+
+    // Mow extract the data...
+    m_relativeSectors = getLe64(gptei->firstLBA);
+    uint32_t last_LBA =  getLe64(gptei->lastLBA);   
+    sectorCount = 1 + getLe64(gptei->lastLBA) - getLe64(gptei->firstLBA);
+    m_simple_mbr_Volume = false; 
+    DBGPrintf("    Setting SandBox %u %u\n", m_relativeSectors, last_LBA);
+    setWriteSandBox(m_relativeSectors, last_LBA);
+  } else {
+
+    pt = &mbr->part[m_part];
+    
+    // Determine partition layout.  
+    m_relativeSectors = getLe32(pt->relativeSectors);
+    sectorCount = getLe32(pt->totalSectors);
+    m_simple_mbr_Volume = true;   // assume simple mbr;  
+  }  
   
   bool has_volume_label = partVol.getVolumeLabel(volName, sizeof(volName));
 
   #if defined(DBG_PRINT)
 	DBGPrintf("    m_sectorsPerCluster:%u\n", partVol.sectorsPerCluster());
-	DBGPrintf("    m_relativeSectors:%u\n", getLe32(pt->relativeSectors));
+	DBGPrintf("    m_relativeSectors:%u\n", m_relativeSectors);
 	DBGPrintf("    m_fatStartSector: %u\n", partVol.fatStartSector());
 	DBGPrintf("    m_fatType: %d\n", partVol.fatType());
 	DBGPrintf("    m_clusterCount: %u\n", partVol.clusterCount());
@@ -227,8 +253,8 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
 #if defined(DBG_PRINT)
   DBGPrintf("\tWriting Sector: %d\n", sector-partitionOffset);
 #endif
-  if (!m_dev->writeSector(sector, secBuf)  ||
-      !m_dev->writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
+  if (!writeSector(sector, secBuf)  ||
+      !writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
     DBG_FAIL_MACRO;
     goto fail;
   }
@@ -246,8 +272,8 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
     for (size_t i = 0; i < BYTES_PER_SECTOR; i++) {
       checksum = exFatChecksum(checksum, secBuf[i]);
     }
-    if (!m_dev->writeSector(sector, secBuf)  ||
-        !m_dev->writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
+    if (!writeSector(sector, secBuf)  ||
+        !writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
       DBG_FAIL_MACRO;
       goto fail;
     }
@@ -264,8 +290,8 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
     for (size_t i = 0; i < BYTES_PER_SECTOR; i++) {
       checksum = exFatChecksum(checksum, secBuf[i]);
     }
-    if (!m_dev->writeSector(sector, secBuf)  ||
-        !m_dev->writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
+    if (!writeSector(sector, secBuf)  ||
+        !writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
       DBG_FAIL_MACRO;
       goto fail;
     }
@@ -280,8 +306,8 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
   for (size_t i = 0; i < BYTES_PER_SECTOR; i += 4) {
     setLe32(secBuf + i, checksum);
   }
-  if (!m_dev->writeSector(sector, secBuf)  ||
-      !m_dev->writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
+  if (!writeSector(sector, secBuf)  ||
+      !writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
     DBG_FAIL_MACRO;
     goto fail;
   }
@@ -310,7 +336,7 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
     if (i%(ns/32) == 0) {
       writeMsg(pr, ".");
     }
-    if (!m_dev->writeSector(sector + i, secBuf)) {
+    if (!writeSector(sector + i, secBuf)) {
       DBG_FAIL_MACRO;
       goto fail;
     }
@@ -340,7 +366,7 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
   // Allocate clusters for bitmap, upcase, and root.
   secBuf[0] = 0X7;
   for (uint32_t i = 1; i < ns; i++) {
-    if (!m_dev->writeSector(sector + i, secBuf)) {
+    if (!writeSector(sector + i, secBuf)) {
       DBG_FAIL_MACRO;
       goto fail;
     }
@@ -353,7 +379,7 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
   // Write cluster three, upcase table.
   writeMsg(pr, "Writing upcase table\r\n");
 #if defined(DBG_PRINT)
-  SDBGPrintf("\tWriting Sector: %d\n", clusterHeapOffset + sectorsPerCluster);
+  DBGPrintf("\tWriting Sector: %d\n", clusterHeapOffset + sectorsPerCluster);
 #endif
   if (!writeUpcase(partitionOffset + clusterHeapOffset + sectorsPerCluster)) {
     DBG_FAIL_MACRO;
@@ -392,7 +418,7 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
 
   // Write root, cluster four.
   for (uint32_t i = 0; i < ns; i++) {
-    if (!m_dev->writeSector(sector + i, secBuf)) {
+    if (!writeSector(sector + i, secBuf)) {
       DBG_FAIL_MACRO;
       goto fail;
     }
@@ -406,11 +432,25 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
   DBGPrintf("free clusters after begin on partVol: %u\n", partVol.freeClusterCount());
   if (has_volume_label) partVol.setVolumeLabel(volName);
   m_dev->syncDevice();
+  setWriteSandBox(0, 0xffffffff);
   return true;
 
  fail:
   writeMsg(pr, "Format failed\r\n");
+  setWriteSandBox(0, 0xffffffff);
   return false;
+}
+//----------------------------------------------------------------------------
+bool PFsExFatFormatter::writeSector(uint32_t sector, const uint8_t* src) {
+  // sandbox support
+  if ((sector < m_minSector) || (sector > m_maxSector)) {
+    DBGPrintf("!!! Sandbox Error: %u <= %u <= %u - Press any key to continue\n", 
+      m_minSector, sector, m_maxSector);
+    while (Serial.read() == -1);
+    while (Serial.read() != -1) ;
+  }
+
+  return m_dev->writeSector(sector, src);
 }
 
 //----------------------------------------------------------------------------
@@ -565,8 +605,8 @@ bool PFsExFatFormatter::createExFatPartition(BlockDevice* dev, uint32_t startSec
   
   sector = partitionOffset;
   DBGPrintf("\tWriting Sector: %d\n", sector-partitionOffset);
-  if (!m_dev->writeSector(sector, secBuf)  ||
-      !m_dev->writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
+  if (!writeSector(sector, secBuf)  ||
+      !writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
     DBG_FAIL_MACRO;
     goto fail;
   }
@@ -582,8 +622,8 @@ bool PFsExFatFormatter::createExFatPartition(BlockDevice* dev, uint32_t startSec
     for (size_t i = 0; i < BYTES_PER_SECTOR; i++) {
       checksum = exFatChecksum(checksum, secBuf[i]);
     }
-    if (!m_dev->writeSector(sector, secBuf)  ||
-        !m_dev->writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
+    if (!writeSector(sector, secBuf)  ||
+        !writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
       DBG_FAIL_MACRO;
       goto fail;
     }
@@ -598,8 +638,8 @@ bool PFsExFatFormatter::createExFatPartition(BlockDevice* dev, uint32_t startSec
     for (size_t i = 0; i < BYTES_PER_SECTOR; i++) {
       checksum = exFatChecksum(checksum, secBuf[i]);
     }
-    if (!m_dev->writeSector(sector, secBuf)  ||
-        !m_dev->writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
+    if (!writeSector(sector, secBuf)  ||
+        !writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
       DBG_FAIL_MACRO;
       goto fail;
     }
@@ -612,8 +652,8 @@ bool PFsExFatFormatter::createExFatPartition(BlockDevice* dev, uint32_t startSec
   for (size_t i = 0; i < BYTES_PER_SECTOR; i += 4) {
     setLe32(secBuf + i, checksum);
   }
-  if (!m_dev->writeSector(sector, secBuf)  ||
-      !m_dev->writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
+  if (!writeSector(sector, secBuf)  ||
+      !writeSector(sector + BOOT_BACKUP_OFFSET , secBuf)) {
     DBG_FAIL_MACRO;
     goto fail;
   }
@@ -641,7 +681,7 @@ bool PFsExFatFormatter::createExFatPartition(BlockDevice* dev, uint32_t startSec
     if (i%(ns/32) == 0) {
       writeMsg(pr, ".");
     }
-    if (!m_dev->writeSector(sector + i, secBuf)) {
+    if (!writeSector(sector + i, secBuf)) {
       DBG_FAIL_MACRO;
       goto fail;
     }
@@ -669,7 +709,7 @@ bool PFsExFatFormatter::createExFatPartition(BlockDevice* dev, uint32_t startSec
   // Allocate clusters for bitmap, upcase, and root.
   secBuf[0] = 0X7;
   for (uint32_t i = 1; i < ns; i++) {
-    if (!m_dev->writeSector(sector + i, secBuf)) {
+    if (!writeSector(sector + i, secBuf)) {
       DBG_FAIL_MACRO;
       goto fail;
     }
@@ -716,7 +756,7 @@ bool PFsExFatFormatter::createExFatPartition(BlockDevice* dev, uint32_t startSec
 
   // Write root, cluster four.
   for (uint32_t i = 0; i < ns; i++) {
-    if (!m_dev->writeSector(sector + i, secBuf)) {
+    if (!writeSector(sector + i, secBuf)) {
       DBG_FAIL_MACRO;
       goto fail;
     }
@@ -751,8 +791,15 @@ uint8_t PFsExFatFormatter::addExFatPartitionToMbr() {
   }
   dump_hexbytes(&mbr->part[0], 4*sizeof(MbrPart_t));
 
+  MbrPart_t *pt = &mbr->part[0]; 
+  // Quick test for GPT disk
+  if (pt->type == 0xee) {
+    writeMsg(m_pr, "GPT disk - add ExFat Partition not supported yet !!!\n");
+    return 0xff;
+  }
+
   int part_index = 3; // zero index;
-  MbrPart_t *pt = &mbr->part[part_index];
+  pt = &mbr->part[part_index];
   uint32_t part_sector_start = getLe32(pt->relativeSectors);
   uint32_t part_total_sectors = getLe32(pt->totalSectors);
 
@@ -823,7 +870,7 @@ uint8_t PFsExFatFormatter::addExFatPartitionToMbr() {
   }
   DBGPrintf("After Add Partition\n");
   dump_hexbytes(&mbr->part[0], 4*sizeof(MbrPart_t));
-  m_dev->writeSector(0, m_secBuf);
+  writeSector(0, m_secBuf);
   return part_index;
 
 }
@@ -832,6 +879,10 @@ uint8_t PFsExFatFormatter::addExFatPartitionToMbr() {
 //------------------------------------------------------------------------------
 bool PFsExFatFormatter::writeMbr() {
   // make Master Boot Record.  Use fake CHS.
+  if (!m_simple_mbr_Volume) {
+    DBGPrintf("    writeMBR - Partition not simple MBR entry so dont update\n");
+    return true;
+  }
   memset(m_secBuf, 0, BYTES_PER_SECTOR);
   MbrSector_t* mbr = reinterpret_cast<MbrSector_t*>(m_secBuf);
   MbrPart_t *pt = &mbr->part[m_part];
@@ -851,7 +902,7 @@ bool PFsExFatFormatter::writeMbr() {
   	//DBGPrintf("    m_relativeSectors:%u\n", getLe32(pt->relativeSectors));
     //DBGPrintf("    m_totalSectors:%u\n", getLe32(pt->totalSectors));
   
-  return m_dev->writeSector(0, m_secBuf);
+  return writeSector(0, m_secBuf);
 
 }
 
@@ -865,7 +916,7 @@ bool PFsExFatFormatter::syncUpcase() {
   for (size_t i = index; i < BYTES_PER_SECTOR; i++) {
     m_secBuf[i] = 0;
   }
-  return m_dev->writeSector(m_upcaseSector, m_secBuf);
+  return writeSector(m_upcaseSector, m_secBuf);
 }
 //------------------------------------------------------------------------------
 bool PFsExFatFormatter::writeUpcaseByte(uint8_t b) {
@@ -874,7 +925,7 @@ bool PFsExFatFormatter::writeUpcaseByte(uint8_t b) {
   m_upcaseChecksum = exFatChecksum(m_upcaseChecksum, b);
   m_upcaseSize++;
   if (index == SECTOR_MASK) {
-    return m_dev->writeSector(m_upcaseSector++, m_secBuf);
+    return writeSector(m_upcaseSector++, m_secBuf);
   }
   return true;
 }

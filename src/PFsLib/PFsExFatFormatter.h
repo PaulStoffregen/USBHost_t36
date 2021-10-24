@@ -57,6 +57,16 @@ class PFsExFatFormatter {
   bool writeUpcase(uint32_t sector);
   bool writeUpcaseByte(uint8_t b);
   bool writeUpcaseUnicode(uint16_t unicode);
+
+  // debug support
+  bool writeSector(uint32_t sector, const uint8_t* src);
+  void setWriteSandBox(uint32_t min_sector, uint32_t max_sector) {
+    m_minSector = min_sector;
+    m_maxSector = max_sector;
+  }
+
+  uint32_t m_minSector = 0;
+  uint32_t m_maxSector = (uint32_t)-1;
   
   uint32_t m_upcaseSector;
   uint32_t m_upcaseChecksum;
@@ -82,6 +92,7 @@ class PFsExFatFormatter {
   uint32_t m_part_relativeSectors;
   uint32_t m_bytesPerCluster;
   uint8_t m_part;
+  uint8_t m_simple_mbr_Volume;  // is this a simple volume;
   uint32_t m_sectorCount;
   uint32_t m_capacityMB;
   char volName[32];

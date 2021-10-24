@@ -56,29 +56,52 @@ const uint16_t FAT16_ROOT_SECTOR_COUNT =
 #endif  // PRINT_FORMAT_PROGRESS
 //------------------------------------------------------------------------------
 bool PFsFatFormatter::format(PFsVolume &partVol, uint8_t fat_type, uint8_t* secBuf, print_t* pr) {
-  MbrSector_t mbr;
+  DBGPrintf("\n### PFsFatFormatter::format called\n");
+  MbrSector_t *mbr;
+  MbrPart_t *pt;
 
   bool rtn;
   m_secBuf = secBuf;
   m_pr = pr;
   m_dev = partVol.blockDevice();
   m_part = partVol.part()-1;  // convert to 0 biased. 
+
     
-  if (!m_dev->readSector(0, (uint8_t*)&mbr)) {
+  if (!m_dev->readSector(0, secBuf)) {
     writeMsg("\nread MBR failed.\n");
     //errorPrint();
     return false;
   }
-  MbrPart_t *pt = &mbr.part[m_part];
-  
-  m_sectorCount = getLe32(pt->totalSectors);
-  m_capacityMB = (m_sectorCount + SECTORS_PER_MB - 1)/SECTORS_PER_MB;
-  m_part_relativeSectors = getLe32(pt->relativeSectors);
 
+  mbr = reinterpret_cast<MbrSector_t*>(secBuf);
+  pt = &mbr->part[0];
+  if (pt->type == 0xee) {
+    // This is a GPT initialized Disk assume validation done earlier.
+    if (!m_dev->readSector(1, secBuf)) return false; 
+    //GPTPartitionHeader_t* gptph = reinterpret_cast<GPTPartitionHeader_t*>(secBuf);
+
+    if (!m_dev->readSector(2 + (m_part >> 2), secBuf)) return false; 
+    GPTPartitionEntrySector_t *gptes = reinterpret_cast<GPTPartitionEntrySector_t*>(secBuf);
+    GPTPartitionEntryItem_t *gptei = &gptes->items[m_part & 0x3];
+
+    // Mow extract the data...
+    m_relativeSectors = getLe64(gptei->firstLBA);
+    m_sectorCount = 1 + getLe64(gptei->lastLBA) - getLe64(gptei->firstLBA);
+    m_simple_mbr_Volume = false;   // Not simple;  
+  } else {
+    pt = &mbr->part[m_part];
+
+    m_sectorCount = getLe32(pt->totalSectors);
+    m_part_relativeSectors = getLe32(pt->relativeSectors);
+    m_simple_mbr_Volume = true;   // assume simple mbr;  
+  }
+
+  m_capacityMB = (m_sectorCount + SECTORS_PER_MB - 1)/SECTORS_PER_MB;
+  
   bool has_volume_label = partVol.getVolumeLabel(volName, sizeof(volName));
 
   if (has_volume_label) {
-	DBGPrintf("Volume name:(%s)", volName);
+	 DBGPrintf("Volume name:(%s)", volName);
   }
   DBGPrintf("\nPFsFatFormatter::format................");
   DBGPrintf("Sector Count: %d, Sectors/MB: %d\n", m_sectorCount, SECTORS_PER_MB);
@@ -383,6 +406,10 @@ bool PFsFatFormatter::makeFat32() {
 
 //------------------------------------------------------------------------------
 bool PFsFatFormatter::writeMbr() {
+  if (!m_simple_mbr_Volume) {
+    DBGPrintf("    writeMBR - Partition not simple MBR entry so dont update\n");
+
+  }
   memset(m_secBuf, 0, BYTES_PER_SECTOR);
   
   MbrSector_t* mbr = reinterpret_cast<MbrSector_t*>(m_secBuf);
@@ -425,8 +452,15 @@ uint8_t PFsFatFormatter::addPartitionToMbr() {
   }
   dump_hexbytes(&mbr->part[0], 4*sizeof(MbrPart_t));
 
+  MbrPart_t *pt = &mbr->part[0]; 
+  // Quick test for GPT disk
+  if (pt->type == 0xee) {
+    writeMsg("GPT disk - add ExFat Partition not supported yet !!!\n");
+    return 0xff;
+  }
+
   int part_index = 3; // zero index;
-  MbrPart_t *pt = &mbr->part[part_index];
+  pt = &mbr->part[part_index];
   uint32_t part_sector_start = getLe32(pt->relativeSectors);
   uint32_t part_total_sectors = getLe32(pt->totalSectors);
 
