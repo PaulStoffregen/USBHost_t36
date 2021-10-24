@@ -440,6 +440,7 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
   setWriteSandBox(0, 0xffffffff);
   return false;
 }
+
 //----------------------------------------------------------------------------
 bool PFsExFatFormatter::writeSector(uint32_t sector, const uint8_t* src) {
   // sandbox support

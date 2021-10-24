@@ -164,6 +164,18 @@ bool PFsFatFormatter::format(PFsVolume &partVol, uint8_t fat_type, uint8_t* secB
   return rtn;
 }
 
+//----------------------------------------------------------------------------
+bool PFsFatFormatter::writeSector(uint32_t sector, const uint8_t* src) {
+  // sandbox support
+  if ((sector < m_minSector) || (sector > m_maxSector)) {
+    DBGPrintf("!!! Sandbox Error: %u <= %u <= %u - Press any key to continue\n", 
+      m_minSector, sector, m_maxSector);
+    while (Serial.read() == -1);
+    while (Serial.read() != -1) ;
+  }
+
+  return m_dev->writeSector(sector, src);
+}
 
 //-----------------------------------------------------------------------------
 bool PFsFatFormatter::createFatPartition(BlockDevice* dev, uint8_t fat_type, uint32_t startSector, uint32_t sectorCount, uint8_t* secBuf, print_t* pr) {
@@ -291,7 +303,7 @@ bool PFsFatFormatter::makeFat16() {
   pbs->bpb.bpb16.volumeType[2] = 'T';
   pbs->bpb.bpb16.volumeType[3] = '1';
   pbs->bpb.bpb16.volumeType[4] = '6';
-  if (!m_dev->writeSector(m_relativeSectors, m_secBuf)) {
+  if (!writeSector(m_relativeSectors, m_secBuf)) {
     return false;
   }
   
@@ -380,15 +392,15 @@ bool PFsFatFormatter::makeFat32() {
   pbs->bpb.bpb32.volumeType[2] = 'T';
   pbs->bpb.bpb32.volumeType[3] = '3';
   pbs->bpb.bpb32.volumeType[4] = '2';
-  if (!m_dev->writeSector(m_relativeSectors, m_secBuf)  ||
-      !m_dev->writeSector(m_relativeSectors + 6, m_secBuf)) {
+  if (!writeSector(m_relativeSectors, m_secBuf)  ||
+      !writeSector(m_relativeSectors + 6, m_secBuf)) {
     return false;
   }
   // write extra boot area and backup
   memset(m_secBuf, 0 , BYTES_PER_SECTOR);
   setLe32(fsi->trailSignature, FSINFO_TRAIL_SIGNATURE);
-  if (!m_dev->writeSector(m_relativeSectors + 2, m_secBuf)  ||
-      !m_dev->writeSector(m_relativeSectors + 8, m_secBuf)) {
+  if (!writeSector(m_relativeSectors + 2, m_secBuf)  ||
+      !writeSector(m_relativeSectors + 8, m_secBuf)) {
     return false;
   }
   // write FSINFO sector and backup
@@ -396,8 +408,8 @@ bool PFsFatFormatter::makeFat32() {
   setLe32(fsi->structSignature, FSINFO_STRUCT_SIGNATURE);
   setLe32(fsi->freeCount, 0XFFFFFFFF);
   setLe32(fsi->nextFree, 0XFFFFFFFF);
-  if (!m_dev->writeSector(m_relativeSectors + 1, m_secBuf)  ||
-      !m_dev->writeSector(m_relativeSectors + 7, m_secBuf)) {
+  if (!writeSector(m_relativeSectors + 1, m_secBuf)  ||
+      !writeSector(m_relativeSectors + 7, m_secBuf)) {
     return false;
   }
   return initFatDir(32, 2*m_fatSize + m_sectorsPerCluster);
@@ -408,7 +420,7 @@ bool PFsFatFormatter::makeFat32() {
 bool PFsFatFormatter::writeMbr() {
   if (!m_simple_mbr_Volume) {
     DBGPrintf("    writeMBR - Partition not simple MBR entry so dont update\n");
-
+    return false;
   }
   memset(m_secBuf, 0, BYTES_PER_SECTOR);
   
@@ -436,7 +448,7 @@ bool PFsFatFormatter::writeMbr() {
   setLe32(pt->relativeSectors, m_relativeSectors);
   setLe32(pt->totalSectors, m_totalSectors);
   setLe16(mbr->signature, MBR_SIGNATURE);
-  return m_dev->writeSector(0, m_secBuf);
+  return writeSector(0, m_secBuf);
 
 }
 
@@ -531,7 +543,7 @@ uint8_t PFsFatFormatter::addPartitionToMbr() {
   }
   DBGPrintf("After Add Partition\n");
   dump_hexbytes(&mbr->part[0], 4*sizeof(MbrPart_t));
-  m_dev->writeSector(0, m_secBuf);
+  writeSector(0, m_secBuf);
   return part_index;
 
 }
@@ -574,7 +586,7 @@ bool PFsFatFormatter::initFatDir(uint8_t fatType, uint32_t sectorCount) {
   if (fat_sector < sectorCount) {
     memset(m_secBuf, 0, BYTES_PER_SECTOR);
     for (; fat_sector < sectorCount; fat_sector++) {
-      if (!m_dev->writeSector(m_fatStart + fat_sector, m_secBuf)) {
+      if (!writeSector(m_fatStart + fat_sector, m_secBuf)) {
          return false;
       }
       if ((fat_sector%(sectorCount/32)) == 0) {
@@ -589,8 +601,8 @@ bool PFsFatFormatter::initFatDir(uint8_t fatType, uint32_t sectorCount) {
   for (size_t i = 1; i < n; i++) {
     m_secBuf[i] = 0XFF;
   }
-  return m_dev->writeSector(m_fatStart, m_secBuf) &&
-         m_dev->writeSector(m_fatStart + m_fatSize, m_secBuf);
+  return writeSector(m_fatStart, m_secBuf) &&
+         writeSector(m_fatStart + m_fatSize, m_secBuf);
 }
 
 //------------------------------------------------------------------------------
