@@ -85,9 +85,12 @@ bool PFsFatFormatter::format(PFsVolume &partVol, uint8_t fat_type, uint8_t* secB
     GPTPartitionEntryItem_t *gptei = &gptes->items[m_part & 0x3];
 
     // Mow extract the data...
-    m_relativeSectors = getLe64(gptei->firstLBA);
+    m_part_relativeSectors = getLe64(gptei->firstLBA);
+    uint32_t last_LBA =  getLe64(gptei->lastLBA);   
     m_sectorCount = 1 + getLe64(gptei->lastLBA) - getLe64(gptei->firstLBA);
     m_simple_mbr_Volume = false;   // Not simple;  
+    DBGPrintf("    Setting SandBox %u %u\n", m_part_relativeSectors, last_LBA);
+    setWriteSandBox(m_part_relativeSectors, last_LBA);
   } else {
     pt = &mbr->part[m_part];
 
@@ -159,7 +162,7 @@ bool PFsFatFormatter::format(PFsVolume &partVol, uint8_t fat_type, uint8_t* secB
   } else {
     writeMsg("Format Failed\r\n");
   }
-    
+  setWriteSandBox(0, 0xffffffff);
   
   return rtn;
 }
@@ -386,12 +389,13 @@ bool PFsFatFormatter::makeFat32() {
   for (size_t i = 0; i < sizeof(pbs->bpb.bpb32.volumeLabel); i++) {
     pbs->bpb.bpb32.volumeLabel[i] = ' ';
   }
-  
   pbs->bpb.bpb32.volumeType[0] = 'F';
   pbs->bpb.bpb32.volumeType[1] = 'A';
   pbs->bpb.bpb32.volumeType[2] = 'T';
   pbs->bpb.bpb32.volumeType[3] = '3';
   pbs->bpb.bpb32.volumeType[4] = '2';
+
+  writeMsg("Writing Partition Boot Sector\n");
   if (!writeSector(m_relativeSectors, m_secBuf)  ||
       !writeSector(m_relativeSectors + 6, m_secBuf)) {
     return false;
@@ -408,10 +412,12 @@ bool PFsFatFormatter::makeFat32() {
   setLe32(fsi->structSignature, FSINFO_STRUCT_SIGNATURE);
   setLe32(fsi->freeCount, 0XFFFFFFFF);
   setLe32(fsi->nextFree, 0XFFFFFFFF);
+  writeMsg("Writing FSInfo Sector\n");
   if (!writeSector(m_relativeSectors + 1, m_secBuf)  ||
       !writeSector(m_relativeSectors + 7, m_secBuf)) {
     return false;
   }
+  writeMsg("Writing FAT\n");
   return initFatDir(32, 2*m_fatSize + m_sectorsPerCluster);
 
 }
@@ -420,7 +426,7 @@ bool PFsFatFormatter::makeFat32() {
 bool PFsFatFormatter::writeMbr() {
   if (!m_simple_mbr_Volume) {
     DBGPrintf("    writeMBR - Partition not simple MBR entry so dont update\n");
-    return false;
+    return true;
   }
   memset(m_secBuf, 0, BYTES_PER_SECTOR);
   
