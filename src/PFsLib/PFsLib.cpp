@@ -271,6 +271,7 @@ uint32_t PFsLib::mbrDmp(BlockDeviceInterface *blockDev, uint32_t device_sector_c
   MbrSector_t mbr;
   m_pr = &Serialx;
   bool gpt_disk = false;
+  bool ext_partition;
   uint32_t next_free_sector = 8192;  // Some inital value this is default for Win32 on SD...
   // bool valid = true;
   if (!blockDev->readSector(0, (uint8_t*)&mbr)) {
@@ -284,6 +285,7 @@ uint32_t PFsLib::mbrDmp(BlockDeviceInterface *blockDev, uint32_t device_sector_c
     MbrPart_t *pt = &mbr.part[ip - 1];
     uint32_t starting_sector = getLe32(pt->relativeSectors);
     uint32_t total_sector = getLe32(pt->totalSectors);
+    ext_partition = false;
     if (starting_sector > next_free_sector) {
       Serialx.printf(F("\t < unused area starting at: %u length %u >\n"), next_free_sector, starting_sector-next_free_sector);
     }
@@ -302,10 +304,11 @@ uint32_t PFsLib::mbrDmp(BlockDeviceInterface *blockDev, uint32_t device_sector_c
       break;
     case 0xf:
       Serial.print(F("Extend:\t"));
+      ext_partition = true;
       break;
     case 0x83: Serialx.print(F("ext2/3/4:\t")); break; 
     case 0xee: 
-      Serialx.print(F("*** GPT Disk not supported ***\nGPT guard:\t")); 
+      Serialx.print(F("*** GPT Disk WIP ***\nGPT guard:\t")); 
       gpt_disk = true;
       break;
     default:
@@ -325,7 +328,10 @@ uint32_t PFsLib::mbrDmp(BlockDeviceInterface *blockDev, uint32_t device_sector_c
     }
     Serialx.print(starting_sector, DEC); Serial.print(',');
     Serialx.println(total_sector);
-
+    if (ext_partition) {
+      extgptDmp(blockDev, &mbr, ip, Serialx);
+      blockDev->readSector(0, (uint8_t*)&mbr); // maybe need to restore
+    }
     // Lets get the max of start+total
     if (starting_sector && total_sector)  next_free_sector = starting_sector + total_sector;
   }
@@ -335,6 +341,68 @@ uint32_t PFsLib::mbrDmp(BlockDeviceInterface *blockDev, uint32_t device_sector_c
   if (gpt_disk) gptDmp(blockDev, Serialx);
   return next_free_sector;
 }
+
+void PFsLib::extgptDmp(BlockDeviceInterface *blockDev, MbrSector_t *mbr, uint8_t ipExt, Stream &Serialx) {
+
+  // Extract the data from EX partition block...
+  MbrPart_t *pt = &mbr->part[ipExt - 1];
+  uint32_t ext_starting_sector = getLe32(pt->relativeSectors);
+  //uint32_t ext_total_sector = getLe32(pt->totalSectors);
+  uint32_t next_mbr = ext_starting_sector;
+  uint8_t ext_index = 0;
+
+  while (next_mbr) {
+    ext_index++;
+    if (!blockDev->readSector(next_mbr, (uint8_t*)mbr)) break;
+    pt = &mbr->part[0];
+    dump_hexbytes((uint8_t*)pt, sizeof(MbrPart_t)*2);
+    uint32_t starting_sector = getLe32(pt->relativeSectors);
+    uint32_t total_sector = getLe32(pt->totalSectors);
+    switch (pt->type) {
+    case 4:
+    case 6:
+    case 0xe:
+      Serialx.print(F("FAT16:\t"));
+      break;
+    case 11:
+    case 12:
+      Serialx.print(F("FAT32:\t"));
+      break;
+    case 7:
+      Serialx.print(F("exFAT:\t"));
+      break;
+    case 0xf:
+      Serial.print(F("Extend:\t"));
+      break;
+    case 0x83: Serialx.print(F("ext2/3/4:\t")); break; 
+    default:
+      Serialx.print(F("pt_#"));
+      Serialx.print(pt->type);
+      Serialx.print(":\t");
+      break;
+    }
+    Serialx.print( int(ipExt)); Serialx.print(":"); Serialx.print(ext_index); Serialx.print( ',');
+    Serialx.print(int(pt->boot), HEX); Serialx.print( ',');
+    for (int i = 0; i < 3; i++ ) {
+      Serialx.print("0x"); Serialx.print(int(pt->beginCHS[i]), HEX); Serialx.print( ',');
+    }
+    Serialx.print("0x"); Serialx.print(int(pt->type), HEX); Serialx.print( ',');
+    for (int i = 0; i < 3; i++ ) {
+      Serialx.print("0x"); Serialx.print(int(pt->endCHS[i]), HEX); Serialx.print( ',');
+    }
+    Serialx.print(ext_starting_sector + starting_sector, DEC); Serialx.print(',');
+    Serialx.print(total_sector);
+
+    // Now lets see what is in the 2nd one...
+    pt = &mbr->part[1];
+    Serialx.printf(" (%x)\n", pt->type);
+    starting_sector = getLe32(pt->relativeSectors);
+    if (pt->type && starting_sector) next_mbr = starting_sector + ext_starting_sector;
+    else next_mbr = 0;
+  }
+}
+
+
 
 typedef struct {
   uint32_t  q1;
@@ -346,6 +414,7 @@ typedef struct {
 typedef struct {
   uint8_t   signature[8];
   uint32_t  revision;
+  uint32_t  headerSize;
   uint32_t  crc32;
   uint32_t  reserved;
   uint64_t  currentLBA;

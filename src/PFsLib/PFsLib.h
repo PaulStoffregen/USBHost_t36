@@ -46,6 +46,7 @@ class PFsLib : public PFsFatFormatter, public PFsExFatFormatter
 	void compare_dump_hexbytes(const void *ptr, const uint8_t *compare_buf, int len);
 
  private:
+    void extgptDmp(BlockDeviceInterface *blockDev, MbrSector_t *mbr, uint8_t ip, Stream &Serialx);
 	BlockDevice* m_dev;
 	print_t* m_pr;
 
