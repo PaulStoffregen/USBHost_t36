@@ -682,17 +682,38 @@ void PFsLib::listPartitions(BlockDeviceInterface *blockDev, Print &Serialx) {
   uint8_t  mbrPart;
   uint8_t secBuf[512];
 
-  Serialx.println("\nPART\tType\tStart\tCount\tMBR\tPart");
+  Serialx.println("\nPART\tType\tStart\tCount\t(MBR\tPart)\tVolume Type");
   uint32_t part = 1;
   while ((vt = getPartitionInfo(blockDev, part, &Serialx, secBuf, firstLBA, sectorCount, mbrLBA, mbrPart)) != PFsLib::INVALID_VOL) {
     Serial.printf("%u\t", part);
     switch(vt) {
-     case PFsLib::MBR_VOL: Serialx.write('M'); break;
-     case PFsLib::EXT_VOL: Serialx.write('E'); break;
-     case PFsLib::GPT_VOL: Serialx.write('G'); break;
-     default: Serialx.write('?'); break;
-     }
-     Serialx.printf("\t%u\t%u\t%u\t%u\n", firstLBA, sectorCount, mbrLBA, mbrPart);
+      case PFsLib::MBR_VOL: Serialx.write('M'); break;
+      case PFsLib::EXT_VOL: Serialx.write('E'); break;
+      case PFsLib::GPT_VOL: Serialx.write('G'); break;
+      default: Serialx.write('?'); break;
+    }
+    Serialx.printf("\t%u\t%u\t%u\t%u", firstLBA, sectorCount, mbrLBA, mbrPart);
+
+    // Lets see if we can guess what FS this might be:
+    if (blockDev->readSector(firstLBA, secBuf)) {
+      //Serialx.println();
+      //dump_hexbytes(secBuf, 512);
+      static const uint8_t exfatPBS[] PROGMEM = 
+          {0xEB, 0x76, 0x90, //Jmp instruction
+           'E', 'X', 'F', 'A', 'T', ' ', ' ', ' '};
+      if (memcmp(secBuf, exfatPBS, 11) == 0) {
+        Serialx.print("\texFAT");
+      } else {
+        pbs_t* pbs = reinterpret_cast<pbs_t*> (secBuf);
+        BpbFat32_t* bpb = reinterpret_cast<BpbFat32_t*>(pbs->bpb);
+        // hacks for now probably should have more validation
+        if (getLe16(bpb->bytesPerSector) == 512) {
+          if (getLe16(bpb->sectorsPerFat16)) Serialx.print("\tFat16:");
+          else if (getLe32(bpb->sectorsPerFat32)) Serialx.print("\tFat32:");
+        }
+      }
+    }
+    Serialx.println();
     part++;
   }
 }
