@@ -54,11 +54,11 @@ const uint16_t FAT16_ROOT_SECTOR_COUNT =
 #else  // PRINT_FORMAT_PROGRESS
 #define writeMsg(str) if (m_pr) m_pr->write(str)
 #endif  // PRINT_FORMAT_PROGRESS
+
+PFsLib pfslib;  // 
 //------------------------------------------------------------------------------
 bool PFsFatFormatter::format(PFsVolume &partVol, uint8_t fat_type, uint8_t* secBuf, print_t* pr) {
   DBGPrintf("\n### PFsFatFormatter::format called\n");
-  MbrSector_t *mbr;
-  MbrPart_t *pt;
 
   bool rtn;
   m_secBuf = secBuf;
@@ -66,38 +66,24 @@ bool PFsFatFormatter::format(PFsVolume &partVol, uint8_t fat_type, uint8_t* secB
   m_dev = partVol.blockDevice();
   m_part = partVol.part()-1;  // convert to 0 biased. 
 
-    
-  if (!m_dev->readSector(0, secBuf)) {
-    writeMsg("\nread MBR failed.\n");
-    //errorPrint();
-    return false;
-  }
+  
+  uint32_t firstLBA;
+  uint32_t sectorCount;
+  uint32_t mbrLBA; 
+  uint8_t mbrPart;
 
-  mbr = reinterpret_cast<MbrSector_t*>(secBuf);
-  pt = &mbr->part[0];
-  if (pt->type == 0xee) {
-    // This is a GPT initialized Disk assume validation done earlier.
-    if (!m_dev->readSector(1, secBuf)) return false; 
-    //GPTPartitionHeader_t* gptph = reinterpret_cast<GPTPartitionHeader_t*>(secBuf);
 
-    if (!m_dev->readSector(2 + (m_part >> 2), secBuf)) return false; 
-    GPTPartitionEntrySector_t *gptes = reinterpret_cast<GPTPartitionEntrySector_t*>(secBuf);
-    GPTPartitionEntryItem_t *gptei = &gptes->items[m_part & 0x3];
+  PFsLib::voltype_t vt = pfslib.getPartitionInfo(m_dev, partVol.part(), pr, secBuf, firstLBA, sectorCount, mbrLBA, mbrPart);
 
-    // Mow extract the data...
-    m_part_relativeSectors = getLe64(gptei->firstLBA);
-    uint32_t last_LBA =  getLe64(gptei->lastLBA);   
-    m_sectorCount = 1 + getLe64(gptei->lastLBA) - getLe64(gptei->firstLBA);
-    m_simple_mbr_Volume = false;   // Not simple;  
-    DBGPrintf("    Setting SandBox %u %u\n", m_part_relativeSectors, last_LBA);
-    setWriteSandBox(m_part_relativeSectors, last_LBA);
-  } else {
-    pt = &mbr->part[m_part];
+  DBGPrintf("Part:%u vt:%u first:%u, count:%u MBR:%u MBR Part:%u\n", partVol.part(), (uint8_t)vt, firstLBA, sectorCount, mbrLBA, mbrPart);
 
-    m_sectorCount = getLe32(pt->totalSectors);
-    m_part_relativeSectors = getLe32(pt->relativeSectors);
-    m_simple_mbr_Volume = true;   // assume simple mbr;  
-  }
+  if (vt == PFsLib::INVALID_VOL) return false;
+
+  // yes could have used some of the directly...
+  m_sectorCount = sectorCount;
+  m_part_relativeSectors = firstLBA;
+  m_mbrLBA = mbrLBA;
+  m_mbrPart = mbrPart;
 
   m_capacityMB = (m_sectorCount + SECTORS_PER_MB - 1)/SECTORS_PER_MB;
   
@@ -115,8 +101,6 @@ bool PFsFatFormatter::format(PFsVolume &partVol, uint8_t fat_type, uint8_t* secB
   DBGPrintf("    m_relativeSectors:%u\n", m_part_relativeSectors);
   //Serial.printf("    m_sectorsPerFat: %u\n", partVol.getFatVol()->sectorsPerFat());
   DBGPrintf("\n");
-	
-	
   
   if (m_capacityMB <= 6) {
     writeMsg("Card is too small.\r\n");
@@ -424,23 +408,26 @@ bool PFsFatFormatter::makeFat32() {
 
 //------------------------------------------------------------------------------
 bool PFsFatFormatter::writeMbr() {
-  if (!m_simple_mbr_Volume) {
-    DBGPrintf("    writeMBR - Partition not simple MBR entry so dont update\n");
+  if (m_mbrLBA == 0xFFFFFFFFUL) {
+    DBGPrintf("    writeMBR - GPT entry so dont update\n");
     return true;
   }
   memset(m_secBuf, 0, BYTES_PER_SECTOR);
   
+  // The relative sectors stuff is setup based off of the logicalMBR...
+  uint32_t relativeSectors = m_relativeSectors - m_mbrLBA;
+
   MbrSector_t* mbr = reinterpret_cast<MbrSector_t*>(m_secBuf);
-  MbrPart_t *pt = &mbr->part[m_part];
-  if (!m_dev->readSector(0, m_secBuf)) {
+  MbrPart_t *pt = &mbr->part[m_mbrPart];
+  if (!m_dev->readSector(m_mbrLBA, m_secBuf)) {
 	writeMsg("Didn't read MBR Sector !!!\n");
 	return false;
   }
 
 #if USE_LBA_TO_CHS
-  lbaToMbrChs(pt->beginCHS, m_capacityMB, m_relativeSectors);
+  lbaToMbrChs(pt->beginCHS, m_capacityMB, relativeSectors);
   lbaToMbrChs(pt->endCHS, m_capacityMB,
-              m_relativeSectors + m_totalSectors -1);
+              relativeSectors + m_totalSectors -1);
 #else  // USE_LBA_TO_CHS
   pt->beginCHS[0] = 1;
   pt->beginCHS[1] = 1;
@@ -451,10 +438,10 @@ bool PFsFatFormatter::writeMbr() {
 #endif  // USE_LBA_TO_CHS
 
   pt->type = m_partType;
-  setLe32(pt->relativeSectors, m_relativeSectors);
+  setLe32(pt->relativeSectors, relativeSectors);
   setLe32(pt->totalSectors, m_totalSectors);
   setLe16(mbr->signature, MBR_SIGNATURE);
-  return writeSector(0, m_secBuf);
+  return writeSector(m_mbrLBA, m_secBuf);
 
 }
 

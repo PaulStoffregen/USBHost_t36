@@ -46,11 +46,11 @@ class PFsLib : public PFsFatFormatter, public PFsExFatFormatter
 	void compare_dump_hexbytes(const void *ptr, const uint8_t *compare_buf, int len);
 
    typedef enum {INVALID_VOL=0, MBR_VOL, EXT_VOL, GPT_VOL} voltype_t; // what type of volume did the mapping return
-   voltype_t getPartitionInfo(BlockDeviceInterface *blockDev, uint8_t part,  Stream *pserial, uint8_t *secBuf,
-      uint32_t &firstLBA, uint32_t &sectorCount);
+   voltype_t getPartitionInfo(BlockDeviceInterface *blockDev, uint8_t part,  Print *pserial, uint8_t *secBuf,
+      uint32_t &firstLBA, uint32_t &sectorCount, uint32_t &mbrLBA, uint8_t &mbrPart);
 
    // Sort of test function for the one above.
-   void listPartitions(BlockDeviceInterface *blockDev, Stream &Serialx);
+   void listPartitions(BlockDeviceInterface *blockDev, Print &Serialx);
 
  private:
     void extgptDmp(BlockDeviceInterface *blockDev, MbrSector_t *mbr, uint8_t ip, Stream &Serialx);

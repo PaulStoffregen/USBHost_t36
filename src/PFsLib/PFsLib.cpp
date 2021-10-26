@@ -590,8 +590,8 @@ void PFsLib::compare_dump_hexbytes(const void *ptr, const uint8_t *compare_buf, 
 
 //================================================================================================
 //typedef enum {INVALID_VOL=0, MBR_VOL, EXT_VOL, GPT_VOL} voltype_t; // what type of volume did the mapping return
-PFsLib::voltype_t PFsLib::getPartitionInfo(BlockDeviceInterface *blockDev, uint8_t part, Stream* pserial, uint8_t *secBuf,
-    uint32_t &firstLBA, uint32_t &sectorCount) {
+PFsLib::voltype_t PFsLib::getPartitionInfo(BlockDeviceInterface *blockDev, uint8_t part, Print* pserial, uint8_t *secBuf,
+    uint32_t &firstLBA, uint32_t &sectorCount, uint32_t &mbrLBA, uint8_t &mbrPart) {
 
   //Serial.printf("PFsLib::getPartitionInfo(%x, %u)\n", (uint32_t)blockDev, part);
   MbrSector_t *mbr;
@@ -617,7 +617,8 @@ PFsLib::voltype_t PFsLib::getPartitionInfo(BlockDeviceInterface *blockDev, uint8
     // Mow extract the data...
     firstLBA = getLe64(gptei->firstLBA);
     sectorCount = 1 + getLe64(gptei->lastLBA) - getLe64(gptei->firstLBA);
-
+    mbrLBA = 0xFFFFFFFFUL;
+    mbrPart = 0xff;
     return GPT_VOL; 
   }
   // So we are now looking a MBR type setups. 
@@ -630,6 +631,8 @@ PFsLib::voltype_t PFsLib::getPartitionInfo(BlockDeviceInterface *blockDev, uint8
     if (((mp->boot == 0) || (mp->boot == 0X80)) && (mp->type != 0) && (mp->type != 0xf)) {
       firstLBA = getLe32(mp->relativeSectors);
       sectorCount = getLe32(mp->totalSectors);
+      mbrLBA = 0;
+      mbrPart = part; // zero based. 
       return MBR_VOL;
     }
   }  
@@ -665,19 +668,23 @@ PFsLib::voltype_t PFsLib::getPartitionInfo(BlockDeviceInterface *blockDev, uint8
   mp = &mbr->part[0];
   firstLBA = getLe32(mp->relativeSectors) + next_mbr;
   sectorCount = getLe32(mp->totalSectors);
+  mbrLBA = next_mbr;
+  mbrPart = 0; // zero based
   return EXT_VOL;
 }
 
-void PFsLib::listPartitions(BlockDeviceInterface *blockDev, Stream &Serialx) {
+void PFsLib::listPartitions(BlockDeviceInterface *blockDev, Print &Serialx) {
   // simply enumerate through partitions until one fails.
   PFsLib::voltype_t vt;
   uint32_t firstLBA;
   uint32_t sectorCount;
+  uint32_t mbrLBA;
+  uint8_t  mbrPart;
   uint8_t secBuf[512];
 
-  Serialx.println("\nPART\tType\tStart\tCount");
+  Serialx.println("\nPART\tType\tStart\tCount\tMBR\tPart");
   uint32_t part = 1;
-  while ((vt = getPartitionInfo(blockDev, part, &Serialx, secBuf, firstLBA, sectorCount)) != PFsLib::INVALID_VOL) {
+  while ((vt = getPartitionInfo(blockDev, part, &Serialx, secBuf, firstLBA, sectorCount, mbrLBA, mbrPart)) != PFsLib::INVALID_VOL) {
     Serial.printf("%u\t", part);
     switch(vt) {
      case PFsLib::MBR_VOL: Serialx.write('M'); break;
@@ -685,7 +692,7 @@ void PFsLib::listPartitions(BlockDeviceInterface *blockDev, Stream &Serialx) {
      case PFsLib::GPT_VOL: Serialx.write('G'); break;
      default: Serialx.write('?'); break;
      }
-     Serialx.printf("\t%u\t%u\n", firstLBA, sectorCount);
+     Serialx.printf("\t%u\t%u\t%u\t%u\n", firstLBA, sectorCount, mbrLBA, mbrPart);
     part++;
   }
 }

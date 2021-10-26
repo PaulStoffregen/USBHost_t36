@@ -82,7 +82,8 @@ class PFsFatFormatter {
   uint8_t m_partType;
   uint8_t m_sectorsPerCluster;
   uint8_t m_part;
-  uint8_t m_simple_mbr_Volume;  // is this a simple volume;
+  uint32_t m_mbrLBA = 0;
+  uint8_t m_mbrPart;
   uint32_t m_part_relativeSectors;
   char volName[32];
 };
