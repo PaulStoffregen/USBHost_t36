@@ -390,14 +390,15 @@ void PFsLib::extgptDmp(BlockDeviceInterface *blockDev, MbrSector_t *mbr, uint8_t
     for (int i = 0; i < 3; i++ ) {
       Serialx.print("0x"); Serialx.print(int(pt->endCHS[i]), HEX); Serialx.print( ',');
     }
-    Serialx.print(ext_starting_sector + starting_sector, DEC); Serialx.print(',');
+    Serialx.printf("%u(%u),", next_mbr + starting_sector, starting_sector);
+    //Serialx.print(ext_starting_sector + starting_sector, DEC); Serialx.print(',');
     Serialx.print(total_sector);
 
     // Now lets see what is in the 2nd one...
     pt = &mbr->part[1];
     Serialx.printf(" (%x)\n", pt->type);
     starting_sector = getLe32(pt->relativeSectors);
-    if (pt->type && starting_sector) next_mbr = starting_sector + ext_starting_sector;
+    if (pt->type && starting_sector) next_mbr = /*starting_sector*/ next_mbr + ext_starting_sector;
     else next_mbr = 0;
   }
 }
