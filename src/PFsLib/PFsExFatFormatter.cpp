@@ -63,62 +63,44 @@ const uint16_t SECTORS_PER_MB = 0X100000/BYTES_PER_SECTOR;
 #else  // PRINT_FORMAT_PROGRESS
 #define writeMsg(pr, str) if (pr) pr->write(str)
 #endif  // PRINT_FORMAT_PROGRESS
+
+static PFsLib pfslib;  // 
 //------------------------------------------------------------------------------
 
 bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr) {
 #if !PRINT_FORMAT_PROGRESS
 (void)pr;
 #endif  //  !PRINT_FORMAT_PROGRESS
-
   DBGPrintf("\n### PFsExFatFormatter::format called\n");
   checksum = 0;
 
-  MbrSector_t *mbr;
-  MbrPart_t *pt;
   ExFatPbs_t* pbs;
   DirUpcase_t* dup;
   DirBitmap_t* dbm;
   DirLabel_t* label;
 
+  uint32_t firstLBA;
+  uint32_t sectorCount;
+  uint32_t mbrLBA; 
+  uint8_t mbrPart;
   uint8_t vs;
 
   m_secBuf = secBuf;
   m_pr = pr;
   m_dev = partVol.blockDevice();
   m_part = partVol.part()-1;  // convert to 0 biased. 
-  if (!m_dev->readSector(0, secBuf)) {
-    writeMsg(m_pr, "\nread MBR failed.\n");
-    //errorPrint();
-    return false;
-  }
-  // See if we are running on an GPT disk
-  mbr = reinterpret_cast<MbrSector_t*>(secBuf);
-  pt = &mbr->part[0];
-  if (pt->type == 0xee) {
-    // This is a GPT initialized Disk assume validation done earlier.
-    //if (!m_dev->readSector(1, secBuf)) return false; 
-    //GPTPartitionHeader_t* gptph = reinterpret_cast<GPTPartitionHeader_t*>(secBuf);
 
-    if (!m_dev->readSector(2 + (m_part >> 2), secBuf)) return false; 
-    GPTPartitionEntrySector_t *gptes = reinterpret_cast<GPTPartitionEntrySector_t*>(secBuf);
-    GPTPartitionEntryItem_t *gptei = &gptes->items[m_part & 0x3];
+  PFsLib::voltype_t vt = pfslib.getPartitionInfo(m_dev, partVol.part(), pr, secBuf, firstLBA, sectorCount, mbrLBA, mbrPart);
 
-    // Mow extract the data...
-    m_relativeSectors = getLe64(gptei->firstLBA);
-    uint32_t last_LBA =  getLe64(gptei->lastLBA);   
-    sectorCount = 1 + getLe64(gptei->lastLBA) - getLe64(gptei->firstLBA);
-    m_simple_mbr_Volume = false; 
-    DBGPrintf("    Setting SandBox %u %u\n", m_relativeSectors, last_LBA);
-    setWriteSandBox(m_relativeSectors, last_LBA);
-  } else {
+  DBGPrintf("Part:%u vt:%u first:%u, count:%u MBR:%u MBR Part:%u\n", partVol.part(), (uint8_t)vt, firstLBA, sectorCount, mbrLBA, mbrPart);
 
-    pt = &mbr->part[m_part];
-    
-    // Determine partition layout.  
-    m_relativeSectors = getLe32(pt->relativeSectors);
-    sectorCount = getLe32(pt->totalSectors);
-    m_simple_mbr_Volume = true;   // assume simple mbr;  
-  }  
+  if (vt == PFsLib::INVALID_VOL) return false;
+
+  // yes could have used some of the directly...
+  m_relativeSectors = firstLBA;
+  m_sectorCount = sectorCount;
+  m_mbrLBA = mbrLBA;
+  m_mbrPart = mbrPart;
   
   bool has_volume_label = partVol.getVolumeLabel(volName, sizeof(volName));
 
@@ -193,14 +175,40 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
 
   	DBGPrintf("cluster 2 bitmap: %u\n",partitionOffset + clusterHeapOffset);
   	DBGPrintf("Up case table: %u\n",partitionOffset + clusterHeapOffset + sectorsPerCluster);
+
+// =============================== DEBUG
+  pbs = reinterpret_cast<ExFatPbs_t*>(secBuf);
+  if (m_dev->readSector(firstLBA, m_secBuf)) {
+    DBGPrintf("\n *** PBS data ***\n");
+    DBGPrintf("\tFirstLBA: %u\n", firstLBA);
+    DBGPrintf("\tpartitionOffset: %llu %u\n",getLe64(pbs->bpb.partitionOffset), partitionOffset);
+    DBGPrintf("\tvolumeLength: %llu %u\n",getLe64(pbs->bpb.volumeLength), volumeLength);
+    DBGPrintf("\tfatOffset: %u %u\n",getLe32(pbs->bpb.fatOffset), fatOffset);
+    DBGPrintf("\tfatLength: %u %u\n",getLe32(pbs->bpb.fatLength), fatLength);
+    DBGPrintf("\tclusterHeapOffset: %u %u\n",getLe32(pbs->bpb.clusterHeapOffset), clusterHeapOffset);
+    DBGPrintf("\tclusterCount: %u %u\n",getLe32(pbs->bpb.clusterCount), clusterCount);
+    DBGPrintf("\trootDirectoryCluster: %u %u\n",getLe32(pbs->bpb.rootDirectoryCluster), ROOT_CLUSTER);
+    DBGPrintf("\tvolumeSerialNumber: %u %u\n",getLe32(pbs->bpb.volumeSerialNumber), sectorCount);
+    DBGPrintf("\tfileSystemRevision: %u %u\n",getLe16(pbs->bpb.fileSystemRevision), 0X100);
+    DBGPrintf("\tvolumeFlags: %u %u\n",getLe16(pbs->bpb.volumeFlags), 0);
+
+    //Serial.println("*** Hit any key to continue $ to abort");
+    //int ch;
+    //while((ch=Serial.read()) == -1);
+    //while(Serial.read() != -1);
+    //if (ch == '$') { DBGPrintf("*** Aborted ***"); return false; }
+  }
   #endif
-  
+
 //--------------------  WRITE MBR ----------
 
   if (!writeMbr()) {
     DBG_FAIL_MACRO;
     goto fail;
   }  
+
+  // Debug Set the sand box 
+  setWriteSandBox(firstLBA, firstLBA + sectorCount - 1);
 
   writeMsg(pr, "Writing Partition Boot Sector\n");
   // Partition Boot sector.
@@ -248,7 +256,7 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
     }
     checksum = exFatChecksum(checksum, secBuf[i]);
   }
-  
+    
   sector = partitionOffset;
 #if defined(DBG_PRINT)
   DBGPrintf("\tWriting Sector: %d\n", sector-partitionOffset);
@@ -258,8 +266,8 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
     DBG_FAIL_MACRO;
     goto fail;
   }
-  
-  
+    
+    
   writeMsg(pr, "Write eight Extended Boot Sectors\n");
   sector++;
 #if defined(DBG_PRINT)
@@ -279,7 +287,7 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
     }
     sector++;
   }
-  
+    
   writeMsg(pr, "Write OEM Parameter Sector and reserved sector\n");
 #if defined(DBG_PRINT)
   DBGPrintf("\tWriting Sector: %d\n", sector-partitionOffset);
@@ -430,7 +438,10 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
   // what happens if I tell the partion to begin again?
   partVol.begin(m_dev, true, m_part+1);  // need to 1 bias again...
   DBGPrintf("free clusters after begin on partVol: %u\n", partVol.freeClusterCount());
-  if (has_volume_label) partVol.setVolumeLabel(volName);
+  if (has_volume_label) {
+    writeMsg(pr, "Set Volume Label\n");
+    partVol.setVolumeLabel(volName);
+  }
   m_dev->syncDevice();
   setWriteSandBox(0, 0xffffffff);
   return true;
@@ -880,15 +891,18 @@ uint8_t PFsExFatFormatter::addExFatPartitionToMbr() {
 //------------------------------------------------------------------------------
 bool PFsExFatFormatter::writeMbr() {
   // make Master Boot Record.  Use fake CHS.
-  if (!m_simple_mbr_Volume) {
-    DBGPrintf("    writeMBR - Partition not simple MBR entry so dont update\n");
+  if (m_mbrLBA == 0xFFFFFFFFUL) {
+    DBGPrintf("    writeMBR - GPT entry so dont update\n");
     return true;
   }
   memset(m_secBuf, 0, BYTES_PER_SECTOR);
+
+  // Need to handle EXT wmere MBR may be EXtended Boot record
   MbrSector_t* mbr = reinterpret_cast<MbrSector_t*>(m_secBuf);
-  MbrPart_t *pt = &mbr->part[m_part];
+  MbrPart_t *pt = &mbr->part[m_mbrPart];
   
-  if (!m_dev->readSector(0, m_secBuf)) writeMsg(m_pr, "DIDN't GET SECTOR BUFFER");
+  if (!m_dev->readSector(m_mbrLBA, m_secBuf)) writeMsg(m_pr, "DIDN't GET SECTOR BUFFER");
+
   
   pt->beginCHS[0] = 0x20;
   pt->beginCHS[1] = 0x21;
@@ -897,13 +911,13 @@ bool PFsExFatFormatter::writeMbr() {
   pt->endCHS[0] = 0XFE;
   pt->endCHS[1] = 0XFF;
   pt->endCHS[2] = 0XFF;
-  setLe32(pt->relativeSectors, partitionOffset);
+  setLe32(pt->relativeSectors, partitionOffset - m_mbrLBA);  // should be relative to the start...
   setLe32(pt->totalSectors, volumeLength);
   setLe16(mbr->signature, MBR_SIGNATURE);
-  	//DBGPrintf("    m_relativeSectors:%u\n", getLe32(pt->relativeSectors));
-    //DBGPrintf("    m_totalSectors:%u\n", getLe32(pt->totalSectors));
+  //DBGPrintf("    m_relativeSectors:%u\n", getLe32(pt->relativeSectors));
+  //DBGPrintf("    m_totalSectors:%u\n", getLe32(pt->totalSectors));
   
-  return writeSector(0, m_secBuf);
+  return writeSector(m_mbrLBA, m_secBuf);
 
 }
 
@@ -986,7 +1000,7 @@ void PFsExFatFormatter::dump_hexbytes(const void *ptr, int len)
 {
   if (ptr == NULL || len <= 0) return;
   const uint8_t *p = (const uint8_t *)ptr;
-  while (len) {
+  while (len > 0) {
     for (uint8_t i = 0; i < 32; i++) {
       if (i > len) break;
       m_pr->printf("%02X ", p[i]);

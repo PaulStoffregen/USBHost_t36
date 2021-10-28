@@ -86,15 +86,16 @@ class PFsExFatFormatter {
   uint32_t sector;
   uint32_t sectorsPerCluster;
   uint32_t volumeLength;
-  uint32_t sectorCount;
+  //uint32_t sectorCount;
   uint8_t sectorsPerClusterShift;
   uint32_t m_relativeSectors;
   uint32_t m_part_relativeSectors;
   uint32_t m_bytesPerCluster;
   uint8_t m_part;
-  uint8_t m_simple_mbr_Volume;  // is this a simple volume;
   uint32_t m_sectorCount;
   uint32_t m_capacityMB;
+  uint8_t m_mbrPart;
+  uint32_t m_mbrLBA = 0;
   char volName[32];
   
 };
