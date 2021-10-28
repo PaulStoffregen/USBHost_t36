@@ -8,6 +8,8 @@ void msFilesystem::init() {
 }
 
 bool msFilesystem::begin(msController *pDrive, bool setCwv, uint8_t part) {
+	_pDrive = pDrive;
+	_part = part;
 	return mscfs.begin(pDrive, setCwv, part);
 }
 
@@ -73,7 +75,22 @@ uint64_t msFilesystem::totalSize() {
 
 PFsLib pfsLIB1;
 bool msFilesystem::format(int type, char progressChar, Print& pr) {
+  FatVolume* fatvol =  mscfs.getFatVol();
+  ExFatVolume* exfatvol = mscfs.getExFatVol();
+  if (exfatvol) {
+  	exfatvol->cacheClear(); // try to clear out any cache out there
+  } else if (fatvol) {
+  	fatvol->cacheClear();
+  }
+  mscfs.blockDevice()->syncDevice();
+
   bool success = pfsLIB1.formatter(mscfs, 0, false, false, pr);
+  if (success) {
+	  mscfs.blockDevice()->syncDevice();
+  	mscfs.end();
+		mscfs.begin(_pDrive, false, _part);
+  	//mscfs.volumeBegin(); // not sure if this will work or not
+  }
 
   return success;
 }

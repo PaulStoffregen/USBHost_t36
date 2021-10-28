@@ -617,6 +617,11 @@ PFsLib::voltype_t PFsLib::getPartitionInfo(BlockDeviceInterface *blockDev, uint8
     // Mow extract the data...
     firstLBA = getLe64(gptei->firstLBA);
     sectorCount = 1 + getLe64(gptei->lastLBA) - getLe64(gptei->firstLBA);
+    if ((firstLBA == 0) && (sectorCount == 1)) return INVALID_VOL;
+    
+    if (memcmp((uint8_t *)gptei->partitionTypeGUID, mbdpGuid, 16) != 0) return OTHER_VOL;
+
+
     mbrLBA = 0xFFFFFFFFUL;
     mbrPart = 0xff;
     return GPT_VOL; 
@@ -690,26 +695,29 @@ void PFsLib::listPartitions(BlockDeviceInterface *blockDev, Print &Serialx) {
       case PFsLib::MBR_VOL: Serialx.write('M'); break;
       case PFsLib::EXT_VOL: Serialx.write('E'); break;
       case PFsLib::GPT_VOL: Serialx.write('G'); break;
+      case PFsLib::OTHER_VOL: Serialx.write('O'); break;
       default: Serialx.write('?'); break;
     }
     Serialx.printf("\t%u\t%u\t%u\t%u", firstLBA, sectorCount, mbrLBA, mbrPart);
 
     // Lets see if we can guess what FS this might be:
-    if (blockDev->readSector(firstLBA, secBuf)) {
-      //Serialx.println();
-      //dump_hexbytes(secBuf, 512);
-      static const uint8_t exfatPBS[] PROGMEM = 
-          {0xEB, 0x76, 0x90, //Jmp instruction
-           'E', 'X', 'F', 'A', 'T', ' ', ' ', ' '};
-      if (memcmp(secBuf, exfatPBS, 11) == 0) {
-        Serialx.print("\texFAT");
-      } else {
-        pbs_t* pbs = reinterpret_cast<pbs_t*> (secBuf);
-        BpbFat32_t* bpb = reinterpret_cast<BpbFat32_t*>(pbs->bpb);
-        // hacks for now probably should have more validation
-        if (getLe16(bpb->bytesPerSector) == 512) {
-          if (getLe16(bpb->sectorsPerFat16)) Serialx.print("\tFat16:");
-          else if (getLe32(bpb->sectorsPerFat32)) Serialx.print("\tFat32:");
+    if (vt != PFsLib::OTHER_VOL) {
+      if (blockDev->readSector(firstLBA, secBuf)) {
+        //Serialx.println();
+        //dump_hexbytes(secBuf, 512);
+        static const uint8_t exfatPBS[] PROGMEM = 
+            {0xEB, 0x76, 0x90, //Jmp instruction
+             'E', 'X', 'F', 'A', 'T', ' ', ' ', ' '};
+        if (memcmp(secBuf, exfatPBS, 11) == 0) {
+          Serialx.print("\texFAT");
+        } else {
+          pbs_t* pbs = reinterpret_cast<pbs_t*> (secBuf);
+          BpbFat32_t* bpb = reinterpret_cast<BpbFat32_t*>(pbs->bpb);
+          // hacks for now probably should have more validation
+          if (getLe16(bpb->bytesPerSector) == 512) {
+            if (getLe16(bpb->sectorsPerFat16)) Serialx.print("\tFat16:");
+            else if (getLe32(bpb->sectorsPerFat32)) Serialx.print("\tFat32:");
+          }
         }
       }
     }

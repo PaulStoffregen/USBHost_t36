@@ -59,6 +59,8 @@ public: // allow access, so users can mix MSC & SdFat APIs
 protected:
 	uint64_t _cached_usedSize;
 	bool 	_cached_usedSize_valid = false;
+    msController *_pDrive;
+    uint8_t        _part;
 };
 
 
