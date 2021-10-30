@@ -403,7 +403,39 @@ void PFsLib::extgptDmp(BlockDeviceInterface *blockDev, MbrSector_t *mbr, uint8_t
   }
 }
 
+#if 0
+typedef struct {
+  uint8_t  signature[8];
+  uint8_t  revision[4];
+  uint8_t  headerSize[4];
+  uint8_t  crc32[4];
+  uint8_t  reserved[4];
+  uint8_t  currentLBA[8];
+  uint8_t  backupLBA[8];
+  uint8_t  firstLBA[8];
+  uint8_t  lastLBA[8];
+  uint8_t  diskGUID[16];
+  uint8_t  startLBAArray[8];
+  uint8_t  numberPartitions[4];
+  uint8_t  sizePartitionEntry[4];
+  uint8_t  crc32PartitionEntries[4];
+  uint8_t  unused[420]; // should be 0;
+} GPTPartitionHeader_t;
 
+typedef struct {
+  uint8_t  partitionTypeGUID[16];
+  uint8_t  uniqueGUID[16];
+  uint8_t  firstLBA[8];
+  uint8_t  lastLBA[8];
+  uint8_t  attributeFlags[8];
+  uint16_t name[36];
+} GPTPartitionEntryItem_t;
+
+typedef struct {
+  GPTPartitionEntryItem_t items[4];
+} GPTPartitionEntrySector_t;
+
+#endif
 
 typedef struct {
   uint32_t  q1;
@@ -412,43 +444,13 @@ typedef struct {
   uint8_t   b[8];
 } guid_t;
 
-typedef struct {
-  uint8_t   signature[8];
-  uint32_t  revision;
-  uint32_t  headerSize;
-  uint32_t  crc32;
-  uint32_t  reserved;
-  uint64_t  currentLBA;
-  uint64_t  backupLBA;
-  uint64_t  firstLBA;
-  uint64_t  lastLBA;
-  uint8_t   diskGUID[16];
-  uint64_t  startLBAArray;
-  uint32_t  numberPartitions;
-  uint32_t  sizePartitionEntry;
-  uint32_t  crc32PartitionEntries;
-  uint8_t   unused[420]; // should be 0;
-} gptPartitionHeader_t;
 
-typedef struct {
-  uint8_t   partitionTypeGUID[16];
-  uint8_t   uniqueGUID[16];
-  uint64_t  firstLBA;
-  uint64_t  lastLBA;
-  uint64_t  attributeFlags;
-  uint16_t  name[36];
-} gptPartitionEntryItem_t;
-
-typedef struct {
-  gptPartitionEntryItem_t items[4];
-} gptPartitionEntrySector_t;
-
-void printGUID(uint8_t* pbguid, Stream &Serialx) {
+void printGUID(uint8_t* pbguid, Print *pserial) {
   // Windows basic partion guid is: EBD0A0A2-B9E5-4433-87C0-68B6B72699C7
   // raw dump of it: A2 A0 D0 EB E5 B9 33 44 87 C0 68 B6 B7 26 99 C7
   guid_t *pg = (guid_t*)pbguid;
-  Serialx.printf("%08X-%04X-%04X-%02X%-2X-", pg->q1, pg->w2, pg->w3, pg->b[0], pg->b[1]);
-  for (uint8_t i=2;i<8; i++) Serialx.printf("%02X", pg->b[i]);
+  pserial->printf("%08X-%04X-%04X-%02X%02X-", pg->q1, pg->w2, pg->w3, pg->b[0], pg->b[1]);
+  for (uint8_t i=2;i<8; i++) pserial->printf("%02X", pg->b[i]);
 }
 
 static const uint8_t mbdpGuid[16] PROGMEM = {0xA2, 0xA0, 0xD0, 0xEB, 0xE5, 0xB9, 0x33, 0x44, 0x87, 0xC0, 0x68, 0xB6, 0xB7, 0x26, 0x99, 0xC7};
@@ -458,8 +460,8 @@ uint32_t PFsLib::gptDmp(BlockDeviceInterface *blockDev, Stream &Serialx) {
   union {
     MbrSector_t mbr;
     partitionBootSector pbs;
-    gptPartitionHeader_t gpthdr;
-    gptPartitionEntrySector_t gptes;
+    GPTPartitionHeader_t gpthdr;
+    GPTPartitionEntrySector_t gptes;
     uint8_t buffer[512];
   } sector; 
   m_pr = &Serialx;
@@ -486,23 +488,25 @@ uint32_t PFsLib::gptDmp(BlockDeviceInterface *blockDev, Stream &Serialx) {
     Serialx.println("GPT partition header signature did not match");
     dump_hexbytes(&sector.buffer, 512);
   }
-  Serialx.printf("\nGPT partition header revision: %x\n", sector.gpthdr.revision);
+  Serialx.printf("\nGPT partition header revision: %x\n", getLe32(sector.gpthdr.revision));
   Serialx.printf("LBAs current:%llu backup:%llu first:%llu last:%llu\nDisk GUID:", 
-    sector.gpthdr.currentLBA, sector.gpthdr.backupLBA, sector.gpthdr.firstLBA, sector.gpthdr.lastLBA);
-  printGUID(sector.gpthdr.diskGUID, Serialx);
+    getLe64(sector.gpthdr.currentLBA), getLe64(sector.gpthdr.backupLBA), 
+    getLe64(sector.gpthdr.firstLBA), getLe64(sector.gpthdr.lastLBA));
+  printGUID(sector.gpthdr.diskGUID, &Serialx);
+
   //dump_hexbytes(&sector.gpthdr.diskGUID, 16);
-  uint32_t cParts = sector.gpthdr.numberPartitions;
+  uint32_t cParts = getLe32(sector.gpthdr.numberPartitions);
   Serialx.printf("Start LBA Array: %llu Count: %u size:%u\n", 
-      sector.gpthdr.startLBAArray, cParts, sector.gpthdr.sizePartitionEntry);
+      getLe64(sector.gpthdr.startLBAArray), cParts, getLe32(sector.gpthdr.sizePartitionEntry));
   uint32_t sector_number = 2;
   Serialx.println("Part\t Type Guid, Unique Guid, First, last, attr, name");
   for (uint8_t part = 0; part < cParts ; part +=4) {
     if (blockDev->readSector(sector_number, (uint8_t*)&sector.buffer)) {
       //dump_hexbytes(&sector.buffer, 512);
       for (uint8_t ipei = 0; ipei < 4; ipei++) {
-        gptPartitionEntryItem_t *pei = &sector.gptes.items[ipei];
+        GPTPartitionEntryItem_t *pei = &sector.gptes.items[ipei];
         // see if the entry has any data in it...
-        uint32_t end_addr = (uint32_t)pei + sizeof(gptPartitionEntryItem_t);
+        uint32_t end_addr = (uint32_t)pei + sizeof(GPTPartitionEntryItem_t);
         uint32_t *p = (uint32_t*)pei;
         for (; (uint32_t)p < end_addr; p++) {
           if (*p) break; // found none-zero. 
@@ -510,10 +514,11 @@ uint32_t PFsLib::gptDmp(BlockDeviceInterface *blockDev, Stream &Serialx) {
         if ((uint32_t)p < end_addr) {
           // So entry has data:
           Serialx.printf("%u\t", part + ipei);
-          printGUID(pei->partitionTypeGUID, Serialx);
+          printGUID(pei->partitionTypeGUID, &Serialx);
           Serialx.print(", ");
-          printGUID(pei->uniqueGUID, Serialx);
-          Serialx.printf(", %llu, %llu, %llX, ", pei->firstLBA, pei->lastLBA, pei->attributeFlags);
+          printGUID(pei->uniqueGUID, &Serialx);
+          Serialx.printf(", %llu, %llu, %llX, ", getLe64(pei->firstLBA), getLe64(pei->lastLBA), 
+              getLe64(pei->attributeFlags));
           for (uint8_t i = 0; i < 36; i++) {
             if ((pei->name[i]) == 0) break;
             Serialx.write((uint8_t)pei->name[i]);
@@ -522,8 +527,8 @@ uint32_t PFsLib::gptDmp(BlockDeviceInterface *blockDev, Stream &Serialx) {
           if (memcmp((uint8_t *)pei->partitionTypeGUID, mbdpGuid, 16) == 0) {
             Serialx.print(">>> Microsoft Basic Data Partition\n");
             // See if we can read in the first sector
-            if (blockDev->readSector(pei->firstLBA, (uint8_t*)&sector.buffer)) {
-              dump_hexbytes(sector.buffer, 512);
+            if (blockDev->readSector(getLe64(pei->firstLBA), (uint8_t*)&sector.buffer)) {
+              //dump_hexbytes(sector.buffer, 512);
 
               // First see if this is exFat... 
               // which starts with: 
@@ -609,10 +614,12 @@ PFsLib::voltype_t PFsLib::getPartitionInfo(BlockDeviceInterface *blockDev, uint8
     // This is a GPT initialized Disk assume validation done earlier.
     //if (!m_dev->readSector(1, secBuf)) return INVALID_VOL; 
     //GPTPartitionHeader_t* gptph = reinterpret_cast<GPTPartitionHeader_t*>(secBuf);
-
-    if (!blockDev->readSector(2 + (part >> 2), secBuf)) return INVALID_VOL; 
+    // We will overload the mbr part to give clue where GPT data is stored for this volume
+    mbrLBA = 2 + (part >> 2);
+    mbrPart = part & 0x3;
+    if (!blockDev->readSector(mbrLBA, secBuf)) return INVALID_VOL; 
     GPTPartitionEntrySector_t *gptes = reinterpret_cast<GPTPartitionEntrySector_t*>(secBuf);
-    GPTPartitionEntryItem_t *gptei = &gptes->items[part & 0x3];
+    GPTPartitionEntryItem_t *gptei = &gptes->items[mbrPart];
 
     // Mow extract the data...
     firstLBA = getLe64(gptei->firstLBA);
@@ -621,9 +628,6 @@ PFsLib::voltype_t PFsLib::getPartitionInfo(BlockDeviceInterface *blockDev, uint8
     
     if (memcmp((uint8_t *)gptei->partitionTypeGUID, mbdpGuid, 16) != 0) return OTHER_VOL;
 
-
-    mbrLBA = 0xFFFFFFFFUL;
-    mbrPart = 0xff;
     return GPT_VOL; 
   }
   // So we are now looking a MBR type setups. 
@@ -719,6 +723,13 @@ void PFsLib::listPartitions(BlockDeviceInterface *blockDev, Print &Serialx) {
             else if (getLe32(bpb->sectorsPerFat32)) Serialx.print("\tFat32:");
           }
         }
+      }
+    } else {
+      if ((mbrPart < 4) && blockDev->readSector(mbrLBA, secBuf)) {
+        GPTPartitionEntrySector_t* pgpes = reinterpret_cast<GPTPartitionEntrySector_t*> (secBuf);
+        // try to print out guid...
+        Serialx.write('\t');
+        printGUID(pgpes->items[mbrPart].partitionTypeGUID, &Serialx);
       }
     }
     Serialx.println();
