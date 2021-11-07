@@ -24,7 +24,7 @@
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
 
-#define  SEREMU_PRINT_DEBUG
+//#define  SEREMU_PRINT_DEBUG
 
 
 void USBSerialEmu::init()
@@ -94,7 +94,7 @@ bool USBSerialEmu::hid_process_in_data(const Transfer_t *transfer)
 		uint16_t new_head = rx_head_ + 1;
 		if (new_head == RX_BUFFER_SIZE) new_head = 0;
 		if (new_head == tail) break; // we don't have room so bail out. 
-		rx_buffer_[rx_head_] = *buffer++;
+		rx_buffer_[new_head] = *buffer++;
 		rx_head_ = new_head;	// point off to the new next head.
 	}
 	return true;
