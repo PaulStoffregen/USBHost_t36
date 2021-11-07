@@ -49,6 +49,8 @@ hidclaim_t RawHIDController::claim_collection(USBHIDParser *driver, Device_t *de
 	collections_claimed++;
 	usage_ = topusage;
 	driver_ = driver;	// remember the driver. 
+	rx_pipe_size_ = driver->inSize();
+	tx_pipe_size_ = driver->outSize();
 	return CLAIM_INTERFACE;  // We wa
 }
 
@@ -80,10 +82,10 @@ bool RawHIDController::hid_process_out_data(const Transfer_t *transfer)
 	return true;
 }
 
-bool RawHIDController::sendPacket(const uint8_t *buffer) 
+bool RawHIDController::sendPacket(const uint8_t *buffer, int cb) 
 {
 	if (!driver_) return false;
-	return driver_->sendPacket(buffer);
+	return driver_->sendPacket(buffer, cb);
 }
 
 

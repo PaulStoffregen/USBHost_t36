@@ -24,7 +24,7 @@
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
 
-//#define  SEREMU_PRINT_DEBUG
+#define  SEREMU_PRINT_DEBUG
 
 
 void USBSerialEmu::init()

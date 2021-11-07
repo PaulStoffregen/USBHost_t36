@@ -1755,7 +1755,9 @@ public:
 	RawHIDController(USBHost &host, uint32_t usage = 0) : fixed_usage_(usage) { init(); }
 	uint32_t usage(void) {return usage_;}
 	void attachReceive(bool (*f)(uint32_t usage, const uint8_t *data, uint32_t len)) {receiveCB = f;}
-	bool sendPacket(const uint8_t *buffer);
+	bool sendPacket(const uint8_t *buffer, int cb=-1);
+	uint16_t rxSize() { return rx_pipe_size_;}
+	uint16_t txSize() { return tx_pipe_size_;}// size of transmit circular buffer
 protected:
 	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
 	virtual bool hid_process_in_data(const Transfer_t *transfer);
@@ -1773,6 +1775,8 @@ private:
 	//volatile bool hid_input_begin_ = false;
 	uint32_t fixed_usage_;
 	uint32_t usage_ = 0;
+	uint16_t rx_pipe_size_;// size of receive circular buffer
+	uint16_t tx_pipe_size_;// size of transmit circular buffer
 
 	// See if we can contribute transfers
 	Transfer_t mytransfers[2] __attribute__ ((aligned(32)));
@@ -1785,6 +1789,9 @@ class USBSerialEmu : public USBHIDInput, public Stream {
 public:
 	USBSerialEmu(USBHost &host) { init(); }
 	uint32_t usage(void) {return usage_;}
+	uint16_t rxSize() { return rx_pipe_size_;}
+	uint16_t txSize() { return tx_pipe_size_;}// size of transmit circular buffer
+
 
 	// Stream stuff. 
 	uint32_t writeTimeout() {return write_timeout_;}
