@@ -45,12 +45,17 @@ hidclaim_t RawHIDController::claim_collection(USBHIDParser *driver, Device_t *de
 		if (fixed_usage_ != topusage) return CLAIM_NO; 		// See if we want specific one and if so is it this one
 	} else if (dev->idProduct != 0x486) return CLAIM_NO;	// otherwise mainly used for RAWHID Serial type.
 
+	rx_pipe_size_ = driver->inSize();
+	tx_pipe_size_ = driver->outSize();
+	if (rx_pipe_size_ > 64 && (rx_tx_buffers_ == nullptr)) return CLAIM_NO;  // not big enough; 
+	if (rx_tx_buffers_ && rx_tx_buffer_size_ >= (2*rx_pipe_size_ + 2*tx_pipe_size_)) {
+		driver->setTXBuffers(rx_tx_buffers_, rx_tx_buffers_ + tx_pipe_size_, tx_pipe_size_);
+		driver->setRXBuffers(rx_tx_buffers_ + (2 * tx_pipe_size_), rx_tx_buffers_ + (2 *tx_pipe_size_+ rx_pipe_size_), rx_pipe_size_);
+	}
 	mydevice = dev;
 	collections_claimed++;
 	usage_ = topusage;
 	driver_ = driver;	// remember the driver. 
-	rx_pipe_size_ = driver->inSize();
-	tx_pipe_size_ = driver->outSize();
 	return CLAIM_INTERFACE;  // We wa
 }
 

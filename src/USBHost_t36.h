@@ -663,10 +663,11 @@ private:
 
 class USBHIDParser : public USBDriver {
 public:
-	USBHIDParser(USBHost &host) : hidTimer(this) { init(); }
+	USBHIDParser(USBHost &host ) : hidTimer(this) { init(); }
 	static void driver_ready_for_hid_collection(USBHIDInput *driver);
 	bool sendPacket(const uint8_t *buffer, int cb=-1);
 	void setTXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb);
+	void setRXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb);
 
 	bool sendControlPacket(uint32_t bmRequestType, uint32_t bRequest,
 			uint32_t wValue, uint32_t wIndex, uint32_t wLength, void *buf);
@@ -707,21 +708,24 @@ private:
 	uint16_t in_size;
 	uint16_t out_size;
 	setup_t setup;
-	uint8_t descriptor[800];
-	uint8_t report[64];
-	uint8_t report2[64];
 	uint16_t descsize;
 	bool use_report_id;
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[5] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
 	uint8_t txstate = 0;
-	uint8_t *tx1 = nullptr;
-	uint8_t *tx2 = nullptr;
+	uint8_t *_rx1 = nullptr;
+	uint8_t *_rx2 = nullptr;
+	uint8_t *_tx1 = nullptr;
+	uint8_t *_tx2 = nullptr;
 	bool hid_driver_claimed_control_ = false;
 	USBDriverTimer hidTimer;
+	uint8_t _bigBuffer[800 + 64+64];
+	uint8_t *_bigBufferEnd = _bigBuffer + sizeof(_bigBuffer);
+	uint16_t _big_buffer_size = sizeof(_bigBuffer);
 	uint8_t bInterfaceNumber = 0;
 };
+
 
 //--------------------------------------------------------------------------
 
@@ -831,6 +835,8 @@ private:
 	bool control_queued;
 };
 
+
+//--------------------------------------------------------------------------
 
 class MouseController : public USBHIDInput, public BTHIDInput {
 public:
@@ -1752,10 +1758,11 @@ private:
 
 class RawHIDController : public USBHIDInput {
 public:
-	RawHIDController(USBHost &host, uint32_t usage = 0) : fixed_usage_(usage) { init(); }
+	RawHIDController(USBHost &host, uint32_t usage = 0, uint8_t *rx_tx_buffers=nullptr, uint16_t rx_tx_buffer_size = 0) : 
+			fixed_usage_(usage), rx_tx_buffers_(rx_tx_buffers), rx_tx_buffer_size_(rx_tx_buffer_size) { init(); }
 	uint32_t usage(void) {return usage_;}
 	void attachReceive(bool (*f)(uint32_t usage, const uint8_t *data, uint32_t len)) {receiveCB = f;}
-	bool sendPacket(const uint8_t *buffer, int cb=-1);
+	bool sendPacket(const uint8_t *buffer, int cb = -1);
 	uint16_t rxSize() { return rx_pipe_size_;}
 	uint16_t txSize() { return tx_pipe_size_;}// size of transmit circular buffer
 protected:
@@ -1777,6 +1784,8 @@ private:
 	uint32_t usage_ = 0;
 	uint16_t rx_pipe_size_;// size of receive circular buffer
 	uint16_t tx_pipe_size_;// size of transmit circular buffer
+	uint8_t  *rx_tx_buffers_;
+	uint16_t rx_tx_buffer_size_; 
 
 	// See if we can contribute transfers
 	Transfer_t mytransfers[2] __attribute__ ((aligned(32)));
