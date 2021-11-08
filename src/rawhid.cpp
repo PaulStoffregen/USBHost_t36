@@ -33,9 +33,9 @@ void RawHIDController::init()
 hidclaim_t RawHIDController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
 {
 	// only claim RAWHID devices currently: 16c0:0486
-#ifdef USBHOST_PRINT_DEBUG
+//#ifdef USBHOST_PRINT_DEBUG
 	USBHDBGSerial.printf("Rawhid Claim: %x:%x usage: %x\n", dev->idVendor, dev->idProduct, topusage);
-#endif
+//#endif
 
 	if (dev->idVendor != 0x16c0) return CLAIM_NO;  //  NOT PJRC
 	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
@@ -47,10 +47,25 @@ hidclaim_t RawHIDController::claim_collection(USBHIDParser *driver, Device_t *de
 
 	rx_pipe_size_ = driver->inSize();
 	tx_pipe_size_ = driver->outSize();
-	if (rx_pipe_size_ > 64 && (rx_tx_buffers_ == nullptr)) return CLAIM_NO;  // not big enough; 
-	if (rx_tx_buffers_ && rx_tx_buffer_size_ >= (2*rx_pipe_size_ + 2*tx_pipe_size_)) {
-		driver->setTXBuffers(rx_tx_buffers_, rx_tx_buffers_ + tx_pipe_size_, tx_pipe_size_);
-		driver->setRXBuffers(rx_tx_buffers_ + (2 * tx_pipe_size_), rx_tx_buffers_ + (2 *tx_pipe_size_+ rx_pipe_size_), rx_pipe_size_);
+	if (rx_pipe_size_ > 64 && (rx_tx_buffers_ == nullptr)) return CLAIM_NO;  // not big enough
+
+	if (rx_tx_buffers_) {
+		uint8_t count_buffers = min(4, rx_tx_buffer_size_ / (rx_pipe_size_ + tx_pipe_size_));
+		if (count_buffers == 0) return CLAIM_NO; // Not enough for one... so bail
+
+		uint8_t *tx_buffer[4] = {nullptr, nullptr, nullptr, nullptr};
+		uint8_t *rx_buffer[4] = {nullptr, nullptr, nullptr, nullptr};
+		uint8_t *rx_start = rx_tx_buffers_ + (tx_pipe_size_ * count_buffers); 
+		for (uint8_t i = 0; i < count_buffers; i++) {
+			tx_buffer[i] = rx_tx_buffers_ + (tx_pipe_size_ * i);
+			rx_buffer[i] = rx_start + (rx_pipe_size_ * i);
+		}
+		driver->setTXBuffers(tx_buffer[0], tx_buffer[1], tx_pipe_size_, tx_buffer[2], tx_buffer[3]);
+		driver->setRXBuffers(rx_buffer[0], rx_buffer[1], rx_pipe_size_, rx_buffer[2], rx_buffer[3]);
+//#ifdef USBHOST_PRINT_DEBUG
+		USBHDBGSerial.printf("    >> setTXBuffers: %x %x %x %x\n", (uint32_t)tx_buffer[0], (uint32_t)tx_buffer[1], (uint32_t)tx_buffer[2], (uint32_t)tx_buffer[3]);
+		USBHDBGSerial.printf("    >> setRXBuffers: %x %x %x %x\n", (uint32_t)rx_buffer[0], (uint32_t)rx_buffer[1], (uint32_t)rx_buffer[2], (uint32_t)rx_buffer[3]);
+//#endif
 	}
 	mydevice = dev;
 	collections_claimed++;

@@ -179,18 +179,17 @@ void USBHIDParser::control(const Transfer_t *transfer)
 			_bigBufferEnd = _rx2;
 		}
 
-	#if defined(__IMXRT1062__) // Teensy 4.x
-    if ((uint32_t)_rx1 >= 0x20200000u) arm_dcache_flush_delete(_rx1, in_size);
-    if ((uint32_t)_rx2 >= 0x20200000u) arm_dcache_flush_delete(_rx2, in_size);
-	#endif
-	queue_Data_Transfer(in_pipe, _rx1, in_size, this);
-		queue_Data_Transfer(in_pipe, _rx2, in_size, this);
+		queue_Data_Transfer(in_pipe, _rx1, in_size, this);
+		if (_rx2) queue_Data_Transfer(in_pipe, _rx2, in_size, this);
+		if (_rx3) queue_Data_Transfer(in_pipe, _rx3, in_size, this);
+		if (_rx4) queue_Data_Transfer(in_pipe, _rx4, in_size, this);
+
 		if (device->idVendor == 0x054C && 
-				((device->idProduct == 0x0268) || (device->idProduct == 0x042F)/* || (device->idProduct == 0x03D5)*/)) {
-			println("send special PS3 feature command");
-			mk_setup(setup, 0x21, 9, 0x03F4, 0, 4); // ps3 tell to send report 1?
-			static uint8_t ps3_feature_F4_report[] = {0x42, 0x0c, 0x00, 0x00};
-			queue_Control_Transfer(device, &setup, ps3_feature_F4_report, this);
+			((device->idProduct == 0x0268) || (device->idProduct == 0x042F)/* || (device->idProduct == 0x03D5)*/)) {
+		println("send special PS3 feature command");
+		mk_setup(setup, 0x21, 9, 0x03F4, 0, 4); // ps3 tell to send report 1?
+		static uint8_t ps3_feature_F4_report[] = {0x42, 0x0c, 0x00, 0x00};
+		queue_Control_Transfer(device, &setup, ps3_feature_F4_report, this);
 		}
 	}
 }
@@ -268,8 +267,15 @@ void USBHIDParser::out_data(const Transfer_t *transfer)
 	// A packet completed. lets mark it as done and call back
 	// to top reports handler.  We unmark our checkmark to
 	// handle case where they may want to queue up another one. 
-	if (transfer->buffer == _tx1) txstate &= ~1;
-	if (transfer->buffer == _tx2) txstate &= ~2;
+	uint8_t mask = 1;
+	const uint8_t *buffer = (const uint8_t *)transfer->buffer;
+	for(uint8_t i = 0; i < 4; i++) {
+		if (buffer == _tx[i]) {
+			_tx_state &= ~mask;
+			break;
+		}
+		mask <<= 1;
+	}
 	if (topusage_drivers[0]) {
 		topusage_drivers[0]->hid_process_out_data(transfer);
 	}
@@ -285,25 +291,28 @@ void USBHIDParser::timer_event(USBDriverTimer *whichTimer)
 
 bool USBHIDParser::sendPacket(const uint8_t *buffer, int cb) {
 	if (!out_size || !out_pipe) return false;	
-	if (!_tx1) {
+	if (!_tx[0]) {
 		// Was not init before, for now lets put it at end of descriptor
 		// TODO: should verify that either don't exceed overlap descsize
 		//       Or that we have taken over this device
-		_tx1 = _bigBufferEnd - out_size;
-		_tx2 = _tx1 - out_size;
-		_bigBufferEnd = _tx2;
+		_tx[0] = _bigBufferEnd - out_size;
+		_tx[1] = _tx[0] - out_size;
+		_bigBufferEnd = _tx[1];
+		_tx_mask = 3;
 	}
-	if ((txstate & 3) == 3) return false; 	// both transmit buffers are full
+	if ((_tx_state & _tx_mask) == _tx_mask) return false; 	// both transmit buffers are full
 	if (cb == -1)
 		cb = out_size;
-	uint8_t *p = _tx1;
-	if ((txstate & 1) == 0) {
-		txstate |= 1;
-	} else {
-		if (!_tx2) 
-			return false; // only one buffer
-		txstate |= 2;
-		p = _tx2;
+	uint8_t mask = 0x1;
+	uint8_t *p = _tx[0];
+	for (uint8_t i = 0; i < 4; i++ ) {
+		if ((mask & _tx_mask ) == 0) return false; // none found
+		if ((mask & _tx_state) == 0) {
+			_tx_state |= mask;
+			p = _tx[i];
+			break;
+		}
+		mask <<=1;
 	}
 	// copy the users data into our out going buffer
 	memcpy(p, buffer, cb);	
@@ -318,16 +327,30 @@ bool USBHIDParser::sendPacket(const uint8_t *buffer, int cb) {
 	return true;
 }
 
-void USBHIDParser::setTXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb)
+void USBHIDParser::setTXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb,
+	uint8_t *buffer3, uint8_t* buffer4)
 {
-	_tx1 = buffer1;
-	_tx2 = buffer2;
+	uint8_t index = 0;
+	if (buffer1) _tx[index++] = buffer1;
+	if (buffer2) _tx[index++] = buffer2;
+	if (buffer3) _tx[index++] = buffer3;
+	if (buffer4) _tx[index++] = buffer4;
+	_tx_mask = (1 << index) - 1; // 2 by default 1<< 2 =4 -1 = 3...
 }
 
-void USBHIDParser::setRXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb)
+void USBHIDParser::setRXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb,
+	uint8_t *buffer3, uint8_t* buffer4)
 {
 	_rx1 = buffer1;
 	_rx2 = buffer2;
+	_rx3 = buffer3;
+	_rx4 = buffer4;
+	#if defined(__IMXRT1062__) // Teensy 4.x
+    if ((uint32_t)_rx1 >= 0x20200000u) arm_dcache_flush_delete(_rx1, in_size);
+    if ((uint32_t)_rx2 >= 0x20200000u) arm_dcache_flush_delete(_rx2, in_size);
+    if ((uint32_t)_rx3 >= 0x20200000u) arm_dcache_flush_delete(_rx3, in_size);
+    if ((uint32_t)_rx4 >= 0x20200000u) arm_dcache_flush_delete(_rx4, in_size);
+	#endif
 }
 
 

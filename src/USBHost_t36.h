@@ -666,8 +666,12 @@ public:
 	USBHIDParser(USBHost &host ) : hidTimer(this) { init(); }
 	static void driver_ready_for_hid_collection(USBHIDInput *driver);
 	bool sendPacket(const uint8_t *buffer, int cb=-1);
-	void setTXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb);
-	void setRXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb);
+	void setTXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb, 
+		// extended to optionaly allow more buffers. 
+		uint8_t *buffer3=nullptr, uint8_t* buffer4=nullptr);
+	void setRXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb,
+		// extended to optionaly allow more buffers. 
+		uint8_t *buffer3=nullptr, uint8_t* buffer4=nullptr);
 
 	bool sendControlPacket(uint32_t bmRequestType, uint32_t bRequest,
 			uint32_t wValue, uint32_t wIndex, uint32_t wLength, void *buf);
@@ -697,7 +701,7 @@ protected:
 	void init();
 
 
-	uint8_t activeSendMask(void) {return txstate;} 
+	uint8_t activeSendMask(void) {return _tx_state;} 
 
 private:
 	Pipe_t *in_pipe;
@@ -713,11 +717,13 @@ private:
 	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
 	Transfer_t mytransfers[5] __attribute__ ((aligned(32)));
 	strbuf_t mystring_bufs[1];
-	uint8_t txstate = 0;
 	uint8_t *_rx1 = nullptr;
 	uint8_t *_rx2 = nullptr;
-	uint8_t *_tx1 = nullptr;
-	uint8_t *_tx2 = nullptr;
+	uint8_t *_rx3 = nullptr;
+	uint8_t *_rx4 = nullptr;
+	uint8_t *_tx[4] = {nullptr, nullptr, nullptr, nullptr};
+	uint8_t _tx_state = 0;
+	uint8_t _tx_mask = 3;
 	bool hid_driver_claimed_control_ = false;
 	USBDriverTimer hidTimer;
 	uint8_t _bigBuffer[800 + 64+64];
@@ -1788,7 +1794,7 @@ private:
 	uint16_t rx_tx_buffer_size_; 
 
 	// See if we can contribute transfers
-	Transfer_t mytransfers[2] __attribute__ ((aligned(32)));
+	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
 
 };
 
