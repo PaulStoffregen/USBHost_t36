@@ -128,38 +128,47 @@ bool PFsExFatFormatter::format(PFsVolume &partVol, uint8_t* secBuf, print_t* pr)
   for (m = 1, vs = 0; m && sectorCount > m; m <<= 1, vs++) {}
   sectorsPerClusterShift = vs < 29 ? 8 : (vs - 11)/2;
   //sectorsPerClusterShift = partVol.getExFatVol()->sectorsPerClusterShift();
+  //DBGPrintf("Calculate sectorsPerClusterShift = %u\n", vs < 29 ? 8 : (vs - 11)/2);
   
   //1 << n is the same as raising 2 to the power n
   sectorsPerCluster = 1UL << sectorsPerClusterShift;
   //sectorsPerCluster = partVol.getExFatVol()->sectorsPerCluster();
+  //DBGPrintf("Calculated sectorsPerCluster = %u\n",  1UL << sectorsPerClusterShift);
   
+  //The ClusterCount field shall describe the number of clusters the Cluster Heap contains
+  //   (VolumeLength - ClusterHeapOffset) / 2^SectorsPerClusterShift rounded down to the nearest integer, which is exactly the number of clusters which can fit between the beginning of the Cluster Heap and the end of the volume
+  //   232- 11, which is the maximum number of clusters a FAT can describe
+  //clusterCount = (sectorCount - 4*fatLength) >> sectorsPerClusterShift;
+  clusterCount = partVol.clusterCount();
+  //DBGPrintf("Calculated clusterCount = %u\n", (sectorCount - 4*fatLength) >> sectorsPerClusterShift);
+  
+  //The ClusterHeapOffset field shall describe the volume-relative sector offset of the Cluster Heap
+  //   At least FatOffset + FatLength * NumberOfFats, to account for the sectors all the preceding regions consume
+  //   At most 2^32- 1 or VolumeLength - (ClusterCount * 2^SectorsPerClusterShift), whichever calculation is less
+  //clusterHeapOffset = 2*fatLength;
+  clusterHeapOffset = partVol.getExFatVol()->clusterHeapStartSector() - m_relativeSectors;
+    
   //The FatLength field shall describe the length, in sectors, of each FAT table
-  //   At least (ClusterCount + 2) * 2^2/ 2^BytesPerSectorShiftrounded up to the nearest integer
+  //   At least (ClusterCount + 2) * 2^2/ 2^BytesPerSectorShift rounded up to the nearest integer
   //   At most (ClusterHeapOffset - FatOffset) / NumberOfFats rounded down to the nearest integer
-  fatLength = 1UL << (vs < 27 ? 13 : (vs + 1)/2);
+  //fatLength = 1UL << (vs < 27 ? 13 : (vs + 1)/2);
   //fatLength = partVol.getExFatVol()->fatLength();
+  //DBGPrintf("Calculated fatLength1 = %u\n",1UL << (vs < 27 ? 13 : (vs + 1)/2));
+  //DBGPrintf("Calculated fatLength2 = %u\n", (clusterCount + 2) * (1UL<<2)/(1UL<<BYTES_PER_SECTOR_SHIFT));
+  fatLength = ((clusterCount + 2) * (1UL<<2)/(1UL<<BYTES_PER_SECTOR_SHIFT)) + 1;
   
   //The FatOffset field shall describe the volume-relative sector offset of the First FAT
   //   At least 24, which accounts for the sectors the Main Boot and Backup Boot regions consume
   //   At most ClusterHeapOffset - (FatLength * NumberOfFats), which accounts for the sectors the Cluster Heap consumes
-  fatOffset = fatLength;
+  //fatOffset = fatLength;
   //fatOffset = partVol.fatStartSector() - m_relativeSectors;
+  //DBGPrintf("Calculated fatOffset = %u\n", clusterHeapOffset - fatLength);
+  fatOffset = clusterHeapOffset - fatLength;
   
   //The PartitionOffset field shall describe the media-relative sector offset of the partition which hosts the given exFAT volume
   //partitionOffset = 2*fatLength;
   partitionOffset = m_relativeSectors;
   
-  //The ClusterHeapOffset field shall describe the volume-relative sector offset of the Cluster Heap
-  //   At least FatOffset + FatLength * NumberOfFats, to account for the sectors all the preceding regions consume
-  //   At most 2^32- 1 or VolumeLength - (ClusterCount * 2^SectorsPerClusterShift), whichever calculation is less
-  clusterHeapOffset = 2*fatLength;
-  //clusterHeapOffset = partVol.getExFatVol()->clusterHeapStartSector() - m_relativeSectors;
-  
-  //The ClusterCount field shall describe the number of clusters the Cluster Heap contains
-  //   (VolumeLength - ClusterHeapOffset) / 2^SectorsPerClusterShift rounded down to the nearest integer, which is exactly the number of clusters which can fit between the beginning of the Cluster Heap and the end of the volume
-  //   232- 11, which is the maximum number of clusters a FAT can describe
-  clusterCount = (sectorCount - 4*fatLength) >> sectorsPerClusterShift;
-  //clusterCount = partVol.clusterCount();
   
   //The VolumeLength field shall describe the size of the given exFAT volume in sectors
   //   At least 2^20/ 2^BytesPerSectorShift, which ensures the smallest volume is no less than 1MB
