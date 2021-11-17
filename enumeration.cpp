@@ -44,7 +44,7 @@ static USBDriver *available_drivers = NULL;
 // Static buffers used during enumeration.  One a single USB device
 // may enumerate at once, because USB address zero is used, and
 // because this static buffer & state info can't be shared.
-static uint8_t enumbuf[512] __attribute__ ((aligned(16)));
+static uint8_t enumbuf[2048] __attribute__ ((aligned(16)));
 static setup_t enumsetup __attribute__ ((aligned(16)));
 static uint16_t enumlen;
 
