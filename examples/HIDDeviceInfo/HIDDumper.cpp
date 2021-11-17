@@ -20,7 +20,7 @@
    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
-#include "HidDumper.h"
+#include "HIDDumper.h"
 bool HIDDumpController::show_raw_data = true;
 bool HIDDumpController::show_formated_data = true;
 bool HIDDumpController::changed_data_only = false;
