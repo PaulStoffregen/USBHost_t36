@@ -539,6 +539,10 @@ uint8_t msController::msReadBlocks(
 							  (uint8_t)(BlockAddress & 0xFF),
 							   0x00, BlockHi, BlockLo, 0x00}
 	};
+#if defined(__IMXRT1062__)
+    if ((uint32_t)sectorBuffer >= 0x20200000u) arm_dcache_flush_delete(sectorBuffer, (uint32_t)(Blocks * BlockSize));
+#endif
+
 	return msDoCommand(&CommandBlockWrapper, sectorBuffer);
 }
 
