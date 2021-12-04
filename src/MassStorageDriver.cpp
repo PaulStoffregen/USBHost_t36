@@ -519,7 +519,7 @@ uint8_t msController::msReadBlocks(
 	{
 	println("msReadBlocks()");
 #ifdef DBGprint
-	Serial.printf("<<< msReadBlocks(%x %x %x)\n", BlockAddress, Blocks, BlockSize);
+	Serial.printf("<<< msReadBlocks(%x %x %x %x)\n", BlockAddress, Blocks, BlockSize, (uint32_t)sectorBuffer);
 #endif
 	uint8_t BlockHi = (Blocks >> 8) & 0xFF;
 	uint8_t BlockLo = Blocks & 0xFF;
@@ -539,6 +539,10 @@ uint8_t msController::msReadBlocks(
 							  (uint8_t)(BlockAddress & 0xFF),
 							   0x00, BlockHi, BlockLo, 0x00}
 	};
+#if defined(__IMXRT1062__)
+    if ((uint32_t)sectorBuffer >= 0x20200000u) arm_dcache_flush_delete(sectorBuffer, (uint32_t)(Blocks * BlockSize));
+#endif
+
 	return msDoCommand(&CommandBlockWrapper, sectorBuffer);
 }
 
@@ -643,6 +647,9 @@ uint8_t msController::msWriteBlocks(
 #ifdef DBGprint
 	println("msWriteBlocks()");
 #endif
+#ifdef DBGprint
+	Serial.printf("<<< msWriteBlocks(%x %x %x %x)\n", BlockAddress, Blocks, BlockSize, (uint32_t)sectorBuffer);
+#endif
 	uint8_t BlockHi = (Blocks >> 8) & 0xFF;
 	uint8_t BlockLo = Blocks & 0xFF;
 	msCommandBlockWrapper_t CommandBlockWrapper = (msCommandBlockWrapper_t)
@@ -660,6 +667,10 @@ uint8_t msController::msWriteBlocks(
 							  (uint8_t)(BlockAddress & 0xFF),
 							  0x00, BlockHi, BlockLo, 0x00}
 	};
+#if defined(__IMXRT1062__)
+	// If buffer is in places like DMAMEM or Flash, then make sure to flush data out to physical memory
+    if ((uint32_t)sectorBuffer >= 0x20200000u) arm_dcache_flush(sectorBuffer, (uint32_t)(Blocks * BlockSize));
+#endif
 	return msDoCommand(&CommandBlockWrapper, (void *)sectorBuffer);
 }
 
