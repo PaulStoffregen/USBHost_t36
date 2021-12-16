@@ -669,7 +669,7 @@ uint8_t msController::msWriteBlocks(
 	};
 #if defined(__IMXRT1062__)
 	// If buffer is in places like DMAMEM or Flash, then make sure to flush data out to physical memory
-    if ((uint32_t)sectorBuffer >= 0x20200000u) arm_dcache_flush(sectorBuffer, (uint32_t)(Blocks * BlockSize));
+    if ((uint32_t)sectorBuffer >= 0x20200000u) arm_dcache_flush((void*)sectorBuffer, (uint32_t)(Blocks * BlockSize));
 #endif
 	return msDoCommand(&CommandBlockWrapper, (void *)sectorBuffer);
 }
