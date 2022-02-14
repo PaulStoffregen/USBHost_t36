@@ -446,6 +446,8 @@ void USBSerialBase::disconnect()
 void USBSerialBase::control(const Transfer_t *transfer)
 {
 	println("control callback (serial) ", pending_control, HEX);
+	//Serial.printf("USerial control:callback %x %u\n", pending_control, transfer->length);
+
 	control_queued = false;
 
 	// We will split this up by Serial type, maybe different functions? 
@@ -626,8 +628,11 @@ void USBSerialBase::control(const Transfer_t *transfer)
 					control_queued = true;
 					return;
 				case 10:
-					println("PL2303: writeRegister(2, 44)");
-					mk_setup(setup, 0x40, 1, 2, 0x44, 0); // 
+					// lets try legacy..
+					println("PL2303: writeRegister(2, 24)");
+					mk_setup(setup, 0x40, 1, 2, 0x24, 0); // 
+					//println("PL2303: writeRegister(2, 44)");
+					//mk_setup(setup, 0x40, 1, 2, 0x44, 0); // 
 					queue_Control_Transfer(device, &setup, NULL, this);
 					setup_state = 11; 
 					control_queued = true;
@@ -651,6 +656,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 					mk_setup(setup, 0xA1, 0x21, 0, 0, 7);
 					queue_Control_Transfer(device, &setup, setupdata, this);
 					control_queued = true;
+					setup_state = 99; // we are done
 					break;
 			}
 			pending_control &= ~1;  // We are finally going to leave this list and join the rest
@@ -695,6 +701,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			mk_setup(setup, 0xA1, 0x21, 0, 0, 7);
 			queue_Control_Transfer(device, &setup, setupdata, this);
 			control_queued = true;
+			return;
 		}
 		if (pending_control & 0x10) {
 			pending_control &= ~0x10;
@@ -715,6 +722,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			mk_setup(setup, 0x21, 0x22, 3, 0, 0); // 
 			queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
+			return;
 		}
 		if (pending_control & 0x80) {
 			pending_control &= ~0x80;
@@ -723,6 +731,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			queue_Control_Transfer(device, &setup, NULL, this);
 			dtr_rts_ = 0;
 			control_queued = true;
+			return;
 		}
 	}
 
@@ -1003,6 +1012,9 @@ void USBSerialBase::rx_data(const Transfer_t *transfer)
 		}
 	}
 	if (len > 0) {
+		//Serial.printf("rx token: %x TL:%u len:%u rx: ",  transfer->qtd.token, transfer->length, len);
+		//for (uint16_t i = 0; i < len; i++) Serial.printf(" %02x", p[i]);
+		//Serial.printf("\n");
 		print("rx token: ", transfer->qtd.token, HEX);
 		print(" transfer length: ", transfer->length, DEC);
 		print(" len:", len, DEC);
@@ -1228,9 +1240,14 @@ void USBSerialBase::begin(uint32_t baud, uint32_t format)
 	if (!control_queued) control(NULL);
 	NVIC_ENABLE_IRQ(IRQ_USBHS);
 	// Wait until all packets have been queued before we return to caller. 
-	while (pending_control) {
+	elapsedMillis em; 
+	while (pending_control && (em < 5000)) {
 		yield();	// not sure if we want to yield or what? 
 	}
+	if (pending_control) {
+		println("USBSerialBase::begin timeout", pending_control, HEX);
+	}
+
 }
 
 void USBSerialBase::end(void)
@@ -1247,8 +1264,12 @@ void USBSerialBase::end(void)
 	NVIC_ENABLE_IRQ(IRQ_USBHS);
 
 	// Wait until all packets have been queued before we return to caller. 
-	while (pending_control) {
+	elapsedMillis em;
+	while (pending_control && em < 1000) {
 		yield();	// not sure if we want to yield or what? 
+	}
+	if (pending_control) {
+		println("USBSerialBase::end timeout", pending_control, HEX);
 	}
 }
 

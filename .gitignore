@@ -19,3 +19,5 @@
 examples/Bluetooth/JoystickBT/Compile.cmd
 *.sublime-project
 *.sublime-workspace
+examples/Serial/Compile.cmd
+*.cmd
