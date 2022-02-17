@@ -56,7 +56,8 @@ USBSerialBase::product_vendor_mapping_t USBSerialBase::pid_vid_mapping[] = {
 	{0x1a86, 0x5523, USBSerialBase::CH341, 0 },
 
 	// Silex CP210...
-	{0x10c4, 0xea60, USBSerialBase::CP210X, 0 }
+	{0x10c4, 0xea60, USBSerialBase::CP210X, 0 },
+	{0x10c4, 0xea70, USBSerialBase::CP210X, 0 }
 };
 
 
