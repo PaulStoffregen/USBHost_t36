@@ -14,9 +14,9 @@ KeyboardController keyboard1(myusb);
 USBHIDParser hid1(myusb);
 USBHIDParser hid2(myusb);
 
+uint8_t keyboard_modifiers = 0;  // try to keep a reasonable value
 #ifdef KEYBOARD_INTERFACE
 uint8_t keyboard_last_leds = 0;
-uint8_t keyboard_modifiers = 0;  // try to keep a reasonable value
 #elif !defined(SHOW_KEYBOARD_DATA)
 #Warning: "USB type does not have Serial, so turning on SHOW_KEYBOARD_DATA"
 #define SHOW_KEYBOARD_DATA
