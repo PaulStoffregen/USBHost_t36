@@ -856,6 +856,9 @@ void msController::printPartionTable(Print &Serialx) {
       Serialx.printf("\t < unused area starting at: %u length %u >\n", next_free_sector, starting_sector-next_free_sector);
     }
     switch (pt->type) {
+    case 1:
+      Serialx.print("FAT12:\t");
+      break;
     case 4:
     case 6:
     case 0xe:
