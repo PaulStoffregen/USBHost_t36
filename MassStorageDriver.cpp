@@ -765,7 +765,6 @@ bool msController::writeSectors(uint32_t sector, const uint8_t* src, size_t n) {
 }
 
 
-#if 1
 static const char *decodeSenseKey(uint8_t senseKey) {
 	static char msg[64];
 #undef SENSE_KEY_MAP
@@ -836,7 +835,73 @@ void MSCClass::printError(Print &p) {
 }
 
 
-#endif
+
+void msController::printPartionTable(Print &Serialx) {
+  if (!msDriveInfo.initialized) return;
+  const uint32_t device_sector_count = msDriveInfo.capacity.Blocks;
+  // TODO: check device_sector_count
+  MbrSector_t mbr;
+  uint32_t next_free_sector = 8192;  // Some inital value this is default for Win32 on SD...
+  if (!readSector(0, (uint8_t*)&mbr)) {
+    Serialx.printf("\nread MBR failed, error code 0x%02X.\n", errorCode());
+    return;
+  }
+  Serialx.print("\nPartition Table\n");
+  Serialx.print("\tpart,boot,bgnCHS[3],type,endCHS[3],start,length\n");
+  for (uint8_t ip = 1; ip < 5; ip++) {
+    MbrPart_t *pt = &mbr.part[ip - 1];
+    uint32_t starting_sector = getLe32(pt->relativeSectors);
+    uint32_t total_sector = getLe32(pt->totalSectors);
+    if (starting_sector > next_free_sector) {
+      Serialx.printf("\t < unused area starting at: %u length %u >\n", next_free_sector, starting_sector-next_free_sector);
+    }
+    switch (pt->type) {
+    case 4:
+    case 6:
+    case 0xe:
+      Serial.print("FAT16:\t");
+      break;
+    case 11:
+    case 12:
+      Serial.print("FAT32:\t");
+      break;
+    case 7:
+      Serial.print("exFAT:\t");
+      break;
+    case 0xf:
+      Serial.print("Extend:\t");
+      break;
+    case 0x83: Serial.print("ext2/3/4:\t"); break;
+    default:
+      Serialx.print("pt_#");
+      Serialx.print(pt->type);
+      Serialx.print(":\t");
+      break;
+    }
+    Serialx.print( int(ip)); Serial.print( ',');
+    Serialx.print(int(pt->boot), HEX); Serial.print( ',');
+    for (int i = 0; i < 3; i++ ) {
+      Serialx.print("0x"); Serial.print(int(pt->beginCHS[i]), HEX); Serial.print( ',');
+    }
+    Serialx.print("0x"); Serial.print(int(pt->type), HEX); Serial.print( ',');
+    for (int i = 0; i < 3; i++ ) {
+      Serialx.print("0x"); Serial.print(int(pt->endCHS[i]), HEX); Serial.print( ',');
+    }
+    Serialx.print(starting_sector, DEC); Serial.print(',');
+    Serialx.println(total_sector);
+
+    // Lets get the max of start+total
+    if (starting_sector && total_sector)  next_free_sector = starting_sector + total_sector;
+  }
+  if (next_free_sector < device_sector_count) {
+    Serialx.printf("\t < unused area starting at: %u length %u >\n",
+      next_free_sector, device_sector_count-next_free_sector);
+  }
+}
+
+
+
+
 
 
 

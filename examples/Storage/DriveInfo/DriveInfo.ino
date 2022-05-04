@@ -43,15 +43,13 @@ void printDriveInfo(msController &drive) {
   Serial.print(F("   Disk Capacity: "));
   Serial.print(drivesize);
   Serial.println(" Bytes");
+  drive.printPartionTable(Serial);
   Serial.println();
 }
 
 // Show USB filesystem information
 void printFilesystemInfo(MSCClass &fs) {
-  Serial.println("Files:");
-  fs.mscfs.ls(LS_R | LS_DATE | LS_SIZE);
   // print the type and size of the first FAT-type volume
-  Serial.println();
   char volname[32];
   fs.mscfs.getVolumeLabel(volname, sizeof(volname));
   Serial.print("Volume name: ");
@@ -67,6 +65,9 @@ void printFilesystemInfo(MSCClass &fs) {
   Serial.print(" Space used: ");
   Serial.print(fs.usedSize());
   Serial.println(" bytes");
+  Serial.println();
+  Serial.println("Files:");
+  fs.mscfs.ls(LS_R | LS_DATE | LS_SIZE);
   Serial.println();
 }
 

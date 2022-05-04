@@ -2098,6 +2098,7 @@ public:
 	uint8_t msWriteBlocks(const uint32_t BlockAddress, const uint16_t Blocks,
                         const uint16_t BlockSize,	const void * sectorBuffer);
 	bool begin();
+	void printPartionTable(Print &Serialx);
 public:
 	// Functions for SdFat FsBlockDeviceInterface
 	// return the number of 512 byte sectors for the whole drive
