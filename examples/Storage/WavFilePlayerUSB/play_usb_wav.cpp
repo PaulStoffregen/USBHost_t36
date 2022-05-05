@@ -31,7 +31,7 @@
 #include "play_usb_wav.h"
 #include "spi_interrupt.h"
 
-extern MSCClass MSC;
+extern USBFilesystem MSC;
 
 
 #define STATE_DIRECT_8BIT_MONO		0  // playing mono at native sample rate

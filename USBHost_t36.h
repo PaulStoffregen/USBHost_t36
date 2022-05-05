@@ -2059,10 +2059,10 @@ private:
 #endif
 #include <FS.h>
 
-class msController : public USBDriver, public FsBlockDeviceInterface {
+class USBDrive : public USBDriver, public FsBlockDeviceInterface {
 public:
-	msController(USBHost &host) { init(); }
-	msController(USBHost *host) { init(); }
+	USBDrive(USBHost &host) { init(); }
+	USBDrive(USBHost *host) { init(); }
 
 	msSCSICapacity_t msCapacity;
 	msInquiryResponse_t msInquiry;
@@ -2207,7 +2207,7 @@ private:
 	// Only the abstract File class which references these derived
 	// classes is meant to have a public constructor!
 	MSCFile(const FsFile &file) : mscfatfile(file), filename(nullptr) { }
-	friend class MSCClass;
+	friend class USBFilesystem;
 public:
 	virtual ~MSCFile(void) {
 		if (mscfatfile) mscfatfile.close();
@@ -2305,12 +2305,12 @@ private:
 	char *filename;
 };
 
-class MSCClass : public FS
+class USBFilesystem : public FS
 {
 public:
-	MSCClass(USBHost &host) { }
-	MSCClass(USBHost *host) { }
-	bool begin(msController *pDrive, bool setCwv = true, uint8_t part = 1) {
+	USBFilesystem(USBHost &host) { }
+	USBFilesystem(USBHost *host) { }
+	bool begin(USBDrive *pDrive, bool setCwv = true, uint8_t part = 1) {
 		device = pDrive;
 		device->begin();
 		if (device->errorCode() != 0) return false;
@@ -2353,7 +2353,7 @@ public:
 	void printError(Print &p = Serial);
 public:
 	FsVolume mscfs;      // SdFat API
-	msController *device;
+	USBDrive *device;
 };
 
 // do not expose these defines in Arduino sketches or other libraries

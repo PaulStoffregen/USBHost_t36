@@ -39,7 +39,7 @@
 				  ((x >> 8) & 0xff00) |  \
                   ((x << 24) & 0xff000000)
 
-void msController::init()
+void USBDrive::init()
 {
 	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
 	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
@@ -47,9 +47,9 @@ void msController::init()
 	driver_ready_for_device(this);
 }
 
-bool msController::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
+bool USBDrive::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
 {
-	println("msController claim this=", (uint32_t)this, HEX);
+	println("USBDrive claim this=", (uint32_t)this, HEX);
 	// only claim at interface level
 
 	if (type != 1) return false;
@@ -87,10 +87,10 @@ bool msController::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 	println("endpointOut=", endpointOut, HEX);
 
 	uint32_t sizeIn = descriptors[in_index+4] | (descriptors[in_index+5] << 8);
-	println("packet size in (msController) = ", sizeIn);
+	println("packet size in (USBDrive) = ", sizeIn);
 
 	uint32_t sizeOut = descriptors[out_index+4] | (descriptors[out_index+5] << 8);
-	println("packet size out (msController) = ", sizeOut);
+	println("packet size out (USBDrive) = ", sizeOut);
 	packetSizeIn = sizeIn;	
 	packetSizeOut = sizeOut;	
 
@@ -125,7 +125,7 @@ bool msController::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 	return true;
 }
 
-void msController::disconnect()
+void USBDrive::disconnect()
 {
 	deviceAvailable = false;
 	println("Device Disconnected...");
@@ -141,46 +141,46 @@ void msController::disconnect()
 #endif
 }
 
-void msController::control(const Transfer_t *transfer)
+void USBDrive::control(const Transfer_t *transfer)
 {
-	println("control CallbackIn (msController)");
+	println("control CallbackIn (USBDrive)");
 	print_hexbytes(report, 8);
 	msControlCompleted = true;
 
 }
 
-void msController::callbackIn(const Transfer_t *transfer)
+void USBDrive::callbackIn(const Transfer_t *transfer)
 {
-	println("msController CallbackIn (static)");
+	println("USBDrive CallbackIn (static)");
 	if (transfer->driver) {
 		print("transfer->qtd.token = ");
 		println(transfer->qtd.token & 255);
-		((msController *)(transfer->driver))->new_dataIn(transfer);
+		((USBDrive *)(transfer->driver))->new_dataIn(transfer);
 	}
 }
 
-void msController::callbackOut(const Transfer_t *transfer)
+void USBDrive::callbackOut(const Transfer_t *transfer)
 {
-	println("msController CallbackOut (static)");
+	println("USBDrive CallbackOut (static)");
 	if (transfer->driver) {
 		print("transfer->qtd.token = ");
 		println(transfer->qtd.token & 255);
-		((msController *)(transfer->driver))->new_dataOut(transfer);
+		((USBDrive *)(transfer->driver))->new_dataOut(transfer);
 	}
 }
 
-void msController::new_dataOut(const Transfer_t *transfer)
+void USBDrive::new_dataOut(const Transfer_t *transfer)
 {
 	uint32_t len = transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF);
-	println("msController dataOut (static)", len, DEC);
+	println("USBDrive dataOut (static)", len, DEC);
 	print_hexbytes((uint8_t*)transfer->buffer, (len < 32)? len : 32 );
 	msOutCompleted = true; // Last out transaction is completed.
 }
 
-void msController::new_dataIn(const Transfer_t *transfer)
+void USBDrive::new_dataIn(const Transfer_t *transfer)
 {
 	uint32_t len = transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF);
-	println("msController dataIn (static): ", len, DEC);
+	println("USBDrive dataIn (static): ", len, DEC);
 	print_hexbytes((uint8_t*)transfer->buffer, (len < 32)? len : 32 );
 	if (_read_sectors_callback) {
 		_emlastRead = 0; // remember that we received something. 
@@ -200,7 +200,7 @@ void msController::new_dataIn(const Transfer_t *transfer)
 }
 
 // Initialize Mass Storage Device
-uint8_t msController::mscInit(void) {
+uint8_t USBDrive::mscInit(void) {
 #ifdef DBGprint
 	println("mscIint()");
 #endif
@@ -250,7 +250,7 @@ uint8_t msController::mscInit(void) {
 
 //---------------------------------------------------------------------------
 // Perform Mass Storage Reset
-void msController::msReset(void) {
+void USBDrive::msReset(void) {
 #ifdef DBGprint
 	println("msReset()");
 #endif
@@ -262,7 +262,7 @@ void msController::msReset(void) {
 
 //---------------------------------------------------------------------------
 // Get MAX LUN
-uint8_t msController::msGetMaxLun(void) {
+uint8_t USBDrive::msGetMaxLun(void) {
 #ifdef DBGprint
 	println("msGetMaxLun()");
 #endif
@@ -275,7 +275,7 @@ uint8_t msController::msGetMaxLun(void) {
 	return maxLUN;
 }
 
-uint8_t msController::WaitMediaReady() {
+uint8_t USBDrive::WaitMediaReady() {
 	uint8_t msResult;
 	uint32_t start = millis();
 #ifdef DBGprint
@@ -292,7 +292,7 @@ uint8_t msController::WaitMediaReady() {
 }
 
 // Check if drive is connected and Initialized.
-uint8_t msController::checkConnectedInitialized(void) {
+uint8_t USBDrive::checkConnectedInitialized(void) {
 	uint8_t msResult = MS_CBW_PASS;
 #ifdef DBGprint
 	print("checkConnectedInitialized()");
@@ -310,7 +310,7 @@ uint8_t msController::checkConnectedInitialized(void) {
 //---------------------------------------------------------------------------
 // Send SCSI Command
 // Do a complete 3 stage transfer.
-uint8_t msController::msDoCommand(msCommandBlockWrapper_t *CBW,	void *buffer)
+uint8_t USBDrive::msDoCommand(msCommandBlockWrapper_t *CBW,	void *buffer)
 {
 	uint8_t CSWResult = 0;
 	mscTransferComplete = false;
@@ -351,7 +351,7 @@ uint8_t msController::msDoCommand(msCommandBlockWrapper_t *CBW,	void *buffer)
 
 //---------------------------------------------------------------------------
 // Get Command Status Wrapper
-uint8_t msController::msGetCSW(void) {
+uint8_t USBDrive::msGetCSW(void) {
 #ifdef DBGprint
 	println("msGetCSW()");
 #endif
@@ -373,7 +373,7 @@ uint8_t msController::msGetCSW(void) {
 
 //---------------------------------------------------------------------------
 // Test Unit Ready
-uint8_t msController::msTestReady() {
+uint8_t USBDrive::msTestReady() {
 #ifdef DBGprint
 	println("msTestReady()");
 #endif
@@ -395,7 +395,7 @@ uint8_t msController::msTestReady() {
 
 //---------------------------------------------------------------------------
 // Start/Stop unit
-uint8_t msController::msStartStopUnit(uint8_t mode) {
+uint8_t USBDrive::msStartStopUnit(uint8_t mode) {
 #ifdef DBGprint
 	println("msStartStopUnit()");
 #endif
@@ -417,7 +417,7 @@ uint8_t msController::msStartStopUnit(uint8_t mode) {
 
 //---------------------------------------------------------------------------
 // Read Mass Storage Device Capacity (Number of Blocks and Block Size)
-uint8_t msController::msReadDeviceCapacity(msSCSICapacity_t * const Capacity) {
+uint8_t USBDrive::msReadDeviceCapacity(msSCSICapacity_t * const Capacity) {
 #ifdef DBGprint
 	println("msReadDeviceCapacity()");
 #endif
@@ -440,7 +440,7 @@ uint8_t msController::msReadDeviceCapacity(msSCSICapacity_t * const Capacity) {
 
 //---------------------------------------------------------------------------
 // Do Mass Storage Device Inquiry
-uint8_t msController::msDeviceInquiry(msInquiryResponse_t * const Inquiry)
+uint8_t USBDrive::msDeviceInquiry(msInquiryResponse_t * const Inquiry)
 {
 #ifdef DBGprint
 	println("msDeviceInquiry()");
@@ -460,7 +460,7 @@ uint8_t msController::msDeviceInquiry(msInquiryResponse_t * const Inquiry)
 
 //---------------------------------------------------------------------------
 // Request Sense Data
-uint8_t msController::msRequestSense(msRequestSenseResponse_t * const Sense)
+uint8_t USBDrive::msRequestSense(msRequestSenseResponse_t * const Sense)
 {
 #ifdef DBGprint
 	println("msRequestSense()");
@@ -480,7 +480,7 @@ uint8_t msController::msRequestSense(msRequestSenseResponse_t * const Sense)
 
 //---------------------------------------------------------------------------
 // Report LUNs
-uint8_t msController::msReportLUNs(uint8_t *Buffer)
+uint8_t USBDrive::msReportLUNs(uint8_t *Buffer)
 {
 #ifdef DBGprint
 	println("msReportLuns()");
@@ -501,7 +501,7 @@ uint8_t msController::msReportLUNs(uint8_t *Buffer)
 
 //---------------------------------------------------------------------------
 // Read Sectors (Multi Sector Capable)
-uint8_t msController::msReadBlocks(
+uint8_t USBDrive::msReadBlocks(
 									const uint32_t BlockAddress,
 									const uint16_t Blocks,
 									const uint16_t BlockSize,
@@ -535,7 +535,7 @@ uint8_t msController::msReadBlocks(
 //---------------------------------------------------------------------------
 // Read Sectors (Multi Sector Capable)
 
-uint8_t msController::msReadSectorsWithCB(
+uint8_t USBDrive::msReadSectorsWithCB(
 			const uint32_t BlockAddress,
 			const uint16_t Blocks,
 			void (*callback)(uint32_t, uint8_t *),
@@ -626,7 +626,7 @@ uint8_t msController::msReadSectorsWithCB(
 
 //---------------------------------------------------------------------------
 // Write Sectors (Multi Sector Capable)
-uint8_t msController::msWriteBlocks(
+uint8_t USBDrive::msWriteBlocks(
                                   const uint32_t BlockAddress,
                                   const uint16_t Blocks,
                                   const uint16_t BlockSize,
@@ -656,7 +656,7 @@ uint8_t msController::msWriteBlocks(
 }
 
 // Proccess Possible SCSI errors
-uint8_t msController::msProcessError(uint8_t msStatus) {
+uint8_t USBDrive::msProcessError(uint8_t msStatus) {
 #ifdef DBGprint
 	println("msProcessError()");
 #endif
@@ -701,7 +701,7 @@ uint8_t msController::msProcessError(uint8_t msStatus) {
 
 //==============================================================================
 
-bool msController::begin() {
+bool USBDrive::begin() {
 	m_errorCode = MS_CBW_PASS;
 	mscInit(); // Do initial init of each instance of a MSC object.
 	m_errorCode = checkConnectedInitialized();
@@ -714,11 +714,11 @@ bool msController::begin() {
 }
 
 //------------------------------------------------------------------------------
-bool msController::readSector(uint32_t sector, uint8_t* dst) {
+bool USBDrive::readSector(uint32_t sector, uint8_t* dst) {
 	return readSectors(sector, dst, 1);
 }
 //------------------------------------------------------------------------------
-bool msController::readSectors(uint32_t sector, uint8_t* dst, size_t n) {
+bool USBDrive::readSectors(uint32_t sector, uint8_t* dst, size_t n) {
 	// Check if device is plugged in and initialized
 	m_errorCode = checkConnectedInitialized();
 	if (m_errorCode != MS_CBW_PASS) {
@@ -732,7 +732,7 @@ bool msController::readSectors(uint32_t sector, uint8_t* dst, size_t n) {
 }
 
 //------------------------------------------------------------------------------
-bool msController::readSectorsWithCB(uint32_t sector, size_t ns,
+bool USBDrive::readSectorsWithCB(uint32_t sector, size_t ns,
 	void (*callback)(uint32_t, uint8_t *), uint32_t token)
 {
 	// Check if device is plugged in and initialized
@@ -757,18 +757,18 @@ static void callback_shim(uint32_t token, uint8_t *data)
 	callback(sector, data, context);
 	state[0]++;
 }
-bool msController::readSectorsCallback(uint32_t sector, uint8_t* dst, size_t numSectors,
+bool USBDrive::readSectorsCallback(uint32_t sector, uint8_t* dst, size_t numSectors,
 	void (*callback)(uint32_t sector, uint8_t *buf, void *context), void *context)
 {
 	uint32_t state[3] = {sector, (uint32_t)callback, (uint32_t)context};
 	return readSectorsWithCB(sector, numSectors, callback_shim, (uint32_t)state);
 }
 //------------------------------------------------------------------------------
-bool msController::writeSector(uint32_t sector, const uint8_t* src) {
+bool USBDrive::writeSector(uint32_t sector, const uint8_t* src) {
 	return writeSectors(sector, src, 1);
 }
 //------------------------------------------------------------------------------
-bool msController::writeSectors(uint32_t sector, const uint8_t* src, size_t n) {
+bool USBDrive::writeSectors(uint32_t sector, const uint8_t* src, size_t n) {
 	// Check if device is plugged in and initialized
 	m_errorCode = checkConnectedInitialized();
 	if (m_errorCode != MS_CBW_PASS) {
@@ -819,7 +819,7 @@ static const char *decodeAscAscq(uint8_t asc, uint8_t ascq) {
 }
 
 //------------------------------------------------------------------------------
-static void printMscAscError(print_t* pr, msController *pDrive)
+static void printMscAscError(print_t* pr, USBDrive *pDrive)
 {
 	Serial.printf(" --> Type: %s Cause: %s\n",
 		decodeSenseKey(pDrive->msSense.SenseKey),
@@ -834,7 +834,7 @@ static void printMscAscError(print_t* pr, msController *pDrive)
 // Print error info and return.
 //
 FLASHMEM
-void MSCClass::printError(Print &p) {
+void USBFilesystem::printError(Print &p) {
 	const uint8_t err = device->errorCode();
 	if (err) {
 		if (err == 0x28) {
@@ -853,7 +853,7 @@ void MSCClass::printError(Print &p) {
 
 
 
-void msController::printPartionTable(Print &Serialx) {
+void USBDrive::printPartionTable(Print &Serialx) {
   if (!msDriveInfo.initialized) return;
   const uint32_t device_sector_count = msDriveInfo.capacity.Blocks;
   // TODO: check device_sector_count
@@ -919,7 +919,7 @@ void msController::printPartionTable(Print &Serialx) {
   }
 }
 
-bool msController::findParition(int partition, int &type, uint32_t &firstSector, uint32_t &numSectors)
+bool USBDrive::findParition(int partition, int &type, uint32_t &firstSector, uint32_t &numSectors)
 {
 	if (partition == 0) {
 		type = 6; // assume whole drive is FAT16 (SdFat will detect actual format)

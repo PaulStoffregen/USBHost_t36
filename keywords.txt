@@ -1,3 +1,5 @@
+USBHost_t36	KEYWORD1
+
 # Objects
 USBHost	KEYWORD1
 USBHub	KEYWORD1
@@ -111,3 +113,7 @@ USBHOST_SERIAL_8O1	LITERAL1
 usage	KEYWORD2
 attachReceive	KEYWORD2
 sendPacket	KEYWORD2
+
+# Mass Storage
+USBDrive	KEYWORD1
+USBFilesystem	KEYWORD1

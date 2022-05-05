@@ -8,16 +8,16 @@ USBHub hub3(myusb);
 USBHub hub4(myusb);
 
 // Instances for the number of USB drives you are using.
-msController myDrive1(myusb);
-msController myDrive2(myusb);
+USBDrive myDrive1(myusb);
+USBDrive myDrive2(myusb);
 
 // Instances for accessing the files on each drive
-MSCClass myFiles1(myusb);
-MSCClass myFiles2(myusb);
+USBFilesystem myFiles1(myusb);
+USBFilesystem myFiles2(myusb);
 
 
 // Show USB drive information for the selected USB drive.
-void printDriveInfo(msController &drive) {
+void printDriveInfo(USBDrive &drive) {
   // Print USB drive information.
   Serial.printf(F("       connected: %d\n"), drive.msDriveInfo.connected);
   Serial.printf(F("     initialized: %d\n"), drive.msDriveInfo.initialized);
@@ -48,7 +48,7 @@ void printDriveInfo(msController &drive) {
 }
 
 // Show USB filesystem information
-void printFilesystemInfo(MSCClass &fs) {
+void printFilesystemInfo(USBFilesystem &fs) {
   // print the type and size of the first FAT-type volume
   char volname[32];
   fs.mscfs.getVolumeLabel(volname, sizeof(volname));

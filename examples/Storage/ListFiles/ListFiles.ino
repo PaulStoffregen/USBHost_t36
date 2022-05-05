@@ -24,8 +24,8 @@ USBHub hub4(myusb);
 // Mutiple  USB drives can be used. Hot plugging is supported. There is a slight
 // delay after a USB MSC device is plugged in. This is waiting for initialization
 // but after it is initialized ther should be no delay.
-msController myDrive(myusb);
-MSCClass firstPartition(myusb);
+USBDrive myDrive(myusb);
+USBFilesystem firstPartition(myusb);
 
 void setup()
 {
