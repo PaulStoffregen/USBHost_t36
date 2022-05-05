@@ -2136,9 +2136,13 @@ public:
 	// Write multiple 512 byte sectors to an USB MSC drive.
 	bool writeSectors(uint32_t sector, const uint8_t* src, size_t ns);
 	// Read multiple 512 byte sectors from an USB MSC drive, using
-	// a callback per sector  TODO: this is not used by FsBlockDeviceInterface
+	// a callback per sector
 	bool readSectorsWithCB(uint32_t sector, size_t ns,
 		void (*callback)(uint32_t, uint8_t *), uint32_t token);
+	bool readSectorsCallback(uint32_t sector, uint8_t* dst, size_t numSectors,
+		void (*callback)(uint32_t sector, uint8_t *buf, void *context), void *context);
+	//bool writeSectorsCallback(uint32_t sector, size_t numSectors,
+	//	const uint8_t * (*callback)(uint32_t sector, void *context), void *context);
 
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);

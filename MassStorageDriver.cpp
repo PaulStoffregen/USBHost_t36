@@ -536,10 +536,10 @@ uint8_t msController::msReadBlocks(
 // Read Sectors (Multi Sector Capable)
 
 uint8_t msController::msReadSectorsWithCB(
-									const uint32_t BlockAddress,
-									const uint16_t Blocks,
-									void (*callback)(uint32_t, uint8_t *), 
-									uint32_t token)	
+			const uint32_t BlockAddress,
+			const uint16_t Blocks,
+			void (*callback)(uint32_t, uint8_t *),
+			uint32_t token)
 	{
 #ifdef DBGprint
 	Serial.printf("<<< msReadSectorsWithCB(%x %u %x)\n", BlockAddress, Blocks, (uint32_t)callback);
@@ -560,11 +560,11 @@ uint8_t msController::msReadSectorsWithCB(
 		.LUN                = currentLUN,
 		.CommandLength      = 10,
 		.CommandData        = {CMD_RD_10, 0x00,
-							  (uint8_t)(BlockAddress >> 24),
-							  (uint8_t)(BlockAddress >> 16),
-							  (uint8_t)(BlockAddress >> 8),
-							  (uint8_t)(BlockAddress & 0xFF),
-							   0x00, BlockHi, BlockLo, 0x00}
+					  (uint8_t)(BlockAddress >> 24),
+					  (uint8_t)(BlockAddress >> 16),
+					  (uint8_t)(BlockAddress >> 8),
+					  (uint8_t)(BlockAddress & 0xFF),
+					   0x00, BlockHi, BlockLo, 0x00}
 	};
 
 	// We need to remember how many blocks and call back function
@@ -587,7 +587,9 @@ uint8_t msController::msReadSectorsWithCB(
 	msOutCompleted = false;
 
 	queue_Data_Transfer(datapipeIn, _read_sector_buffer1, BlockSize, this);
-	if (_read_sectors_remaining > 1) 	queue_Data_Transfer(datapipeIn, _read_sector_buffer2, BlockSize, this);
+	if (_read_sectors_remaining > 1) {
+		queue_Data_Transfer(datapipeIn, _read_sector_buffer2, BlockSize, this);
+	}
 
 	while(!msInCompleted && (_emlastRead < READ_CALLBACK_TIMEOUT_MS)) ;
 	// digitalWriteFast(2, HIGH);
@@ -744,8 +746,23 @@ bool msController::readSectorsWithCB(uint32_t sector, size_t ns,
 	}
 	return true;
 }
-
-
+//------------------------------------------------------------------------------
+static void callback_shim(uint32_t token, uint8_t *data)
+{
+	uint32_t *state = (uint32_t *)token;
+	uint32_t sector = state[0];
+	void (*callback)(uint32_t, uint8_t *, void *) =
+		(void (*)(uint32_t, uint8_t *, void *))(state[1]);
+	void *context = (void *)(state[2]);
+	callback(sector, data, context);
+	state[0]++;
+}
+bool msController::readSectorsCallback(uint32_t sector, uint8_t* dst, size_t numSectors,
+	void (*callback)(uint32_t sector, uint8_t *buf, void *context), void *context)
+{
+	uint32_t state[3] = {sector, (uint32_t)callback, (uint32_t)context};
+	return readSectorsWithCB(sector, numSectors, callback_shim, (uint32_t)state);
+}
 //------------------------------------------------------------------------------
 bool msController::writeSector(uint32_t sector, const uint8_t* src) {
 	return writeSectors(sector, src, 1);
