@@ -2099,6 +2099,7 @@ public:
                         const uint16_t BlockSize,	const void * sectorBuffer);
 	bool begin();
 	void printPartionTable(Print &Serialx);
+	bool findParition(int partition, int &type, uint32_t &firstSector, uint32_t &numSectors);
 public:
 	// Functions for SdFat FsBlockDeviceInterface
 	// return the number of 512 byte sectors for the whole drive
@@ -2309,7 +2310,11 @@ public:
 		device = pDrive;
 		device->begin();
 		if (device->errorCode() != 0) return false;
-		return mscfs.begin(device, setCwv, part);
+		//device->printPartionTable(Serial);
+		int type;
+		uint32_t firstSector, numSectors;
+		if (!device->findParition(part, type, firstSector, numSectors)) return false;
+		return mscfs.begin(device, setCwv, firstSector, numSectors);
 	}
 	File open(const char *filepath, uint8_t mode = FILE_READ) {
 		oflag_t flags = O_READ;

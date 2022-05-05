@@ -902,9 +902,25 @@ void msController::printPartionTable(Print &Serialx) {
   }
 }
 
-
-
-
-
+bool msController::findParition(int partition, int &type, uint32_t &firstSector, uint32_t &numSectors)
+{
+	if (partition == 0) {
+		type = 6; // assume whole drive is FAT16 (SdFat will detect actual format)
+		firstSector = 0;
+		numSectors = msDriveInfo.capacity.Blocks;
+		return true;
+	}
+	if (partition >= 1 && partition <= 4) {
+		MbrSector_t mbr;
+		if (!readSector(0, (uint8_t*)&mbr)) return false;
+		MbrPart_t *pt = &mbr.part[partition - 1];
+		type = pt->type;
+		firstSector = getLe32(pt->relativeSectors);
+		numSectors = getLe32(pt->totalSectors);
+		//if (firstSector + numSectors > msDriveInfo.capacity.Blocks) return false;
+		return true;
+	}
+	return false;
+}
 
 
