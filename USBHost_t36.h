@@ -2099,6 +2099,9 @@ public:
                         const uint16_t BlockSize,	const void * sectorBuffer);
 	bool begin();
 	void printPartionTable(Print &Serialx);
+	void printExtendedPartition(MbrSector_t *mbr, uint8_t ipExt, Print &Serialx);
+	uint32_t printGUIDPartitionTable(Print &Serialx);
+
 	bool findParition(int partition, int &type, uint32_t &firstSector, uint32_t &numSectors);
 public:
 	// Functions for SdFat FsBlockDeviceInterface

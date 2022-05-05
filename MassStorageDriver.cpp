@@ -853,71 +853,318 @@ void USBFilesystem::printError(Print &p) {
 
 
 
-void USBDrive::printPartionTable(Print &Serialx) {
+void USBDrive::printPartionTable(Print &p) {
   if (!msDriveInfo.initialized) return;
   const uint32_t device_sector_count = msDriveInfo.capacity.Blocks;
   // TODO: check device_sector_count
   MbrSector_t mbr;
+  bool gpt_disk = false;
+  bool ext_partition;
   uint32_t next_free_sector = 8192;  // Some inital value this is default for Win32 on SD...
   if (!readSector(0, (uint8_t*)&mbr)) {
-    Serialx.printf("\nread MBR failed, error code 0x%02X.\n", errorCode());
+    p.printf("\nread MBR failed, error code 0x%02X.\n", errorCode());
     return;
   }
-  Serialx.print("\nPartition Table\n");
-  Serialx.print("\tpart,boot,bgnCHS[3],type,endCHS[3],start,length\n");
+  p.print("\nPartition Table\n");
+  p.print("\tpart,boot,bgnCHS[3],type,endCHS[3],start,length\n");
   for (uint8_t ip = 1; ip < 5; ip++) {
     MbrPart_t *pt = &mbr.part[ip - 1];
     uint32_t starting_sector = getLe32(pt->relativeSectors);
     uint32_t total_sector = getLe32(pt->totalSectors);
+    ext_partition = false;
     if (starting_sector > next_free_sector) {
-      Serialx.printf("\t < unused area starting at: %u length %u >\n", next_free_sector, starting_sector-next_free_sector);
+      p.printf("\t < unused area starting at: %u length %u >\n", next_free_sector, starting_sector-next_free_sector);
     }
     switch (pt->type) {
     case 1:
-      Serialx.print("FAT12:\t");
+      p.print("FAT12:\t");
       break;
     case 4:
     case 6:
     case 0xe:
-      Serial.print("FAT16:\t");
+      p.print("FAT16:\t");
       break;
     case 11:
     case 12:
-      Serial.print("FAT32:\t");
+      p.print("FAT32:\t");
       break;
     case 7:
-      Serial.print("exFAT:\t");
+      p.print("exFAT:\t");
       break;
+    case 5:
     case 0xf:
-      Serial.print("Extend:\t");
+      p.print("Extend:\t");
+      ext_partition = true;
       break;
-    case 0x83: Serial.print("ext2/3/4:\t"); break;
+    case 0x83:
+      p.print("ext2/3/4:\t");
+      break;
+    case 0xee:
+      p.print(F("*** GPT Disk WIP ***\nGPT guard:\t"));
+      gpt_disk = true;
+      break;
     default:
-      Serialx.print("pt_#");
-      Serialx.print(pt->type);
-      Serialx.print(":\t");
+      p.print("pt_#");
+      p.print(pt->type);
+      p.print(":\t");
       break;
     }
-    Serialx.print( int(ip)); Serial.print( ',');
-    Serialx.print(int(pt->boot), HEX); Serial.print( ',');
+    p.print( int(ip)); p.print( ',');
+    p.print(int(pt->boot), HEX); p.print( ',');
     for (int i = 0; i < 3; i++ ) {
-      Serialx.print("0x"); Serial.print(int(pt->beginCHS[i]), HEX); Serial.print( ',');
+      p.print("0x"); p.print(int(pt->beginCHS[i]), HEX); p.print( ',');
     }
-    Serialx.print("0x"); Serial.print(int(pt->type), HEX); Serial.print( ',');
+    p.print("0x"); p.print(int(pt->type), HEX); p.print( ',');
     for (int i = 0; i < 3; i++ ) {
-      Serialx.print("0x"); Serial.print(int(pt->endCHS[i]), HEX); Serial.print( ',');
+      p.print("0x"); p.print(int(pt->endCHS[i]), HEX); p.print( ',');
     }
-    Serialx.print(starting_sector, DEC); Serial.print(',');
-    Serialx.println(total_sector);
+    p.print(starting_sector, DEC); p.print(',');
+    p.println(total_sector);
+    if (ext_partition) {
+      printExtendedPartition(&mbr, ip, p);
+      readSector(0, (uint8_t*)&mbr); // maybe need to restore
+    }
 
     // Lets get the max of start+total
     if (starting_sector && total_sector)  next_free_sector = starting_sector + total_sector;
   }
   if (next_free_sector < device_sector_count) {
-    Serialx.printf("\t < unused area starting at: %u length %u >\n",
+    p.printf("\t < unused area starting at: %u length %u >\n",
       next_free_sector, device_sector_count-next_free_sector);
   }
+  if (gpt_disk) printGUIDPartitionTable(p);
 }
+
+void dump_hexbytes(const void *ptr, int len, Print &pr)
+{
+  if (ptr == NULL || len <= 0) return;
+  const uint8_t *p = (const uint8_t *)ptr;
+  while (len > 0) {
+    for (uint8_t i = 0; i < 32; i++) {
+      if (i > len) break;
+      pr.printf("%02X ", p[i]);
+    }
+    pr.print(":");
+    for (uint8_t i = 0; i < 32; i++) {
+      if (i > len) break;
+      pr.printf("%c", ((p[i] >= ' ') && (p[i] <= '~')) ? p[i] : '.');
+    }
+    pr.println();
+    p += 32;
+    len -= 32;
+  }
+}
+
+void USBDrive::printExtendedPartition(MbrSector_t *mbr, uint8_t ipExt, Print &p) {
+  // Extract the data from EX partition block...
+  MbrPart_t *pt = &mbr->part[ipExt - 1];
+  uint32_t ext_starting_sector = getLe32(pt->relativeSectors);
+  //uint32_t ext_total_sector = getLe32(pt->totalSectors);
+  uint32_t next_mbr = ext_starting_sector;
+  uint8_t ext_index = 0;
+
+  while (next_mbr) {
+    ext_index++;
+    if (!readSector(next_mbr, (uint8_t*)mbr)) break;
+    pt = &mbr->part[0];
+    //dump_hexbytes((uint8_t*)pt, sizeof(MbrPart_t)*2, p);
+    uint32_t starting_sector = getLe32(pt->relativeSectors);
+    uint32_t total_sector = getLe32(pt->totalSectors);
+    switch (pt->type) {
+    case 1:
+      p.print(F("FAT12:\t"));
+      break;
+    case 4:
+    case 6:
+    case 0xe:
+      p.print(F("FAT16:\t"));
+      break;
+    case 11:
+    case 12:
+      p.print(F("FAT32:\t"));
+      break;
+    case 7:
+      p.print(F("exFAT:\t"));
+      break;
+    case 0xf:
+      p.print(F("Extend:\t"));
+      break;
+    case 0x83:
+      p.print(F("ext2/3/4:\t")); break;
+    default:
+      p.print(F("pt_#"));
+      p.print(pt->type);
+      p.print(":\t");
+      break;
+    }
+    // TODO: extended partition numbers increment from 5
+    p.print( int(ipExt)); p.print(":"); p.print(ext_index); p.print( ',');
+    p.print(int(pt->boot), HEX); p.print( ',');
+    for (int i = 0; i < 3; i++ ) {
+      p.print("0x"); p.print(int(pt->beginCHS[i]), HEX); p.print( ',');
+    }
+    p.print("0x"); p.print(int(pt->type), HEX); p.print( ',');
+    for (int i = 0; i < 3; i++ ) {
+      p.print("0x"); p.print(int(pt->endCHS[i]), HEX); p.print( ',');
+    }
+    p.printf("%u(%u),", next_mbr + starting_sector, starting_sector);
+    //p.print(ext_starting_sector + starting_sector, DEC); p.print(',');
+    p.print(total_sector);
+
+    // Now lets see what is in the 2nd one...
+    pt = &mbr->part[1];
+    p.printf(" (%x)\n", pt->type);
+    starting_sector = getLe32(pt->relativeSectors);
+    if (pt->type && starting_sector) next_mbr = /*starting_sector*/ next_mbr + ext_starting_sector;
+    else next_mbr = 0;
+  }
+}
+
+#if 0
+typedef struct {
+  uint8_t  signature[8];
+  uint8_t  revision[4];
+  uint8_t  headerSize[4];
+  uint8_t  crc32[4];
+  uint8_t  reserved[4];
+  uint8_t  currentLBA[8];
+  uint8_t  backupLBA[8];
+  uint8_t  firstLBA[8];
+  uint8_t  lastLBA[8];
+  uint8_t  diskGUID[16];
+  uint8_t  startLBAArray[8];
+  uint8_t  numberPartitions[4];
+  uint8_t  sizePartitionEntry[4];
+  uint8_t  crc32PartitionEntries[4];
+  uint8_t  unused[420]; // should be 0;
+} GPTPartitionHeader_t;
+
+typedef struct {
+  uint8_t  partitionTypeGUID[16];
+  uint8_t  uniqueGUID[16];
+  uint8_t  firstLBA[8];
+  uint8_t  lastLBA[8];
+  uint8_t  attributeFlags[8];
+  uint16_t name[36];
+} GPTPartitionEntryItem_t;
+
+typedef struct {
+  GPTPartitionEntryItem_t items[4];
+} GPTPartitionEntrySector_t;
+#endif
+
+typedef struct {
+  uint32_t  q1;
+  uint16_t  w2;
+  uint16_t  w3;
+  uint8_t   b[8];
+} guid_t;
+
+static const uint8_t mbdpGuid[16] PROGMEM = {0xA2, 0xA0, 0xD0, 0xEB, 0xE5, 0xB9, 0x33, 0x44, 0x87, 0xC0, 0x68, 0xB6, 0xB7, 0x26, 0x99, 0xC7};
+
+void printGUID(uint8_t* pbguid, Print &p) {
+  // Windows basic partion guid is: EBD0A0A2-B9E5-4433-87C0-68B6B72699C7
+  // raw dump of it: A2 A0 D0 EB E5 B9 33 44 87 C0 68 B6 B7 26 99 C7
+  guid_t *pg = (guid_t*)pbguid;
+  p.printf("%08X-%04X-%04X-%02X%02X-", pg->q1, pg->w2, pg->w3, pg->b[0], pg->b[1]);
+  for (uint8_t i=2;i<8; i++) p.printf("%02X", pg->b[i]);
+}
+
+uint32_t USBDrive::printGUIDPartitionTable(Print &Serialx) {
+  union {
+    MbrSector_t mbr;
+    partitionBootSector pbs;
+    GPTPartitionHeader_t gpthdr;
+    GPTPartitionEntrySector_t gptes;
+    uint8_t buffer[512];
+  } sector;
+
+  // Lets verify that we are an GPT...
+  if (!readSector(0, (uint8_t*)&sector.mbr)) {
+    Serialx.print(F("\nread MBR failed.\n"));
+    //errorPrint();
+    return (uint32_t)-1;
+  }
+  // verify that the first partition is the guard...
+  MbrPart_t *pt = &sector.mbr.part[0];
+  if (pt->type != 0xee) {
+    Serialx.print(F("\nMBR is not an gpt guard\n"));
+    return (uint32_t)-1;
+  }
+
+  if (!readSector(1, (uint8_t*)&sector.buffer)) {
+    Serialx.print(F("\nread Partition Table Header failed.\n"));
+    return (uint32_t)-1;
+  }
+  // Do quick test for signature:
+  if (memcmp(sector.gpthdr.signature, "EFI PART", 8)!= 0) {
+    Serialx.println("GPT partition header signature did not match");
+    dump_hexbytes(&sector.buffer, 512, Serialx);
+  }
+  Serialx.printf("\nGPT partition header revision: %x\n", getLe32(sector.gpthdr.revision));
+  Serialx.printf("LBAs current:%llu backup:%llu first:%llu last:%llu\nDisk GUID:",
+    getLe64(sector.gpthdr.currentLBA), getLe64(sector.gpthdr.backupLBA),
+    getLe64(sector.gpthdr.firstLBA), getLe64(sector.gpthdr.lastLBA));
+  printGUID(sector.gpthdr.diskGUID, Serialx);
+
+  //dump_hexbytes(&sector.gpthdr.diskGUID, 16);
+  uint32_t cParts = getLe32(sector.gpthdr.numberPartitions);
+  Serialx.printf("Start LBA Array: %llu Count: %u size:%u\n",
+      getLe64(sector.gpthdr.startLBAArray), cParts, getLe32(sector.gpthdr.sizePartitionEntry));
+  uint32_t sector_number = 2;
+  Serialx.println("Part\t Type Guid, Unique Guid, First, last, attr, name");
+  for (uint8_t part = 0; part < cParts ; part +=4) {
+    if (readSector(sector_number, (uint8_t*)&sector.buffer)) {
+      //dump_hexbytes(&sector.buffer, 512);
+      for (uint8_t ipei = 0; ipei < 4; ipei++) {
+        GPTPartitionEntryItem_t *pei = &sector.gptes.items[ipei];
+        // see if the entry has any data in it...
+        uint32_t end_addr = (uint32_t)pei + sizeof(GPTPartitionEntryItem_t);
+        uint32_t *p = (uint32_t*)pei;
+        for (; (uint32_t)p < end_addr; p++) {
+          if (*p) break; // found none-zero.
+        }
+        if ((uint32_t)p < end_addr) {
+          // So entry has data:
+          Serialx.printf("%u\t", part + ipei);
+          printGUID(pei->partitionTypeGUID, Serialx);
+          Serialx.print(", ");
+          printGUID(pei->uniqueGUID, Serialx);
+          Serialx.printf(", %llu, %llu, %llX, ", getLe64(pei->firstLBA), getLe64(pei->lastLBA),
+              getLe64(pei->attributeFlags));
+          for (uint8_t i = 0; i < 36; i++) {
+            if ((pei->name[i]) == 0) break;
+            Serialx.write((uint8_t)pei->name[i]);
+          }
+          Serialx.println();
+          if (memcmp((uint8_t *)pei->partitionTypeGUID, mbdpGuid, 16) == 0) {
+            Serialx.print(">>> Microsoft Basic Data Partition\n");
+            // See if we can read in the first sector
+            if (readSector(getLe64(pei->firstLBA), (uint8_t*)&sector.buffer)) {
+              //dump_hexbytes(sector.buffer, 512);
+
+              // First see if this is exFat...
+              // which starts with:
+              static const uint8_t exfatPBS[] PROGMEM = {0xEB, 0x76, 0x90, //Jmp instruction
+                   'E', 'X', 'F', 'A', 'T', ' ', ' ', ' '};
+              if (memcmp(sector.buffer, exfatPBS, 11) == 0) {
+                Serial.println("    EXFAT:");
+              }
+
+            }
+            // Bugbug reread that sector...
+            readSector(sector_number, (uint8_t*)&sector.buffer);
+          }
+        }
+      }
+    }
+    sector_number++;
+  }
+  return 0;
+}
+
+
+
 
 bool USBDrive::findParition(int partition, int &type, uint32_t &firstSector, uint32_t &numSectors)
 {
