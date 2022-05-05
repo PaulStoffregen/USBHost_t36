@@ -63,8 +63,11 @@ void printFilesystemInfo(MSCClass &fs) {
   Serial.print(fs.totalSize());
   Serial.println(" bytes");
   Serial.print(" Space used: ");
+  elapsedMillis ms = 0;
   Serial.print(fs.usedSize());
-  Serial.println(" bytes");
+  Serial.print(" bytes  (");
+  Serial.print(ms);
+  Serial.println(" ms to compute)");
   Serial.println();
   Serial.println("Files:");
   fs.mscfs.ls(LS_R | LS_DATE | LS_SIZE);
