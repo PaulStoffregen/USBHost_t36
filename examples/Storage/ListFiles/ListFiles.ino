@@ -39,6 +39,8 @@ void setup()
 
   Serial.print("\nInitializing USB MSC drive...");
 
+  // future USBFilesystem will begin automatically
+  // begin(USBDrive) is a temporary feature
   if (!firstPartition.begin(&myDrive)) {
     Serial.println("initialization failed!");
     return;

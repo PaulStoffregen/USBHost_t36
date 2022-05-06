@@ -80,6 +80,8 @@ void setup() {
   sgtl5000_1.enable();
   sgtl5000_1.volume(0.50);
 
+  // future USBFilesystem will begin automatically
+  // begin(USBDrive) is a temporary feature
   if (!MSC.begin(&msDrive1)) {
     // stop here, but print a message repetitively
     while (1) {

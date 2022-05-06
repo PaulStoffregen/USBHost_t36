@@ -84,6 +84,8 @@ void setup()
 
   myusb.begin();
   Serial.println("\nInitializing USB drive 1...");
+  // future USBFilesystem will begin automatically
+  // begin(USBDrive) is a temporary feature
   if (!myFiles1.begin(&myDrive1)) {
     Serial.print("initialization failed with code: ");
     myFiles1.printError(Serial);
@@ -94,6 +96,8 @@ void setup()
   printFilesystemInfo(myFiles1);
 
   Serial.println("\nInitializing USB drive 2...");
+  // future USBFilesystem will begin automatically
+  // begin(USBDrive) is a temporary feature
   if (!myFiles2.begin(&myDrive2)) {
     Serial.print("initialization failed with code: ");
     myFiles2.printError(Serial);
