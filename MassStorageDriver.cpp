@@ -1165,7 +1165,6 @@ uint32_t USBDrive::printGUIDPartitionTable(Print &Serialx) {
 
 
 
-
 bool USBDrive::findParition(int partition, int &type, uint32_t &firstSector, uint32_t &numSectors)
 {
 	if (partition == 0) {
@@ -1174,9 +1173,34 @@ bool USBDrive::findParition(int partition, int &type, uint32_t &firstSector, uin
 		numSectors = msDriveInfo.capacity.Blocks;
 		return true;
 	}
+	MbrSector_t mbr;
+	if (!readSector(0, (uint8_t*)&mbr)) return false;
+	MbrPart_t *mp = &mbr.part[0];
+	if (mp->type == 0xee) {
+		// GUID Partition Table
+		//  TODO: should we read sector 1, check # of entries and entry size = 128?
+		if (!readSector(2 + (partition >> 2), (uint8_t*)&mbr)) return false;
+		GPTPartitionEntrySector_t *gpt = (GPTPartitionEntrySector_t *)&mbr;
+		GPTPartitionEntryItem_t *entry = &gpt->items[partition & 3];
+		uint64_t first64 = getLe64(entry->firstLBA);
+		if (first64 > 0x00000000FFFFFFFFull) return false;
+		uint32_t first32 = first64;
+		uint64_t last64 = getLe64(entry->lastLBA);
+		if (last64 > 0x00000000FFFFFFFFull) return false;
+		uint32_t last32 = last64;
+		if (first32 > last32) return false;
+		firstSector = first32;
+		numSectors = last32 - first32 + 1;
+		if (memcmp(entry->partitionTypeGUID, mbdpGuid, 16) == 0) {
+			type = 6;
+			return true;
+		}
+		Serial.printf("Partition %d has unknown GUID type ", partition);
+		printGUID(entry->partitionTypeGUID, Serial);
+		return false;
+	}
 	if (partition >= 1 && partition <= 4) {
-		MbrSector_t mbr;
-		if (!readSector(0, (uint8_t*)&mbr)) return false;
+		// Master Boot Record
 		MbrPart_t *pt = &mbr.part[partition - 1];
 		type = pt->type;
 		firstSector = getLe32(pt->relativeSectors);
@@ -1184,6 +1208,7 @@ bool USBDrive::findParition(int partition, int &type, uint32_t &firstSector, uin
 		//if (firstSector + numSectors > msDriveInfo.capacity.Blocks) return false;
 		return true;
 	}
+	// TODO: extended partitions
 	return false;
 }
 
