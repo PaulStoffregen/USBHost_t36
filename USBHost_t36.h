@@ -2059,10 +2059,44 @@ private:
 #endif
 #include <FS.h>
 
+
+class USBDrive;
+
+// Simple File System base class that maintains list and defines methods for the Drive object
+// to call to each of the file system objects such that they can decide if they will claim a partition
+class USBFSBase {
+public:
+	operator bool() { return (mydevice != nullptr); }
+	uint16_t idVendor() { return (mydevice != nullptr) ? mydevice->idVendor : 0; }
+	uint16_t idProduct() { return (mydevice != nullptr) ? mydevice->idProduct : 0; }
+	const uint8_t *manufacturer()
+		{  return  ((mydevice == nullptr) || (mydevice->strbuf == nullptr)) ? nullptr : &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; }
+	const uint8_t *product()
+		{  return  ((mydevice == nullptr) || (mydevice->strbuf == nullptr)) ? nullptr : &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; }
+	const uint8_t *serialNumber()
+		{  return  ((mydevice == nullptr) || (mydevice->strbuf == nullptr)) ? nullptr : &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
+
+
+private:
+	// need to define claim functions
+	virtual bool claimPartition(USBDrive *device, int partition, int voltype, int type, uint32_t firstSector, uint32_t numSectors, uint8_t *guid) = 0; 
+	virtual void releasePartition() = 0;
+
+//	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
+	void add_to_list();
+	USBFSBase *next = NULL;
+	friend class USBDrive;
+protected:
+	Device_t *mydevice = NULL;
+};
+
+
+
 class USBDrive : public USBDriver, public FsBlockDeviceInterface {
 public:
 	USBDrive(USBHost &host) { init(); }
 	USBDrive(USBHost *host) { init(); }
+
 
 	msSCSICapacity_t msCapacity;
 	msInquiryResponse_t msInquiry;
@@ -2097,12 +2131,24 @@ public:
 	uint8_t msReadSectorsWithCB(const uint32_t BlockAddress, const uint16_t Blocks, void (*callback)(uint32_t token, uint8_t* data), uint32_t token);
 	uint8_t msWriteBlocks(const uint32_t BlockAddress, const uint16_t Blocks,
                         const uint16_t BlockSize,	const void * sectorBuffer);
+
 	bool begin();
+	// Not sure of good name here.  
+	// maybe startFilesystems(), enumFileSystems()...
+	bool startFilesystems();
+	bool filesystemsStarted() {return _filesystems_started;}
+
 	void printPartionTable(Print &Serialx);
 	void printExtendedPartition(MbrSector_t *mbr, uint8_t ipExt, Print &Serialx);
 	uint32_t printGUIDPartitionTable(Print &Serialx);
 
-	bool findParition(int partition, int &type, uint32_t &firstSector, uint32_t &numSectors);
+	enum {INVALID_VOL=0, MBR_VOL, EXT_VOL, GPT_VOL}; // what type of volume did the mapping return
+	int findPartition(int partition, int &type, uint32_t &firstSector, uint32_t &numSectors, 
+				   uint32_t &mbrLBA, uint8_t &mbrPart, uint8_t *guid=nullptr);
+
+	static void filesystem_ready_for_drive(USBFSBase *fsbase);
+	void filesystem_assign_to_drive(USBFSBase *fsbase, bool busy);
+
 public:
 	// Functions for SdFat FsBlockDeviceInterface
 	// return the number of 512 byte sectors for the whole drive
@@ -2197,6 +2243,12 @@ private:
 	bool m_initDone = false;
 	uint8_t m_errorCode = MS_NO_MEDIA_ERR;
 	uint32_t m_errorLine = 0;
+	USBFSBase *claimed_filesystem_list = nullptr;
+	bool _filesystems_started = false;
+	int _cGPTParts = 0;  // if GPT cache of parts.
+
+	static USBFSBase *available_filesystem_list;
+
 };
 
 #define MSC_MAX_FILENAME_LEN 256
@@ -2308,21 +2360,22 @@ private:
 	char *filename;
 };
 
-class USBFilesystem : public FS
+class USBFilesystem : public FS, public USBFSBase
 {
 public:
-	USBFilesystem(USBHost &host) { }
-	USBFilesystem(USBHost *host) { }
-	bool begin(USBDrive *pDrive, bool setCwv = true, uint8_t part = 1) {
-		device = pDrive;
-		device->begin();
-		if (device->errorCode() != 0) return false;
-		//device->printPartionTable(Serial);
-		int type;
-		uint32_t firstSector, numSectors;
-		if (!device->findParition(part, type, firstSector, numSectors)) return false;
-		return mscfs.begin(device, setCwv, firstSector, numSectors);
+	USBFilesystem(USBHost &host) { init(); }
+	USBFilesystem(USBHost *host) { init(); }
+
+	// Manual way to associate a drive/partition to a Filesystem object
+	bool begin(USBDrive *pDrive, bool setCwv = true, uint8_t part = 1);
+	void end(bool update_list = true);
+	void init();
+
+	operator bool() {
+		Device_t *dev = *(Device_t * volatile *)&device;
+		return dev != nullptr;
 	}
+
 	File open(const char *filepath, uint8_t mode = FILE_READ) {
 		oflag_t flags = O_READ;
 		if (mode == FILE_WRITE) { flags = O_RDWR | O_CREAT | O_AT_END; }
@@ -2354,9 +2407,19 @@ public:
 		return (uint64_t)mscfs.clusterCount() * (uint64_t)mscfs.bytesPerCluster();
 	}
 	void printError(Print &p = Serial);
+protected:
+	virtual bool claimPartition(USBDrive *device, int partition, int voltype, int type, uint32_t firstSector, uint32_t numSectors, uint8_t *guid=nullptr);
+	virtual void releasePartition();
+	bool check_voltype_guid(int voltype, uint8_t *guid);
+
 public:
 	FsVolume mscfs;      // SdFat API
 	USBDrive *device;
+	int _partition;
+	int _type;
+
+
+
 };
 
 // do not expose these defines in Arduino sketches or other libraries
