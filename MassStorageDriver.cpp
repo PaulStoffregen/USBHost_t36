@@ -26,7 +26,7 @@
 
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
-
+#include "USBFilesystemFormatter.h"
 #define print   USBHost::print_
 #define println USBHost::println_
 
@@ -593,7 +593,6 @@ uint8_t USBDrive::msReadBlocks(
 	uint8_t BlockLo = Blocks & 0xFF;
 	msCommandBlockWrapper_t CommandBlockWrapper = (msCommandBlockWrapper_t)
 	{
-	
 		.Signature          = CBW_SIGNATURE,
 		.Tag                = ++CBWTag,
 		.TransferLength     = (uint32_t)(Blocks * BlockSize),
@@ -607,6 +606,9 @@ uint8_t USBDrive::msReadBlocks(
 							  (uint8_t)(BlockAddress & 0xFF),
 							   0x00, BlockHi, BlockLo, 0x00}
 	};
+	#if defined(__IMXRT1062__)
+	if ((uint32_t)sectorBuffer >= 0x20200000u)  arm_dcache_flush_delete(sectorBuffer, CommandBlockWrapper.TransferLength);
+	#endif
 	return msDoCommand(&CommandBlockWrapper, sectorBuffer);
 }
 
@@ -730,6 +732,9 @@ uint8_t USBDrive::msWriteBlocks(
 							  (uint8_t)(BlockAddress & 0xFF),
 							  0x00, BlockHi, BlockLo, 0x00}
 	};
+	#if defined(__IMXRT1062__)
+	if ((uint32_t)sectorBuffer >= 0x20200000u)  arm_dcache_flush((void*)sectorBuffer, CommandBlockWrapper.TransferLength);
+	#endif
 	return msDoCommand(&CommandBlockWrapper, (void *)sectorBuffer);
 }
 
@@ -1506,4 +1511,42 @@ bool USBFilesystem::claimPartition(USBDrive *pdevice, int part,int voltype, int 
 void USBFilesystem::releasePartition() {
 	DBGPrintf("\t USBFilesystem::releasePartition %p called\n");
 	end(false);
+}
+
+bool USBFilesystem::format(int type, char progressChar, Print& pr) {
+	// setup instance of formatter object;
+	uint8_t *buf = (uint8_t *)malloc(512+32);
+	if (!buf) return false; // unable to allocate memory
+	// lets align the buffer
+    uint8_t *aligned_buf = (uint8_t *)(((uintptr_t)buf + 31) & ~((uintptr_t)(31)));
+	USBFilesystemFormatter formatter; 
+	Serial.printf("$$call formatter.format(%p, 0, %p %p...)\n", this, buf, aligned_buf);
+	bool ret = formatter.format(*this, 0, aligned_buf, &pr);
+
+	free(buf);
+
+	if (ret) {
+		pr.println("Format Completed restart filesystem");
+		
+		// Maybe not call as this may write out dirty stuff.
+		//mscfs.end();  // release the old data
+
+		// Now lets try to restart it	
+		int type;
+		uint32_t firstSector;
+		uint32_t numSectors;
+		uint32_t mbrLBA;
+		uint8_t mbrPart;
+
+		uint8_t guid[16];
+
+		int voltype = device->findPartition(partition, type, firstSector, numSectors, mbrLBA, mbrPart, guid);
+		if (voltype == USBDrive::INVALID_VOL) return false;
+		pr.printf("\tPart:%d Type:%x First:%u num:%u\n", partition, type, firstSector, numSectors);
+		// now lets try to start it again.
+		partitionType = type;
+		ret = mscfs.begin(device, true, firstSector, numSectors);
+		pr.printf("\tbegin return: %u\n", ret);
+	}
+	return ret;
 }
