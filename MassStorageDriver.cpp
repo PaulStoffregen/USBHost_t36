@@ -1485,7 +1485,7 @@ void USBFilesystem::end(bool update_list) {
 }
 
 
-bool USBFilesystem::claimPartition(USBDrive *pdevice, int partition,int voltype, int type, uint32_t firstSector, uint32_t numSectors, uint8_t *guid) {
+bool USBFilesystem::claimPartition(USBDrive *pdevice, int part,int voltype, int type, uint32_t firstSector, uint32_t numSectors, uint8_t *guid) {
 	// May add in some additional stuff
 	DBGPrintf("\t>>USBFilesystem::claimPartition %p called ");
 
@@ -1494,8 +1494,8 @@ bool USBFilesystem::claimPartition(USBDrive *pdevice, int partition,int voltype,
 
 	if (mscfs.begin(pdevice, true, firstSector, numSectors)) {
 		device = pdevice;
-		_partition = partition;
-		_type = type;
+		partition = part;
+		partitionType = type;
 		DBGPrintf("+ Claimed\n");
 		return true;		
 	}

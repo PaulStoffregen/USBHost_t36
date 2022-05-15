@@ -2415,8 +2415,8 @@ protected:
 public:
 	FsVolume mscfs;      // SdFat API
 	USBDrive *device;
-	int _partition;
-	int _type;
+	int partition;
+	int partitionType;
 
 
 
