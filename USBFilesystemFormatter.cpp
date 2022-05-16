@@ -9,7 +9,7 @@ uint16_t toUpcase(uint16_t chr);
 //=============================================
 #define DBG_FILE "USBFilesystemFormatter.cpp"
 //Set to 0 for debug info
-#define DBG_Print  1
+#define DBG_Print  0
 #if defined(DBG_Print)
 #define DBGPrintf Serial.printf
 #else
@@ -47,21 +47,17 @@ const uint32_t BITMAP_CLUSTER = 2;
 const uint32_t UPCASE_CLUSTER = 3;
 const uint32_t ROOT_CLUSTER = 4;
 
-
-//=============================================================================
-// 
-//=============================================================================
-
+//=============================================
 bool USBFilesystemFormatter::format(USBFilesystem &fs, uint8_t fat_type, uint8_t* secBuf, print_t* pr)
 {
   // We can extract the device and partition from the fs object. 
-  DBGPrintf("\n### USBFilesystemFormatter::format called\n");
-  DBGPrintf("\tFattype: Partition: %u FS:%u Opt:%u\n", fs.partition, fs.mscfs.fatType(), fat_type);
+  DBGPrintf("\n### USBFilesystemFormatter::formatFAT called\n");
+  DBGPrintf("\tFattype: FS:%u Opt:%u\n", fs.mscfs.fatType(), fat_type);
   if (fat_type == 0) fat_type = fs.mscfs.fatType();
   switch (fat_type) {
     case FAT_TYPE_FAT16:
     case FAT_TYPE_FAT32:
-    //case FAT_TYPE_FAT12:  // currently don't support formatting these yet...
+    //case FAT_TYPE_FAT12
       return formatFAT(*fs.device, fs, fs.partition, fat_type, secBuf, pr);
     case FAT_TYPE_EXFAT:
       return formatExFAT(*fs.device, fs, fs.partition, fat_type, secBuf, pr);
@@ -69,8 +65,7 @@ bool USBFilesystemFormatter::format(USBFilesystem &fs, uint8_t fat_type, uint8_t
   return false;
 }
 
-//=============================================
-
+//====================================================
 bool USBFilesystemFormatter::formatFAT(USBDrive &dev, USBFilesystem &fs, uint8_t part, uint8_t fat_type, uint8_t* secBuf, print_t* pr)
 {
   DBGPrintf("\n### USBFilesystemFormatter::formatFAT called\n");
@@ -101,8 +96,13 @@ bool USBFilesystemFormatter::formatFAT(USBDrive &dev, USBFilesystem &fs, uint8_t
   m_mbrLBA = mbrLBA;
   m_mbrPart = mbrPart;
 
-  m_capacityMB = (m_sectorCount + SECTORS_PER_MB - 1)/SECTORS_PER_MB;
-  //m_capacityMB = (uint32_t) (fs.totalSize()/1000000);
+  //m_capacityMB = (m_sectorCount + SECTORS_PER_MB - 1)/SECTORS_PER_MB;
+  m_capacityMB = (uint32_t) (fs.totalSize()/1000000);
+  
+  if(m_capacityMB > 32768) {
+	  writeMsg("Volume is greater than 32MB, Need to format as exFAT!!\n");
+	  return false;
+  }
   
   bool has_volume_label = fs.mscfs.getVolumeLabel(volName, sizeof(volName));
 
@@ -141,7 +141,8 @@ bool USBFilesystemFormatter::formatFAT(USBDrive &dev, USBFilesystem &fs, uint8_t
     // SDXC cards
     m_sectorsPerCluster = 128;
   }
-    
+  
+
   //rtn = m_sectorCount < 0X400000 ? makeFat16() :makeFat32();
   
   if(fat_type == 16 && m_sectorCount < 0X400000 ) {
@@ -285,9 +286,7 @@ bool USBFilesystemFormatter::makeFat32(USBDrive &m_dev) {
   m_dataStart = m_relativeSectors + m_dataStart;
   m_totalSectors = m_sectorCount;
   
-#if defined(DBG_Print)
-  Serial.printf("partType: %d, m_relativeSectors: %u, fatStart: %u, fatDatastart: %u, totalSectors: %u\n", m_partType, m_relativeSectors, m_fatStart, m_dataStart, m_totalSectors);
-#endif
+  DBGPrintf("[makeFat32] partType: %d, m_relativeSectors: %u, fatStart: %u, fatDatastart: %u, totalSectors: %u\n", m_partType, m_relativeSectors, m_fatStart, m_dataStart, m_totalSectors);
 
   if (!writeFatMbr(m_dev)) {
     writeMsg("Failed to write MBR!!");
@@ -312,10 +311,12 @@ bool USBFilesystemFormatter::makeFat32(USBDrive &m_dev) {
   pbs->bpb.bpb32.volumeType[4] = '2';
 
   writeMsg("Writing Partition Boot Sector\n");
+  
   if (!writeSector(m_dev, m_relativeSectors, m_secBuf)  ||
       !writeSector(m_dev, m_relativeSectors + 6, m_secBuf)) {
     return false;
   }
+  
   // write extra boot area and backup
   memset(m_secBuf, 0 , BYTES_PER_SECTOR);
   setLe32(fsi->trailSignature, FSINFO_TRAIL_SIGNATURE);
@@ -352,15 +353,15 @@ bool USBFilesystemFormatter::writeFatMbr(USBDrive &m_dev) {
   MbrSector_t* mbr = reinterpret_cast<MbrSector_t*>(m_secBuf);
   MbrPart_t *pt = &mbr->part[m_mbrPart];
   if (!m_dev.readSector(m_mbrLBA, m_secBuf)) {
-  writeMsg("Didn't read MBR Sector !!!\n");
-  return false;
+    writeMsg("Didn't read MBR Sector !!!\n");
+    return false;
   }
 
-  DBGPrintf("%u, %u, %u, %u\n",m_capacityMB,m_relativeSectors,relativeSectors,relativeSectors + m_totalSectors -1);
+  DBGPrintf("(writeFatMbr)[m_capacityMB,m_relativeSectors,relativeSectors,relativeSectors + m_totalSectors -1] %u, %u, %u, %u\n",m_capacityMB,m_relativeSectors,relativeSectors,relativeSectors + m_totalSectors -1);
 #if USE_LBA_TO_CHS
-  lbaToMbrChs(pt->beginCHS, m_capacityMB, relativeSectors);
+  lbaToMbrChs(pt->beginCHS, m_capacityMB, m_relativeSectors);
   lbaToMbrChs(pt->endCHS, m_capacityMB,
-              relativeSectors + m_totalSectors -1);
+              m_relativeSectors + m_totalSectors -1);
 #else  // USE_LBA_TO_CHS
   pt->beginCHS[0] = 1;
   pt->beginCHS[1] = 1;
@@ -483,21 +484,30 @@ bool USBFilesystemFormatter::writeSector(USBDrive &m_dev, uint32_t sector, const
 //===============================================================
 bool USBFilesystemFormatter::formatExFAT(USBDrive &dev, USBFilesystem &fs, uint8_t part, uint8_t fat_type, uint8_t* secBuf, print_t* pr) {
   DBGPrintf("\n### USBFilesystemFormatter::formatExFAT called\n");
-  checksum = 0;
 
   ExFatPbs_t* pbs;
   DirUpcase_t* dup;
   DirBitmap_t* dbm;
   DirLabel_t* label;
+  uint32_t bitmapSize;
+  uint32_t checksum = 0;
+  uint32_t clusterCount;
+  uint32_t clusterHeapOffset;
+  uint32_t fatLength;
+  uint32_t fatOffset;
+  uint32_t m;
+  uint32_t ns;
+  uint32_t sector;
+  uint32_t sectorsPerCluster;
+  uint32_t sectorCount;
+  uint8_t sectorsPerClusterShift;
+  uint8_t vs;
 
   uint32_t firstLBA;
-  uint32_t sectorCount;
   uint32_t mbrLBA; 
   uint8_t mbrPart;
   int mbrType;
-  uint8_t vs;
   char volName[32];
-  uint32_t ns;
 
   m_secBuf = secBuf;
   m_pr = pr;
@@ -505,7 +515,6 @@ bool USBFilesystemFormatter::formatExFAT(USBDrive &dev, USBFilesystem &fs, uint8
   //m_part = partVol.part()-1;  // convert to 0 biased. 
   m_part = part-1;  // convert to 0 biased. 
 
-  //PFsLib::voltype_t vt = pfslib.getPartitionInfo(m_dev, partVol.part(), pr, secBuf, firstLBA, sectorCount, mbrLBA, mbrPart, mbrType);
   int vt = dev.findPartition(part, mbrType, firstLBA, sectorCount, mbrLBA, mbrPart);
 
   DBGPrintf("Part:%u vt:%u first:%u, count:%u MBR:%u MBR Part:%u Type:%u\n", part, (uint8_t)vt, firstLBA, sectorCount, mbrLBA, mbrPart, mbrType);
@@ -546,70 +555,45 @@ bool USBFilesystemFormatter::formatExFAT(USBDrive &dev, USBFilesystem &fs, uint8
   }
   
   // Determine partition layout.
-  uint32_t m;
   for (m = 1, vs = 0; m && sectorCount > m; m <<= 1, vs++) {}
-  uint8_t sectorsPerClusterShift;
   sectorsPerClusterShift = vs < 29 ? 8 : (vs - 11)/2;
-  //sectorsPerClusterShift = partVol.getExFatVol()->sectorsPerClusterShift();
   //DBGPrintf("Calculate sectorsPerClusterShift = %u\n", vs < 29 ? 8 : (vs - 11)/2);
   
   //1 << n is the same as raising 2 to the power n
-  uint32_t sectorsPerCluster;
   sectorsPerCluster = 1UL << sectorsPerClusterShift;
-  //sectorsPerCluster = partVol.getExFatVol()->sectorsPerCluster();
   //DBGPrintf("Calculated sectorsPerCluster = %u\n",  1UL << sectorsPerClusterShift);
 
   //The FatLength field shall describe the length, in sectors, of each FAT table
   //   At least (ClusterCount + 2) * 2^2/ 2^BytesPerSectorShift rounded up to the nearest integer
   //   At most (ClusterHeapOffset - FatOffset) / NumberOfFats rounded down to the nearest integer
-  //fatLength = 1UL << (vs < 27 ? 13 : (vs + 1)/2);
-  //fatLength = partVol.getExFatVol()->fatLength();
-  //DBGPrintf("Calculated fatLength1 = %u\n",1UL << (vs < 27 ? 13 : (vs + 1)/2));
-  //DBGPrintf("Calculated fatLength2 = %u\n", (clusterCount + 2) * (1UL<<2)/(1UL<<BYTES_PER_SECTOR_SHIFT));
-  uint32_t fatLength;
   fatLength = 1UL << (vs < 27 ? 13 : (vs + 1)/2);  //original
-  //fatLength = ((clusterCount + 2) * (1UL<<2)/(1UL<<BYTES_PER_SECTOR_SHIFT)) + 1;
-   
+  //DBGPrintf("Calculated fatLength1 = %u\n",1UL << (vs < 27 ? 13 : (vs + 1)/2));
+
   //The ClusterCount field shall describe the number of clusters the Cluster Heap contains
   //   (VolumeLength - ClusterHeapOffset) / 2^SectorsPerClusterShift rounded down to the nearest integer, which is exactly the number of clusters which can fit between the beginning of the Cluster Heap and the end of the volume
   //   232- 11, which is the maximum number of clusters a FAT can describe
-  //clusterCount = (sectorCount - 4*fatLength) >> sectorsPerClusterShift;
-  uint32_t clusterCount;
   clusterCount = (sectorCount - 4*fatLength) >> sectorsPerClusterShift;  //original
-  //clusterCount = fs.mscfs.clusterCount();
   //DBGPrintf("Calculated clusterCount = %u\n", (sectorCount - 4*fatLength) >> sectorsPerClusterShift);
   
   //The ClusterHeapOffset field shall describe the volume-relative sector offset of the Cluster Heap
   //   At least FatOffset + FatLength * NumberOfFats, to account for the sectors all the preceding regions consume
   //   At most 2^32- 1 or VolumeLength - (ClusterCount * 2^SectorsPerClusterShift), whichever calculation is less
-  
-  //clusterHeapOffset = partVol.getExFatVol()->clusterHeapStartSector() - m_relativeSectors;
-  //DBGPrintf("\tclusterHeapOffset: %u %u\n",getLe32(pbs->bpb.clusterHeapOffset), clusterHeapOffset);
-  uint32_t clusterHeapOffset;
   clusterHeapOffset = 2*fatLength;  //original
-  //clusterHeapOffset = getLe32(pbs->bpb.clusterHeapOffset);
-  //clusterHeapOffset = sectorCount - (clusterCount * 2^sectorsPerClusterShift);
-  //if(pow(2,32)-1 < clusterHeapOffset) clusterHeapOffset = pow(2,32)-1;
-  //clusterHeapOffset = fs.mscfs.clusterHeapStartSector() - m_relativeSectors;
-  
+  //DBGPrintf("\tclusterHeapOffset: %u %u\n",getLe32(pbs->bpb.clusterHeapOffset), clusterHeapOffset);
+
   //The FatOffset field shall describe the volume-relative sector offset of the First FAT
   //   At least 24, which accounts for the sectors the Main Boot and Backup Boot regions consume
   //   At most ClusterHeapOffset - (FatLength * NumberOfFats), which accounts for the sectors the Cluster Heap consumes
-  //fatOffset = fatLength;
-  //fatOffset = partVol.fatStartSector() - m_relativeSectors;
+  fatOffset = fatLength;
   //DBGPrintf("Calculated fatOffset = %u\n", clusterHeapOffset - fatLength);
-  uint32_t fatOffset;
-  fatOffset = clusterHeapOffset - fatLength;
   
   //The PartitionOffset field shall describe the media-relative sector offset of the partition which hosts the given exFAT volume
-  //partitionOffset = 2*fatLength;
   partitionOffset = m_relativeSectors;
   
   
   //The VolumeLength field shall describe the size of the given exFAT volume in sectors
   //   At least 2^20/ 2^BytesPerSectorShift, which ensures the smallest volume is no less than 1MB
   //   At most 264- 1, the largest value this field can describe
-  //volumeLength = clusterHeapOffset + (clusterCount << sectorsPerClusterShift);
   volumeLength = sectorCount;
   
   #if defined(DBG_PRINT)
@@ -702,7 +686,6 @@ bool USBFilesystemFormatter::formatExFAT(USBDrive &dev, USBFilesystem &fs, uint8
     checksum = exFatChecksum(checksum, secBuf[i]);
   }
     
-  uint32_t sector;
   sector = partitionOffset;
 #if defined(DBG_PRINT)
   DBGPrintf("\tWriting Sector: %d\n", sector-partitionOffset);

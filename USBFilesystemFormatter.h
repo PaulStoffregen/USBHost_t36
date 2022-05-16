@@ -21,14 +21,13 @@ private:
     m_maxSector = max_sector;
   }
   bool writeSector(USBDrive &m_dev, uint32_t sector, const uint8_t* src);
-  
+
   bool writeExFatMbr(USBDrive &m_dev);
   bool syncUpcase(USBDrive &m_dev);
   bool writeUpcaseByte(USBDrive &m_dev, uint8_t b);
   bool writeUpcase(USBDrive &m_dev, uint32_t sector);
   bool writeUpcaseUnicode(USBDrive &m_dev, uint16_t unicode);
-  
-  
+    
   uint32_t m_capacityMB;
   uint32_t m_dataStart;
   uint32_t m_fatSize;
@@ -47,21 +46,13 @@ private:
   uint32_t m_part_relativeSectors;
   uint32_t m_minSector = 0;
   uint32_t m_maxSector = (uint32_t)-1;
-  
+
+  uint32_t volumeLength;
+  uint32_t partitionOffset;
   uint32_t m_upcaseSector;
   uint32_t m_upcaseChecksum;
   uint32_t m_upcaseSize;
   uint32_t bitmapSize;
-  uint32_t checksum = 0;
-  //uint32_t clusterCount;
-  //uint32_t clusterHeapOffset;
-  //uint32_t fatLength;
-  //uint32_t fatOffset;
-  uint32_t partitionOffset;
-  //uint32_t sector;
-  //uint32_t sectorsPerCluster;
-  uint32_t volumeLength;
-  //uint8_t sectorsPerClusterShift;
- 
+
 };
 #endif  // USBFormatter_h
