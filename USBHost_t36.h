@@ -2406,6 +2406,9 @@ public:
 	uint64_t totalSize() {
 		return (uint64_t)mscfs.clusterCount() * (uint64_t)mscfs.bytesPerCluster();
 	}
+
+	bool format(int type=0, char progressChar=0, Print& pr=Serial);
+
 	void printError(Print &p = Serial);
 protected:
 	virtual bool claimPartition(USBDrive *device, int partition, int voltype, int type, uint32_t firstSector, uint32_t numSectors, uint8_t *guid=nullptr);
