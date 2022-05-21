@@ -2375,6 +2375,8 @@ public:
 		Device_t *dev = *(Device_t * volatile *)&device;
 		return dev != nullptr;
 	}
+	bool changed() {return changed_;}
+	void changed(bool fChanged) {changed_ = fChanged;}
 
 	File open(const char *filepath, uint8_t mode = FILE_READ) {
 		oflag_t flags = O_READ;
@@ -2414,6 +2416,7 @@ protected:
 	virtual bool claimPartition(USBDrive *device, int partition, int voltype, int type, uint32_t firstSector, uint32_t numSectors, uint8_t *guid=nullptr);
 	virtual void releasePartition();
 	bool check_voltype_guid(int voltype, uint8_t *guid);
+	bool changed_ = false;
 
 public:
 	FsVolume mscfs;      // SdFat API

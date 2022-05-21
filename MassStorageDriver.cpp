@@ -1547,6 +1547,7 @@ bool USBFilesystem::format(int type, char progressChar, Print& pr) {
 		partitionType = type;
 		ret = mscfs.begin(device, true, firstSector, numSectors);
 		pr.printf("\tbegin return: %u\n", ret);
+		changed(true);  // mark it as changed.
 	}
 	return ret;
 }
