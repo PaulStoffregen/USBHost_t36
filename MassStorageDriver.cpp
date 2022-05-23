@@ -26,12 +26,24 @@
 
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
-
+#include "USBFilesystemFormatter.h"
 #define print   USBHost::print_
 #define println USBHost::println_
 
 // Uncomment this to display function usage and sequencing.
 //#define DBGprint 1
+#ifdef DBGprint
+#define DBGPrintf Serial.printf
+#define DBGFlush() Serial.flush()
+#else
+void inline DBGPrintf(...) {};
+void inline DBGFlush() {};
+#endif
+
+
+USBFSBase *USBDrive::available_filesystem_list = nullptr;
+
+static const uint8_t mbdpGuid[16] PROGMEM = {0xA2, 0xA0, 0xD0, 0xEB, 0xE5, 0xB9, 0x33, 0x44, 0x87, 0xC0, 0x68, 0xB6, 0xB7, 0x26, 0x99, 0xC7};
 
 // Big Endian/Little Endian
 #define swap32(x) ((x >> 24) & 0xff) | \
@@ -46,6 +58,56 @@ void USBDrive::init()
 	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
 	driver_ready_for_device(this);
 }
+
+void USBDrive::filesystem_ready_for_drive(USBFSBase *fsbase)
+{
+	fsbase->next = NULL;
+	if (available_filesystem_list == NULL) {
+		available_filesystem_list = fsbase;
+	} else {
+		USBFSBase *last = available_filesystem_list;
+		while (last->next) last = last->next;
+		last->next = fsbase;
+	}	
+}
+
+void USBDrive::filesystem_assign_to_drive(USBFSBase *fsbase, bool assign)
+{
+	USBFSBase *prev = nullptr;
+	if (assign) {
+		// We need to remove rom the free list
+		USBFSBase *fs = available_filesystem_list;
+
+		while (fs && (fs != fsbase)) {
+			prev = fs;
+			fs = fs->next;
+		}
+		if (fs) {
+			// unlink it
+			if (prev) prev->next = fs->next;
+			else available_filesystem_list = fs->next;
+			// add it to the Drives claimed list
+			fs->next = claimed_filesystem_list;
+			claimed_filesystem_list = fs;
+		}
+	} else {
+		// lets do the reverse and try to remove from drive list.
+		USBFSBase *fs = claimed_filesystem_list;
+		while (fs && (fs != fsbase)) {
+			prev = fs;
+			fs = fs->next;
+		}
+		if (fs) {
+			// unlink it
+			if (prev) prev->next = fs->next;
+			else claimed_filesystem_list = fs->next;
+			// add it to the Drives claimed list
+			fs->next = available_filesystem_list;
+			available_filesystem_list = fs;
+		}
+	}
+}
+
 
 bool USBDrive::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
 {
@@ -116,6 +178,7 @@ bool USBDrive::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32
 	deviceAvailable = true;
 	msDriveInfo.initialized = false;
 	msDriveInfo.connected = true;
+	_cGPTParts = 0; // have not cached this yet GPT
 #ifdef DBGprint
 	print("   connected = ");
 	println(msDriveInfo.connected);
@@ -127,6 +190,20 @@ bool USBDrive::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32
 
 void USBDrive::disconnect()
 {
+	// We need to go through and release an patitions we are holding onto.
+	USBFSBase *usbfs = claimed_filesystem_list; 
+	while (usbfs) {
+		usbfs->releasePartition(); // lets release the partition.
+		USBFSBase *next = usbfs->next;
+
+		usbfs->mydevice = nullptr;
+		usbfs->next = available_filesystem_list;
+		available_filesystem_list = usbfs;
+		usbfs = next;
+	}
+	claimed_filesystem_list = nullptr;
+ 	_filesystems_started = false;
+
 	deviceAvailable = false;
 	println("Device Disconnected...");
 	msDriveInfo.connected = false;
@@ -191,7 +268,7 @@ void USBDrive::new_dataIn(const Transfer_t *transfer)
 			_read_sectors_callback = nullptr;
 			msInCompleted = true; // Last in transaction is completed.
 		}
-#ifdef DBGprint
+#if defined(DBGprint) && (DBGprint > 1)
 		Serial.write('@');
 		if ((_read_sectors_remaining & 0x3f) == 0) Serial.printf("\n");
 #endif
@@ -254,6 +331,7 @@ void USBDrive::msReset(void) {
 #ifdef DBGprint
 	println("msReset()");
 #endif
+	DBGPrintf(">>msReset()\n"); DBGFlush();
 	mk_setup(setup, 0x21, 0xff, 0, bInterfaceNumber, 0);
 	queue_Control_Transfer(device, &setup, NULL, this);
 	while (!msControlCompleted) yield();
@@ -508,14 +586,13 @@ uint8_t USBDrive::msReadBlocks(
 									void * sectorBuffer)
 	{
 	println("msReadBlocks()");
-#ifdef DBGprint
+#if defined(DBGprint) && (DBGprint > 1)
 	Serial.printf("<<< msReadBlocks(%x %x %x)\n", BlockAddress, Blocks, BlockSize);
 #endif
 	uint8_t BlockHi = (Blocks >> 8) & 0xFF;
 	uint8_t BlockLo = Blocks & 0xFF;
 	msCommandBlockWrapper_t CommandBlockWrapper = (msCommandBlockWrapper_t)
 	{
-	
 		.Signature          = CBW_SIGNATURE,
 		.Tag                = ++CBWTag,
 		.TransferLength     = (uint32_t)(Blocks * BlockSize),
@@ -529,6 +606,9 @@ uint8_t USBDrive::msReadBlocks(
 							  (uint8_t)(BlockAddress & 0xFF),
 							   0x00, BlockHi, BlockLo, 0x00}
 	};
+	#if defined(__IMXRT1062__)
+	if ((uint32_t)sectorBuffer >= 0x20200000u)  arm_dcache_flush_delete(sectorBuffer, CommandBlockWrapper.TransferLength);
+	#endif
 	return msDoCommand(&CommandBlockWrapper, sectorBuffer);
 }
 
@@ -541,7 +621,7 @@ uint8_t USBDrive::msReadSectorsWithCB(
 			void (*callback)(uint32_t, uint8_t *),
 			uint32_t token)
 	{
-#ifdef DBGprint
+#if defined(DBGprint) && (DBGprint > 1)
 	Serial.printf("<<< msReadSectorsWithCB(%x %u %x)\n", BlockAddress, Blocks, (uint32_t)callback);
 #endif
 	if ((callback == nullptr) || (!Blocks)) return MS_CBW_FAIL;
@@ -652,6 +732,9 @@ uint8_t USBDrive::msWriteBlocks(
 							  (uint8_t)(BlockAddress & 0xFF),
 							  0x00, BlockHi, BlockLo, 0x00}
 	};
+	#if defined(__IMXRT1062__)
+	if ((uint32_t)sectorBuffer >= 0x20200000u)  arm_dcache_flush((void*)sectorBuffer, CommandBlockWrapper.TransferLength);
+	#endif
 	return msDoCommand(&CommandBlockWrapper, (void *)sectorBuffer);
 }
 
@@ -833,27 +916,10 @@ static void printMscAscError(print_t* pr, USBDrive *pDrive)
 
 // Print error info and return.
 //
-FLASHMEM
-void USBFilesystem::printError(Print &p) {
-	const uint8_t err = device->errorCode();
-	if (err) {
-		if (err == 0x28) {
-			p.println(F("No USB drive detected, plugged in?"));
-		}
-		p.print(F("USB drive error: "));
-		p.print(F("0x"));
-		p.print(err, HEX);
-		p.print(F(",0x"));
-		p.print(device->errorData(), HEX);
-		printMscAscError(&p, device);
-	} else if (!mscfs.fatType()) {
-		p.println(F("Check USB drive format."));
-	}
-}
-
 
 
 void USBDrive::printPartionTable(Print &p) {
+  DBGPrintf(">>USBDrive::printPartionTable\n");
   if (!msDriveInfo.initialized) return;
   const uint32_t device_sector_count = msDriveInfo.capacity.Blocks;
   // TODO: check device_sector_count
@@ -1015,7 +1081,7 @@ void USBDrive::printExtendedPartition(MbrSector_t *mbr, uint8_t ipExt, Print &p)
     pt = &mbr->part[1];
     p.printf(" (%x)\n", pt->type);
     starting_sector = getLe32(pt->relativeSectors);
-    if (pt->type && starting_sector) next_mbr = /*starting_sector*/ next_mbr + ext_starting_sector;
+    if (pt->type && starting_sector) next_mbr = starting_sector + ext_starting_sector;
     else next_mbr = 0;
   }
 }
@@ -1060,7 +1126,6 @@ typedef struct {
   uint8_t   b[8];
 } guid_t;
 
-static const uint8_t mbdpGuid[16] PROGMEM = {0xA2, 0xA0, 0xD0, 0xEB, 0xE5, 0xB9, 0x33, 0x44, 0x87, 0xC0, 0x68, 0xB6, 0xB7, 0x26, 0x99, 0xC7};
 
 void printGUID(uint8_t* pbguid, Print &p) {
   // Windows basic partion guid is: EBD0A0A2-B9E5-4433-87C0-68B6B72699C7
@@ -1164,52 +1229,325 @@ uint32_t USBDrive::printGUIDPartitionTable(Print &Serialx) {
 }
 
 
-
-bool USBDrive::findParition(int partition, int &type, uint32_t &firstSector, uint32_t &numSectors)
+//=============================================================================
+// FindPartition - 
+//=============================================================================
+int USBDrive::findPartition(int partition, int &type, uint32_t &firstSector, uint32_t &numSectors, 
+							uint32_t &mbrLBA, uint8_t &mbrPart, uint8_t *guid)
 {
 	if (partition == 0) {
 		type = 6; // assume whole drive is FAT16 (SdFat will detect actual format)
 		firstSector = 0;
 		numSectors = msDriveInfo.capacity.Blocks;
-		return true;
+		return MBR_VOL;
 	}
-	MbrSector_t mbr;
-	if (!readSector(0, (uint8_t*)&mbr)) return false;
-	MbrPart_t *mp = &mbr.part[0];
-	if (mp->type == 0xee) {
+	union {
+		MbrSector_t mbr;
+		partitionBootSector pbs;
+		GPTPartitionHeader_t gpthdr;
+		GPTPartitionEntrySector_t gptes;
+		uint8_t buffer[512];
+	} sector;
+
+
+	partition--;  // zero bias it. 
+	if (!readSector(0, (uint8_t*)&sector.mbr)) return INVALID_VOL;
+	MbrPart_t *pt = &sector.mbr.part[0];
+	if (pt->type == 0xee) {
+		// See if we have already cached number of partitions
+		if (_cGPTParts == 0) {
+			if (!readSector(1, (uint8_t*)&sector.buffer)) return INVALID_VOL;
+	  		_cGPTParts = (int)getLe32(sector.gpthdr.numberPartitions);
+	  		DBGPrintf(">>Find Partition GPT cParts=%d\n", _cGPTParts);
+		}
 		// GUID Partition Table
 		//  TODO: should we read sector 1, check # of entries and entry size = 128?
-		if (!readSector(2 + (partition >> 2), (uint8_t*)&mbr)) return false;
-		GPTPartitionEntrySector_t *gpt = (GPTPartitionEntrySector_t *)&mbr;
-		GPTPartitionEntryItem_t *entry = &gpt->items[partition & 3];
-		uint64_t first64 = getLe64(entry->firstLBA);
-		if (first64 > 0x00000000FFFFFFFFull) return false;
-		uint32_t first32 = first64;
-		uint64_t last64 = getLe64(entry->lastLBA);
-		if (last64 > 0x00000000FFFFFFFFull) return false;
-		uint32_t last32 = last64;
-		if (first32 > last32) return false;
-		firstSector = first32;
-		numSectors = last32 - first32 + 1;
-		if (memcmp(entry->partitionTypeGUID, mbdpGuid, 16) == 0) {
+		if (partition >= _cGPTParts) return INVALID_VOL; // ran off end
+		mbrLBA = 2 + (partition >> 2);
+		mbrPart = partition & 0x3;
+		if (!readSector(mbrLBA, (uint8_t*)&sector.mbr)) return INVALID_VOL;
+
+		GPTPartitionEntryItem_t *entry = &sector.gptes.items[mbrPart];
+		// if we have an empty item we figure we are done.
+        uint32_t *end_addr = (uint32_t*)((uint32_t)entry + sizeof(GPTPartitionEntryItem_t));
+        uint32_t *p = (uint32_t*)entry;
+        for (; p < end_addr; p++) {
+          if (*p) break; // found none-zero.
+        }
+        
+       	if (p < end_addr) {
+			uint64_t first64 = getLe64(entry->firstLBA);
+			if (first64 > 0x00000000FFFFFFFFull) return INVALID_VOL;
+			uint32_t first32 = first64;
+			uint64_t last64 = getLe64(entry->lastLBA);
+			if (last64 > 0x00000000FFFFFFFFull) return INVALID_VOL;
+			uint32_t last32 = last64;
+			if (first32 > last32) return INVALID_VOL;
+			firstSector = first32;
+			numSectors = last32 - first32 + 1;
+			// bugbug should be caller that knows which guids they deal with.
+			// Not sure if I hould try to remove this yet, or if
+			// we may want to extend list of guids if others are found
+			// we understatnd
+			if (guid) memcpy(guid, entry->partitionTypeGUID, 16);
 			type = 6;
-			return true;
+			return GPT_VOL;
 		}
-		Serial.printf("Partition %d has unknown GUID type ", partition);
-		printGUID(entry->partitionTypeGUID, Serial);
+   		return INVALID_VOL;
+	}
+	if (partition >= 0 && partition <= 3) {
+		// Master Boot Record
+		pt = &sector.mbr.part[partition];
+        // try quick way through
+      	if (((pt->boot == 0) || (pt->boot == 0X80)) && (pt->type != 0) && (pt->type != 0xf)) {
+			type = pt->type;
+			firstSector = getLe32(pt->relativeSectors);
+			numSectors = getLe32(pt->totalSectors);
+			mbrLBA = 0;
+			mbrPart = partition; // zero based
+			return MBR_VOL;
+		}
+	}
+
+    // So must be extended or invalid.
+    uint8_t index_part;
+    for (index_part = 0; index_part < 4; index_part++) {
+      pt = &sector.mbr.part[index_part];
+      if ((pt->boot != 0 && pt->boot != 0X80) || pt->type == 0 || index_part > partition) return INVALID_VOL;
+      if (pt->type == 0xf) break;
+    }
+
+    if (index_part == 4) return INVALID_VOL; // no extended partition found. 
+
+    // Our partition if it exists is in extended partition. 
+    uint32_t next_mbr = getLe32(pt->relativeSectors);
+    for(;;) {
+	  if (!readSector(next_mbr, (uint8_t*)&sector.mbr)) return INVALID_VOL;
+
+      if (index_part == partition) break; // should be at that entry
+      // else we need to see if it points to others...
+      pt = &sector.mbr.part[1];
+      uint32_t  relSec = getLe32(pt->relativeSectors);
+      //Serial.printf("    Check for next: type: %u start:%u\n ", pt->type, volumeStartSector);
+      if ((pt->type == 5) && relSec) {
+        next_mbr = next_mbr + relSec;
+        index_part++; 
+      } else return INVALID_VOL;
+    }
+   
+    // If we are here than we should hopefully be at start of segment...
+    pt = &sector.mbr.part[0];
+	type = pt->type;
+	firstSector = getLe32(pt->relativeSectors) + next_mbr;
+	numSectors = getLe32(pt->totalSectors);
+	mbrLBA = next_mbr;
+	mbrPart = 0; // zero based
+    return EXT_VOL;
+  }
+
+
+
+//=============================================================================
+// startFilesystems - enumerate all of the partitons of a drive and ask the different
+// filesystem objects if they would like to claim the partition. 
+// returns - true if our enumeration  has any partitions claimed. 
+//=============================================================================
+bool USBDrive::startFilesystems()
+{
+	// first repeat calling findPartition()
+	int type;
+	uint32_t firstSector;
+	uint32_t numSectors;
+	int voltype;
+	bool file_system_claimed = false;
+	uint32_t mbrLBA;
+	uint8_t mbrPart;
+
+	uint8_t guid[16];
+
+	DBGPrintf(">> USBDrive::startFilesystems called %p\n", this);
+
+	if (!begin()) { // make sure we are initialized
+		DBGPrintf("\t >> begin() failed");
 		return false;
 	}
-	if (partition >= 1 && partition <= 4) {
-		// Master Boot Record
-		MbrPart_t *pt = &mbr.part[partition - 1];
-		type = pt->type;
-		firstSector = getLe32(pt->relativeSectors);
-		numSectors = getLe32(pt->totalSectors);
-		//if (firstSector + numSectors > msDriveInfo.capacity.Blocks) return false;
-		return true;
+
+	for (int part = 1; ;part++) {
+		voltype = findPartition(part, type, firstSector, numSectors, mbrLBA, mbrPart, guid);
+		if (voltype == INVALID_VOL) break;
+		DBGPrintf("\t>>Partition %d VT:%u T:%U %u %u\n", part, voltype, type, firstSector, numSectors);
+		// Now see if there is any file systems that wish to claim this partition.
+		 USBFSBase *usbfsPrev = nullptr;
+		 USBFSBase *usbfs = available_filesystem_list;
+
+		 while (usbfs) {
+		 	if (usbfs->claimPartition(this, part, voltype, type, firstSector, numSectors, guid)) break;
+		 	usbfsPrev = usbfs;
+		 	usbfs = usbfs->next;
+		 }
+		 if (usbfs) {
+		 	// unlink
+		 	if (usbfsPrev) usbfsPrev->next = usbfs->next;
+		 	else available_filesystem_list = usbfs->next;
+
+		 	// link to this drives list of claimed
+		 	usbfs->next = claimed_filesystem_list;
+		 	claimed_filesystem_list = usbfs;
+
+		 	// and put a link to us 
+		 	usbfs->mydevice = device;
+		 	file_system_claimed = true;
+		 }
+
+		}
+	_filesystems_started = true;
+	return file_system_claimed;
+} 
+
+//=============================================================================
+// USBFileSystem methods
+//=============================================================================
+
+void USBFilesystem::init()
+{
+	USBDrive::filesystem_ready_for_drive(this);
+}
+
+FLASHMEM
+void USBFilesystem::printError(Print &p) {
+	const uint8_t err = device->errorCode();
+	if (err) {
+		if (err == 0x28) {
+			p.println(F("No USB drive detected, plugged in?"));
+		}
+		p.print(F("USB drive error: "));
+		p.print(F("0x"));
+		p.print(err, HEX);
+		p.print(F(",0x"));
+		p.print(device->errorData(), HEX);
+		printMscAscError(&p, device);
+	} else if (!mscfs.fatType()) {
+		p.println(F("Check USB drive format."));
 	}
-	// TODO: extended partitions
-	return false;
 }
 
 
+// We only support a limited number of GUIDS (currently 1)
+bool USBFilesystem::check_voltype_guid(int voltype, uint8_t *guid) {
+	// Microsoft Basic Data Partition
+	DBGPrintf(">>USBFilesystem::check_voltype_guid(%d, %p)\n", voltype, guid);
+	if (voltype == USBDrive::GPT_VOL) {
+		#ifdef DBGprint
+		printGUID(guid, Serial);
+		#endif
+		if (memcmp(guid, mbdpGuid, 16) == 0) return true;
+		DBGPrintf("USBFilesystem - Unsupporteded GUID\n");
+		return false;
+	}
+	return true;
+}
+
+//=============================================================================
+// USBFilesystem::begin - Manual way to startup a filesystem object
+//=============================================================================
+
+bool USBFilesystem::begin(USBDrive *pDrive, bool setCwv, uint8_t part) {
+	DBGPrintf(">>USBFilesystem::begin(%p, %u, %u)\n", pDrive, setCwv, part); DBGFlush();
+	if (device) return false;  // object is already in use. 
+	uint8_t guid[16];
+	device = pDrive;
+	device->begin();
+	if (device->errorCode() != 0) return false;
+	//device->printPartionTable(Serial);
+	int type;
+	uint32_t firstSector, numSectors;
+	uint32_t mbrLBA;
+	uint8_t mbrPart;
+
+
+	int voltype = device->findPartition(part, type, firstSector, numSectors, mbrLBA, mbrPart, guid);
+	if (!voltype) {
+		device = nullptr;
+		return false;  // not a valid volume...
+	}
+
+	// if this is a GPT setup, then make sure the guid is one we want.
+	if (!check_voltype_guid(voltype, guid)) {
+		device = nullptr;
+		return false;
+	}
+
+	if (mscfs.begin(pDrive, setCwv, firstSector, numSectors)) {
+		device->filesystem_assign_to_drive(this, true);
+	}
+	return true;
+}
+
+void USBFilesystem::end(bool update_list) {
+	mscfs.end();
+	if (update_list) device->filesystem_assign_to_drive(this, false);
+	device = nullptr;
+}
+
+
+bool USBFilesystem::claimPartition(USBDrive *pdevice, int part,int voltype, int type, uint32_t firstSector, uint32_t numSectors, uint8_t *guid) {
+	// May add in some additional stuff
+	DBGPrintf("\t>>USBFilesystem::claimPartition %p called ");
+
+	// For GUID file systems only continue if this is a guid to a type we know. 
+	if (!check_voltype_guid(voltype, guid)) return false; // not something we understand;
+
+	if (mscfs.begin(pdevice, true, firstSector, numSectors)) {
+		device = pdevice;
+		partition = part;
+		partitionType = type;
+		DBGPrintf("+ Claimed\n");
+		return true;		
+	}
+	DBGPrintf("- Not Claimed\n");
+	return false;
+}
+
+void USBFilesystem::releasePartition() {
+	DBGPrintf("\t USBFilesystem::releasePartition %p called\n");
+	end(false);
+}
+
+bool USBFilesystem::format(int type, char progressChar, Print& pr) {
+	// setup instance of formatter object;
+	uint8_t *buf = (uint8_t *)malloc(512+32);
+	if (!buf) return false; // unable to allocate memory
+	// lets align the buffer
+    uint8_t *aligned_buf = (uint8_t *)(((uintptr_t)buf + 31) & ~((uintptr_t)(31)));
+	USBFilesystemFormatter formatter; 
+	Serial.printf("$$call formatter.format(%p, 0, %p %p...)\n", this, buf, aligned_buf);
+	bool ret = formatter.format(*this, 0, aligned_buf, &pr);
+
+	free(buf);
+
+	if (ret) {
+		pr.println("Format Completed restart filesystem");
+		
+		// Maybe not call as this may write out dirty stuff.
+		//mscfs.end();  // release the old data
+
+		// Now lets try to restart it	
+		int type;
+		uint32_t firstSector;
+		uint32_t numSectors;
+		uint32_t mbrLBA;
+		uint8_t mbrPart;
+
+		uint8_t guid[16];
+
+		int voltype = device->findPartition(partition, type, firstSector, numSectors, mbrLBA, mbrPart, guid);
+		if (voltype == USBDrive::INVALID_VOL) return false;
+		pr.printf("\tPart:%d Type:%x First:%u num:%u\n", partition, type, firstSector, numSectors);
+		// now lets try to start it again.
+		partitionType = type;
+		ret = mscfs.begin(device, true, firstSector, numSectors);
+		pr.printf("\tbegin return: %u\n", ret);
+		changed(true);  // mark it as changed.
+	}
+	return ret;
+}
