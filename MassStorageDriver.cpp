@@ -26,7 +26,7 @@
 
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
-#include "USBFilesystemFormatter.h"
+#include "utility/USBFilesystemFormatter.h"
 #define print   USBHost::print_
 #define println USBHost::println_
 
@@ -1520,7 +1520,7 @@ bool USBFilesystem::format(int type, char progressChar, Print& pr) {
 	// lets align the buffer
     uint8_t *aligned_buf = (uint8_t *)(((uintptr_t)buf + 31) & ~((uintptr_t)(31)));
 	USBFilesystemFormatter formatter; 
-	Serial.printf("$$call formatter.format(%p, 0, %p %p...)\n", this, buf, aligned_buf);
+	//Serial.printf("$$call formatter.format(%p, 0, %p %p...)\n", this, buf, aligned_buf);
 	bool ret = formatter.format(*this, 0, aligned_buf, &pr);
 
 	free(buf);
