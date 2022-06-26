@@ -533,7 +533,6 @@ private:
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
 	virtual void hid_timer_event(USBDriverTimer *whichTimer) { }
-	void add_to_list();
 	USBHIDInput *next = NULL;
 	friend class USBHIDParser;
 protected:
@@ -562,7 +561,6 @@ private:
 	virtual void release_bluetooth() {};
 	virtual bool remoteNameComplete(const uint8_t *remoteName) {return true;}
 	virtual void connectionComplete(void) {};
-	void add_to_list();
 	BTHIDInput *next = NULL;
 	friend class BluetoothController;
 protected:
@@ -2064,9 +2062,13 @@ class USBDrive;
 
 // Simple File System base class that maintains list and defines methods for the Drive object
 // to call to each of the file system objects such that they can decide if they will claim a partition
-class USBFSBase {
+class USBFSBase : public FS {
 public:
+	USBFSBase();
 	operator bool() { return (mydevice != nullptr); }
+	enum {USBFS_STATE_CHANGE_CONNECTION = 0x01u, USBFS_STATE_CHANGE_FORMAT = 0x02};
+	inline uint8_t stateChanged() { return _state_changed; }
+	inline void stateChanged(uint8_t state) { _state_changed = state; }
 	uint16_t idVendor() { return (mydevice != nullptr) ? mydevice->idVendor : 0; }
 	uint16_t idProduct() { return (mydevice != nullptr) ? mydevice->idProduct : 0; }
 	const uint8_t *manufacturer()
@@ -2077,17 +2079,27 @@ public:
 		{  return  ((mydevice == nullptr) || (mydevice->strbuf == nullptr)) ? nullptr : &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
 
 
+	virtual bool getVolumeLabel(char *volume_label, size_t cb) { return false; }
+
+	// Class level static methods.
+	// code that can walk the list 
+	static USBFSBase *nextFS(USBFSBase *pfs);
+
+	static inline bool anyFSChangedState() {return s_any_fs_changed_state;}
+	static inline void anyFSChangedState(bool state) {s_any_fs_changed_state = state;}
 private:
 	// need to define claim functions
 	virtual bool claimPartition(USBDrive *device, int partition, int voltype, int type, uint32_t firstSector, uint32_t numSectors, uint8_t *guid) = 0; 
 	virtual void releasePartition() = 0;
 
 //	virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
-	void add_to_list();
-	USBFSBase *next = NULL;
 	friend class USBDrive;
 protected:
+	static USBFSBase *s_first_fs;
+	USBFSBase *_next = NULL;
 	Device_t *mydevice = NULL;
+	uint8_t _state_changed = 0;
+	static bool s_any_fs_changed_state;
 };
 
 
@@ -2136,7 +2148,18 @@ public:
 	// Not sure of good name here.  
 	// maybe startFilesystems(), enumFileSystems()...
 	bool startFilesystems();
-	bool filesystemsStarted() {return _filesystems_started;}
+	bool filesystemsStarted() {return _drive_connect_fs_status == USBDRIVE_FS_STARTED;}
+
+	bool updateConnectedFilesystems();
+
+	// Schedule when the updatedConnectedFilesystems should be called
+	// when = 0(manual), 1(MTP::loop) 
+	enum {UPDATE_MANUAL=0, UPDATE_TASK=1};
+	void whenToUpdateConnectedFilesystems(int when) {s_when_to_update = when; }
+	int whenToUpdateConnectedFilesystems() {return s_when_to_update;} 
+
+	static bool connectedFilesystemsChanged() {return s_connected_filesystems_changed;}
+	static void connectedFilesystemsChanged(bool changed) {s_connected_filesystems_changed = changed;}
 
 	void printPartionTable(Print &Serialx);
 	void printExtendedPartition(MbrSector_t *mbr, uint8_t ipExt, Print &Serialx);
@@ -2197,6 +2220,7 @@ protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
 	virtual void disconnect();
+	virtual void Task();
 	static void callbackIn(const Transfer_t *transfer);
 	static void callbackOut(const Transfer_t *transfer);
 	void new_dataIn(const Transfer_t *transfer);
@@ -2244,10 +2268,14 @@ private:
 	uint8_t m_errorCode = MS_NO_MEDIA_ERR;
 	uint32_t m_errorLine = 0;
 	USBFSBase *claimed_filesystem_list = nullptr;
-	bool _filesystems_started = false;
+	enum {USBDRIVE_NOT_CONNECTED=0, USBDRIVE_CONNECTED=1, USBDRIVE_FS_STARTED=2};
+	int _drive_connect_fs_status = USBDRIVE_NOT_CONNECTED;
 	int _cGPTParts = 0;  // if GPT cache of parts.
 
-	static USBFSBase *available_filesystem_list;
+	static USBDrive *s_first_drive;
+	static bool s_connected_filesystems_changed;
+	static int s_when_to_update; // default to Task()
+	USBDrive *_next_drive = nullptr;
 
 };
 
@@ -2377,23 +2405,30 @@ private:
 	char *filename;
 };
 
-class USBFilesystem : public FS, public USBFSBase
+class USBFilesystem : public USBFSBase
 {
 public:
-	USBFilesystem(USBHost &host) { init(); }
-	USBFilesystem(USBHost *host) { init(); }
+	USBFilesystem(USBHost &host) : USBFSBase() { init(); }
+	USBFilesystem(USBHost *host) : USBFSBase() { init(); }
 
 	// Manual way to associate a drive/partition to a Filesystem object
 	bool begin(USBDrive *pDrive, bool setCwv = true, uint8_t part = 1);
-	void end(bool update_list = true);
+	void end();
 	void init();
+	
+	virtual bool getVolumeLabel(char *volume_label, size_t cb) { return mscfs.getVolumeLabel(volume_label, cb); }
 
 	operator bool() {
 		Device_t *dev = *(Device_t * volatile *)&device;
 		return dev != nullptr;
 	}
-	bool changed() {return changed_;}
-	void changed(bool fChanged) {changed_ = fChanged;}
+
+	// will remove soon, older versions to detect formatted.
+	inline bool changed() {return _state_changed == USBFS_STATE_CHANGE_FORMAT;;}
+	inline void changed(bool fChanged) {
+		if (fChanged) _state_changed = USBFS_STATE_CHANGE_FORMAT;
+		else _state_changed &= ~USBFS_STATE_CHANGE_FORMAT;
+	}
 
 	File open(const char *filepath, uint8_t mode = FILE_READ) {
 		oflag_t flags = O_READ;
