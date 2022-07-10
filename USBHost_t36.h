@@ -2337,7 +2337,7 @@ public:
 	virtual void rewindDirectory(void) {
 		mscfatfile.rewindDirectory();
 	}
-#ifdef FS_FILE_SUPPORT_DATES
+#if TEENSYDUINO >= 156	
 	// These will all return false as only some FS support it.
 	virtual bool getAccessDateTime(uint16_t* pdate, uint16_t* ptime) {
 		return mscfatfile.getAccessDateTime(pdate, ptime);
