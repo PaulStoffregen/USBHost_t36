@@ -2337,23 +2337,40 @@ public:
 	virtual void rewindDirectory(void) {
 		mscfatfile.rewindDirectory();
 	}
-#if TEENSYDUINO >= 156	
-	// These will all return false as only some FS support it.
-	virtual bool getAccessDateTime(uint16_t* pdate, uint16_t* ptime) {
-		return mscfatfile.getAccessDateTime(pdate, ptime);
+	virtual bool getCreateTime(DateTimeFields &tm) {
+		uint16_t fat_date, fat_time;
+		if (!mscfatfile.getCreateDateTime(&fat_date, &fat_time)) return false;
+		if ((fat_date == 0) && (fat_time == 0)) return false;
+		tm.sec = FS_SECOND(fat_time);
+		tm.min = FS_MINUTE(fat_time);
+		tm.hour = FS_HOUR(fat_time);
+		tm.mday = FS_DAY(fat_date);
+		tm.mon = FS_MONTH(fat_date) - 1;
+		tm.year = FS_YEAR(fat_date) - 1900;
+		return true;
 	}
-	virtual bool getCreateDateTime(uint16_t* pdate, uint16_t* ptime) {
-		return mscfatfile.getCreateDateTime(pdate, ptime);
+	virtual bool getModifyTime(DateTimeFields &tm) {
+		uint16_t fat_date, fat_time;
+		if (!mscfatfile.getModifyDateTime(&fat_date, &fat_time)) return false;
+		if ((fat_date == 0) && (fat_time == 0)) return false;
+		tm.sec = FS_SECOND(fat_time);
+		tm.min = FS_MINUTE(fat_time);
+		tm.hour = FS_HOUR(fat_time);
+		tm.mday = FS_DAY(fat_date);
+		tm.mon = FS_MONTH(fat_date) - 1;
+		tm.year = FS_YEAR(fat_date) - 1900;
+		return true;
 	}
-	virtual bool getModifyDateTime(uint16_t* pdate, uint16_t* ptime) {
-		return mscfatfile.getModifyDateTime(pdate, ptime);
+	virtual bool setCreateTime(const DateTimeFields &tm) {
+		if (tm.year < 80 || tm.year > 207) return false;
+		return mscfatfile.timestamp(T_CREATE, tm.year + 1900, tm.mon + 1,
+			tm.mday, tm.hour, tm.min, tm.sec);
 	}
-	virtual bool timestamp(uint8_t flags, uint16_t year, uint8_t month, uint8_t day,
-               uint8_t hour, uint8_t minute, uint8_t second) {
-		return mscfatfile.timestamp(flags, year, month, day, hour, minute, second);
-		return false;
+	virtual bool setModifyTime(const DateTimeFields &tm) {
+		if (tm.year < 80 || tm.year > 207) return false;
+		return mscfatfile.timestamp(T_WRITE, tm.year + 1900, tm.mon + 1,
+			tm.mday, tm.hour, tm.min, tm.sec);
 	}
-#endif
 
 private:
 	FsFile mscfatfile;
