@@ -46,6 +46,7 @@ USBSerialBase::product_vendor_mapping_t USBSerialBase::pid_vid_mapping[] = {
 	// FTDI mappings. 
 	{0x0403, 0x6001, USBSerialBase::FTDI, 0},
 	{0x0403, 0x8088, USBSerialBase::FTDI, 1},  // 2 devices try to claim at interface level
+	{0x0403, 0x6010, USBSerialBase::FTDI, 1},  // Also Dual Serial, so claim at interface level
 
 	// PL2303
 	{0x67B,0x2303, USBSerialBase::PL2303, 0}, 
