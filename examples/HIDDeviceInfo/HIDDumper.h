@@ -21,6 +21,10 @@ protected:
   virtual void disconnect_collection(Device_t *dev);
 private:
   void init();
+
+  void dumpHIDReportDescriptor(USBHIDParser *phidp);
+  void printUsageInfo(uint8_t usage_page, uint16_t usage);
+
   USBHIDParser *driver_;
   uint8_t collections_claimed = 0;
   volatile int hid_input_begin_level_ = 0;

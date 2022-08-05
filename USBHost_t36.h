@@ -680,6 +680,8 @@ public:
 	void startTimer(uint32_t microseconds) {hidTimer.start(microseconds);}
 	void stopTimer() {hidTimer.stop();}
 	uint8_t interfaceNumber() { return bInterfaceNumber;}
+	const uint8_t * getHIDReportDescriptor() {return descriptor;}
+	uint16_t getHIDReportDescriptorSize() { return descsize;}
 protected:
 	enum { TOPUSAGE_LIST_LEN = 4 };
 	enum { USAGE_LIST_LEN = 24 };

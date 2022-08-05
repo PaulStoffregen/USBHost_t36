@@ -122,6 +122,7 @@ void loop()
         if (psz && *psz) Serial.printf("  product: % s\n", psz);
         psz = drivers[i]->serialNumber();
         if (psz && *psz) Serial.printf("  Serial: % s\n", psz);
+
       }
     }
   }
