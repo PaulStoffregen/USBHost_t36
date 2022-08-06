@@ -32,18 +32,17 @@ void HIDDumpController::init() {
 
 hidclaim_t HIDDumpController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage) {
   // only claim RAWHID devices currently: 16c0:0486
-  Serial.printf("HIDDumpController Claim: %x:%x usage: %x", dev->idVendor, dev->idProduct, topusage);
+  Serial.printf("HIDDumpController(%p) Claim: %x:%x usage: %x", this, dev->idVendor, dev->idProduct, topusage);
   if (mydevice != NULL && dev != mydevice) {
     Serial.println("- NO (Device)");
     return CLAIM_NO;
   }
   if (usage_ && (usage_ != topusage)) {
-    Serial.printf(" - NO (Usage: %x)\n");
+    Serial.printf(" - NO (Usage: %x)\n", usage_);
     return CLAIM_NO;  // Only claim one
   }
 
-  // Lets try to dump the whole HID Report descriptor only the first time
-  if (!mydevice) dumpHIDReportDescriptor(driver);
+  bool dump_hid_info = (usage_ == 0);
 
 
   mydevice = dev;
@@ -51,6 +50,9 @@ hidclaim_t HIDDumpController::claim_collection(USBHIDParser *driver, Device_t *d
   usage_ = topusage;
   driver_ = driver;  // remember the driver.
   Serial.println(" - Yes");
+
+  // Lets try to dump the whole HID Report descriptor only the first time
+  if (dump_hid_info) dumpHIDReportDescriptor(driver);
   return CLAIM_INTERFACE;  // We want
 }
 
@@ -454,7 +456,7 @@ void HIDDumpController::dumpHIDReportDescriptor(USBHIDParser *phidp) {
   uint16_t usage[USAGE_LIST_LEN] = { 0, 0 };
   uint8_t usage_count = 0;
   uint32_t topusage;
-  Serial.printf("HID Report Descritor (%p) size: %u\n", p, report_size);
+  Serial.printf("\nHID Report Descriptor (%p) size: %u\n", p, report_size);
   while (p < pend) {
     uint8_t tag = *p;
     for (uint8_t i = 0; i < collection_level; i++) Serial.print("  ");
@@ -564,16 +566,18 @@ void HIDDumpController::dumpHIDReportDescriptor(USBHIDParser *phidp) {
         break;
 
       case 0x80:  // Input
-        Serial.printf("\t// Input(%x)", val);
+        Serial.printf("\t// Input(%x)\t// (", val);
+        print_input_output_feature_bits(val);
         reset_local = true;
         break;
       case 0x90:  // Output
-                  // TODO.....
-        Serial.printf("\t// Output(%x)", val);
+        Serial.printf("\t// Output(%x)\t// (", val);
+        print_input_output_feature_bits(val);
         reset_local = true;
         break;
       case 0xB0:  // Feature
-        Serial.printf("\t// Feature(%x)", val);
+        Serial.printf("\t// Feature(%x)\t// (", val);
+        print_input_output_feature_bits(val);
         reset_local = true;
         break;
 
@@ -598,4 +602,17 @@ void HIDDumpController::dumpHIDReportDescriptor(USBHIDParser *phidp) {
 
     Serial.println();
   }
+}
+
+void HIDDumpController::print_input_output_feature_bits(uint8_t val) {
+  Serial.print((val & 0x01)? "Constant" : "Data");  
+  Serial.print((val & 0x02)? ", Variable" : ", Array");  
+  Serial.print((val & 0x04)? ", Relative" : ", Absolute");  
+  if (val & 0x08) Serial.print(", Wrap");
+  if (val & 0x10) Serial.print(", Non Linear");
+  if (val & 0x20) Serial.print(", No Preferred");
+  if (val & 0x40) Serial.print(", Null State");
+  if (val & 0x80) Serial.print(", Volatile");
+  if (val & 0x100) Serial.print(", Buffered Bytes");
+  Serial.print(")");  
 }

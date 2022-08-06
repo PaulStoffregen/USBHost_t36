@@ -24,6 +24,7 @@ private:
 
   void dumpHIDReportDescriptor(USBHIDParser *phidp);
   void printUsageInfo(uint8_t usage_page, uint16_t usage);
+  void print_input_output_feature_bits(uint8_t val);
 
   USBHIDParser *driver_;
   uint8_t collections_claimed = 0;
