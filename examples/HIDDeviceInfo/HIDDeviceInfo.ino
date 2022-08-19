@@ -38,11 +38,11 @@ USBHIDParser hid3(myusb);
 USBHIDParser hid4(myusb);
 USBHIDParser hid5(myusb);
 
-HIDDumpController hdc1(myusb);
-HIDDumpController hdc2(myusb);
-HIDDumpController hdc3(myusb);
-HIDDumpController hdc4(myusb);
-HIDDumpController hdc5(myusb);
+HIDDumpController hdc1(myusb, 1);
+HIDDumpController hdc2(myusb, 2);
+HIDDumpController hdc3(myusb, 3);
+HIDDumpController hdc4(myusb, 4);
+HIDDumpController hdc5(myusb, 5);
 
 USBDriver *drivers[] = {&hub1, &hub2, &hid1, &hid2, &hid3, &hid4, &hid5};
 #define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[0]))

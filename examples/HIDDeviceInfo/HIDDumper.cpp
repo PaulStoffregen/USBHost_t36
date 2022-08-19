@@ -32,7 +32,7 @@ void HIDDumpController::init() {
 
 hidclaim_t HIDDumpController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage) {
   // only claim RAWHID devices currently: 16c0:0486
-  Serial.printf("HIDDumpController(%p) Claim: %x:%x usage: %x", this, dev->idVendor, dev->idProduct, topusage);
+  Serial.printf("HIDDumpController(%u : %p : %p) Claim: %x:%x usage: %x", index_, this, driver, dev->idVendor, dev->idProduct, topusage);
   if (mydevice != NULL && dev != mydevice) {
     Serial.println("- NO (Device)");
     return CLAIM_NO;
@@ -63,7 +63,7 @@ void HIDDumpController::disconnect_collection(Device_t *dev) {
   }
 }
 
-void dump_hexbytes(const void *ptr, uint32_t len) {
+void dump_hexbytes(const void *ptr, uint32_t len, uint32_t indent) {
   if (ptr == NULL || len == 0) return;
   uint32_t count = 0;
   //  if (len > 64) len = 64; // don't go off deep end...
@@ -72,8 +72,10 @@ void dump_hexbytes(const void *ptr, uint32_t len) {
     if (*p < 16) Serial.print('0');
     Serial.print(*p++, HEX);
     count++;
-    if (((count & 0x1f) == 0) && len) Serial.print("\n");
-    else
+    if (((count & 0x1f) == 0) && len) {
+      Serial.print("\n");
+      for (uint32_t i = 0; i < indent; i++) Serial.print(" ");
+    } else
       Serial.print(' ');
   }
   Serial.println();
@@ -85,10 +87,10 @@ bool HIDDumpController::hid_process_in_data(const Transfer_t *transfer) {
   count_usages_ = index_usages_;  // remember how many we output for this one
   index_usages_ = 0;              // reset the index back to zero
 
-  Serial.printf("HID(%x)", usage_);
+  Serial.printf("HID(%u : %x)", index_, usage_);
   if (show_raw_data) {
     Serial.print(": ");
-    dump_hexbytes(transfer->buffer, transfer->length);
+    dump_hexbytes(transfer->buffer, transfer->length, 16);
   } else
     Serial.println();
 
