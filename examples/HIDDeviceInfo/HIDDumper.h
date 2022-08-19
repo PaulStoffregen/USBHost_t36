@@ -32,12 +32,16 @@ private:
   uint32_t fixed_usage_;
   uint32_t usage_ = 0;
   // Track changing fields. 
-  const static int MAX_CHANGE_TRACKED = 512;
+   const static int MAX_CHANGE_TRACKED = 512;
   uint32_t usages_[MAX_CHANGE_TRACKED];
   int32_t values_[MAX_CHANGE_TRACKED];
   int count_usages_ = 0;
   int index_usages_ = 0;
-  
+  // experiment to see if we can receive data from Feature reports.
+  enum {MAX_FEATURE_REPORTS=20};
+  uint8_t feature_report_ids_[MAX_FEATURE_REPORTS];
+  uint8_t cnt_feature_reports_ = 0;
+
   // See if we can contribute transfers
   Transfer_t mytransfers[2] __attribute__ ((aligned(32)));
 };

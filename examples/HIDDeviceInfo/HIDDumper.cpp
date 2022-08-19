@@ -456,6 +456,8 @@ void HIDDumpController::dumpHIDReportDescriptor(USBHIDParser *phidp) {
   uint16_t usage[USAGE_LIST_LEN] = { 0, 0 };
   uint8_t usage_count = 0;
   uint32_t topusage;
+  cnt_feature_reports_ = 0;
+  uint8_t last_report_id = 0;
   Serial.printf("\nHID Report Descriptor (%p) size: %u\n", p, report_size);
   while (p < pend) {
     uint8_t tag = *p;
@@ -537,6 +539,7 @@ void HIDDumpController::dumpHIDReportDescriptor(USBHIDParser *phidp) {
         break;
       case 0x84:  // Report ID (global)
         Serial.printf("\t// Report ID(%x)", val);
+        last_report_id = val;
         break;
       case 0x18:  // Usage Minimum (local)
         usage[0] = val;
@@ -578,6 +581,9 @@ void HIDDumpController::dumpHIDReportDescriptor(USBHIDParser *phidp) {
       case 0xB0:  // Feature
         Serial.printf("\t// Feature(%x)\t// (", val);
         print_input_output_feature_bits(val);
+        if (cnt_feature_reports_ < MAX_FEATURE_REPORTS) {
+          feature_report_ids_[cnt_feature_reports_++] = last_report_id;
+        }
         reset_local = true;
         break;
 

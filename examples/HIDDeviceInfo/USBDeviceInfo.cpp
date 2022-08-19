@@ -84,6 +84,14 @@ bool USBDeviceInfo::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 	}
 
 	println(" bInterfaceProtocol = ", descriptors[7]);
+  if (descriptors[5] == 3) {
+    switch (descriptors[7]) {
+      case 0: Serial.println("    None"); break;
+      case 1: Serial.println("    Keyboard"); break;
+      case 2: Serial.println("    Mouse"); break;
+    }
+    
+  }  
 
 	//if (numendpoint < 1 || numendpoint > 2) return false;
 
