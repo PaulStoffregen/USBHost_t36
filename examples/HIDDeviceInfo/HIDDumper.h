@@ -5,7 +5,7 @@
 
 class HIDDumpController : public USBHIDInput {
 public:
-  HIDDumpController(USBHost &host, uint32_t usage = 0) : fixed_usage_(usage) { init(); }
+  HIDDumpController(USBHost &host, uint32_t index = 0, uint32_t usage = 0) : index_(index), fixed_usage_(usage) { init(); }
   uint32_t usage(void) {return usage_;}
   static bool show_raw_data;
   static bool show_formated_data;
@@ -21,18 +21,29 @@ protected:
   virtual void disconnect_collection(Device_t *dev);
 private:
   void init();
+
+  void dumpHIDReportDescriptor(USBHIDParser *phidp);
+  void printUsageInfo(uint8_t usage_page, uint16_t usage);
+  void print_input_output_feature_bits(uint8_t val);
+
   USBHIDParser *driver_;
   uint8_t collections_claimed = 0;
   volatile int hid_input_begin_level_ = 0;
+  uint32_t index_;
   uint32_t fixed_usage_;
+  
   uint32_t usage_ = 0;
   // Track changing fields. 
-  const static int MAX_CHANGE_TRACKED = 512;
+   const static int MAX_CHANGE_TRACKED = 512;
   uint32_t usages_[MAX_CHANGE_TRACKED];
   int32_t values_[MAX_CHANGE_TRACKED];
   int count_usages_ = 0;
   int index_usages_ = 0;
-  
+  // experiment to see if we can receive data from Feature reports.
+  enum {MAX_FEATURE_REPORTS=20};
+  uint8_t feature_report_ids_[MAX_FEATURE_REPORTS];
+  uint8_t cnt_feature_reports_ = 0;
+
   // See if we can contribute transfers
   Transfer_t mytransfers[2] __attribute__ ((aligned(32)));
 };

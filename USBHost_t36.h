@@ -680,6 +680,8 @@ public:
 	void startTimer(uint32_t microseconds) {hidTimer.start(microseconds);}
 	void stopTimer() {hidTimer.stop();}
 	uint8_t interfaceNumber() { return bInterfaceNumber;}
+	const uint8_t * getHIDReportDescriptor() {return descriptor;}
+	uint16_t getHIDReportDescriptorSize() { return descsize;}
 protected:
 	enum { TOPUSAGE_LIST_LEN = 4 };
 	enum { USAGE_LIST_LEN = 24 };
@@ -776,7 +778,8 @@ public:
 	void	 forceBootProtocol();
 	enum {MAX_KEYS_DOWN=4};
 
-
+	//method to allow HID controller to check if VID/PID should be claimed or not
+	static bool processUsingHID(uint16_t vid, uint16_t pid);
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);

@@ -38,11 +38,11 @@ USBHIDParser hid3(myusb);
 USBHIDParser hid4(myusb);
 USBHIDParser hid5(myusb);
 
-HIDDumpController hdc1(myusb);
-HIDDumpController hdc2(myusb);
-HIDDumpController hdc3(myusb);
-HIDDumpController hdc4(myusb);
-HIDDumpController hdc5(myusb);
+HIDDumpController hdc1(myusb, 1);
+HIDDumpController hdc2(myusb, 2);
+HIDDumpController hdc3(myusb, 3);
+HIDDumpController hdc4(myusb, 4);
+HIDDumpController hdc5(myusb, 5);
 
 USBDriver *drivers[] = {&hub1, &hub2, &hid1, &hid2, &hid3, &hid4, &hid5};
 #define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[0]))
@@ -110,18 +110,19 @@ void loop()
   for (uint8_t i = 0; i < CNT_DEVICES; i++) {
     if (*drivers[i] != driver_active[i]) {
       if (driver_active[i]) {
-        Serial.printf("*** Device % s - disconnected ***\n", driver_names[i]);
+        Serial.printf("*** Device %s - disconnected ***\n", driver_names[i]);
         driver_active[i] = false;
       } else {
-        Serial.printf("*** Device % s % x: % x - connected ***\n", driver_names[i], drivers[i]->idVendor(), drivers[i]->idProduct());
+        Serial.printf("*** Device %s %x:%x - connected ***\n", driver_names[i], drivers[i]->idVendor(), drivers[i]->idProduct());
         driver_active[i] = true;
 
         const uint8_t *psz = drivers[i]->manufacturer();
-        if (psz && *psz) Serial.printf("  manufacturer: % s\n", psz);
+        if (psz && *psz) Serial.printf("  manufacturer: %s\n", psz);
         psz = drivers[i]->product();
-        if (psz && *psz) Serial.printf("  product: % s\n", psz);
+        if (psz && *psz) Serial.printf("  product: %s\n", psz);
         psz = drivers[i]->serialNumber();
-        if (psz && *psz) Serial.printf("  Serial: % s\n", psz);
+        if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
+
       }
     }
   }
@@ -129,18 +130,18 @@ void loop()
   for (uint8_t i = 0; i < CNT_HIDDEVICES; i++) {
     if (*hiddrivers[i] != hid_driver_active[i]) {
       if (hid_driver_active[i]) {
-        Serial.printf("*** HID Device % s - disconnected ***\n", hid_driver_names[i]);
+        Serial.printf("*** HID Device %s - disconnected ***\n", hid_driver_names[i]);
         hid_driver_active[i] = false;
       } else {
-        Serial.printf("*** HID Device % s % x: % x - connected ***\n", hid_driver_names[i], hiddrivers[i]->idVendor(), hiddrivers[i]->idProduct());
+        Serial.printf("*** HID Device %s %x: %x - connected ***\n", hid_driver_names[i], hiddrivers[i]->idVendor(), hiddrivers[i]->idProduct());
         hid_driver_active[i] = true;
 
         const uint8_t *psz = hiddrivers[i]->manufacturer();
-        if (psz && *psz) Serial.printf("  manufacturer: % s\n", psz);
+        if (psz && *psz) Serial.printf("  manufacturer: %s\n", psz);
         psz = hiddrivers[i]->product();
-        if (psz && *psz) Serial.printf("  product: % s\n", psz);
+        if (psz && *psz) Serial.printf("  product: %s\n", psz);
         psz = hiddrivers[i]->serialNumber();
-        if (psz && *psz) Serial.printf("  Serial: % s\n", psz);
+        if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
       }
     }
   }

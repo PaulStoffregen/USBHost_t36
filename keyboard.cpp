@@ -39,7 +39,7 @@ typedef struct {
 typedef struct {
 	uint16_t	idVendor;		// vendor id of keyboard
 	uint16_t	idProduct;		// product id - 0 implies all of the ones from vendor; 
-} keyboard_force_boot_protocol_t;	// list of products to force into boot protocol
+} vid_pid_t;	// list of products to force into boot protocol
 
 #ifdef M
 #undef M
@@ -94,13 +94,34 @@ static const keycode_numlock_t keycode_numlock[] = {
 	{M(KEYPAD_PERIOD), 	0x80 | M(KEY_DELETE), '.'}
 };
 
-static const keyboard_force_boot_protocol_t keyboard_forceBootMode[] = {
+//============================================================
+// Items in the list we will try to force into Boot mode.
+//============================================================
+static const vid_pid_t keyboard_forceBootMode[] = {
 	{0x04D9, 0}
+};
+
+//============================================================
+// Items in the list allow HID Parser to claim
+//============================================================
+static const vid_pid_t keyboard_use_hid_mode[] = {
+	{0x046D, 0xC547}
 };
 
 
 #define print   USBHost::print_
 #define println USBHost::println_
+
+
+bool KeyboardController::processUsingHID(uint16_t vid, uint16_t pid)
+{
+	for (uint8_t i = 0; i < (sizeof(keyboard_use_hid_mode) / sizeof(keyboard_use_hid_mode[0])); i++) {
+		if (keyboard_use_hid_mode[i].idVendor == vid) {
+			if ((keyboard_use_hid_mode[i].idProduct == 0 ) || (keyboard_use_hid_mode[i].idProduct == pid)) return true;
+		}
+	}
+	return false;
+}
 
 
 
@@ -145,6 +166,10 @@ bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descripto
 	if ((size < 8) || (size > 64)) {
 		return false; // Keyboard Boot Protocol is 8 bytes, but maybe others have longer... 
 	}
+
+	// If this vid/pid is set to use HID, then bail
+	if (processUsingHID(dev->idVendor, dev->idProduct))  return false;
+
 #ifdef USBHS_KEYBOARD_INTERVAL 
 	uint32_t interval = USBHS_KEYBOARD_INTERVAL;
 #else
