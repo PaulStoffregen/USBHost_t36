@@ -60,8 +60,10 @@ bool USBHIDParser::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 	println(" bInterfaceSubClass = ", descriptors[6]);
 	println(" bInterfaceProtocol = ", descriptors[7]);
 	// do not claim boot protocol keyboards
-	if (descriptors[6] == 1 && descriptors[7] == 1) return false;
-
+	if (descriptors[6] == 1 && descriptors[7] == 1) {
+		if (!KeyboardController::processUsingHID(dev->idVendor, dev->idProduct))
+			return false;
+	}
 	print("HID Parser Claim: ");
 	print_hexbytes(descriptors, len);
 

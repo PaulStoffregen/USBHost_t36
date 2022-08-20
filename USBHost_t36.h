@@ -778,7 +778,8 @@ public:
 	void	 forceBootProtocol();
 	enum {MAX_KEYS_DOWN=4};
 
-
+	//method to allow HID controller to check if VID/PID should be claimed or not
+	static bool processUsingHID(uint16_t vid, uint16_t pid);
 protected:
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);

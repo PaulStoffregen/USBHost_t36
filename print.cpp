@@ -159,12 +159,27 @@ void USBHost::print_qh_list(const Pipe_t *list)
 		return;
 	}
 	const Pipe_t *node = list;
+	uint8_t max_print = 32; // max number of items..
 	while (1) {
 		USBHDBGSerial.print((uint32_t)node, HEX);
-		node = (const Pipe_t *)(node->qh.horizontal_link & 0xFFFFFFE0);
-		if (!node) break;
-		if (node == list) {
-			USBHDBGSerial.print(" (loops)");
+		const Pipe_t *next_node = (const Pipe_t *)(node->qh.horizontal_link & 0xFFFFFFE0);
+		if (!next_node) break;
+		// Lets check for loops
+		const Pipe_t *nt = list;
+		while (nt != node) {
+			if (nt == next_node) break;
+			nt = (const Pipe_t *)(nt->qh.horizontal_link & 0xFFFFFFE0);
+		}
+
+		if (nt != node) {
+			USBHDBGSerial.print(" -> (loops) ");
+			USBHDBGSerial.print((uint32_t)next_node, HEX);
+			break;
+		}	
+		node = next_node;
+
+		if (!max_print--) {
+			USBHDBGSerial.print(" (Probable Loop)");
 			break;
 		}
 		USBHDBGSerial.print(" -> ");
