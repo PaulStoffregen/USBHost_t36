@@ -33,6 +33,7 @@ void HIDDumpController::init() {
 hidclaim_t HIDDumpController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage) {
   // only claim RAWHID devices currently: 16c0:0486
   Serial.printf("HIDDumpController(%u : %p : %p) Claim: %x:%x usage: %x", index_, this, driver, dev->idVendor, dev->idProduct, topusage);
+  Serial.printf(" SubClass: %x Protcol: %x",  driver->interfaceSubClass(), driver->interfaceProtocol());
   if (mydevice != NULL && dev != mydevice) {
     Serial.println("- NO (Device)");
     return CLAIM_NO;
@@ -51,8 +52,16 @@ hidclaim_t HIDDumpController::claim_collection(USBHIDParser *driver, Device_t *d
   driver_ = driver;  // remember the driver.
   Serial.println(" - Yes");
 
+  // if Boot Mouse - then set idle
+  if ((driver->interfaceSubClass() == 1) && (driver->interfaceProtocol() == 1)) {
+    USBHDBGSerial.printf(">> Boot Keyboard - Send SET_IDLE <<\n");
+    driver->sendControlPacket(0x21, 10, 0, 0, 0, nullptr); //10=SET_IDLE
+
+  }
+
   // Lets try to dump the whole HID Report descriptor only the first time
   if (dump_hid_info) dumpHIDReportDescriptor(driver);
+  
   return CLAIM_INTERFACE;  // We want
 }
 
@@ -386,11 +395,11 @@ void HIDDumpController::printUsageInfo(uint8_t usage_page, uint16_t usage) {
         case 0xE0: Serial.print("(Left Control)"); break;
         case 0xE1: Serial.print("(Left Shift)"); break;
         case 0xE2: Serial.print("(Left Alt)"); break;
-        case 0xE3: Serial.print("(Left)"); break;
+        case 0xE3: Serial.print("(Left GUI)"); break;
         case 0xE4: Serial.print("(Right Control)"); break;
         case 0xE5: Serial.print("(Right Shift)"); break;
         case 0xE6: Serial.print("(Right Alt)"); break;
-        case 0xE7: Serial.print("(Right)"); break;
+        case 0xE7: Serial.print("(Right GUI)"); break;
         default:
           Serial.printf("(Keycode %u)", usage);
           break;
