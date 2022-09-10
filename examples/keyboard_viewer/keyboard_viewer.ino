@@ -3,8 +3,10 @@
 // This sketch as well as all others in this library will only work with the
 // Teensy 3.6 and the T4.x boards.
 //
-// The default display is the ILI9341, which uses the ILI9341_t3n library,
-// which is located at:
+// The default display is the ILI9341, which uses the ILI9341_t3 library,
+// which installs with Teensyduino.  Alterntively you could use
+// the ILI9341_t3n library which supports different SPI busses and the like
+// It is located at:
 //    ili9341_t3n that can be located: https://github.com/KurtE/ILI9341_t3n
 //
 // Alternate display ST7735 or ST7789 using the ST7735_t3 library which comes
@@ -17,7 +19,14 @@
 //
 // This example is in the public domain
 //=============================================================================
+
+// Define optional drivers
 //#define USE_ST77XX // define this if you wish to use one of these displays.
+//#define USE_ILI9341_t3n
+
+// optional SPI pins... 
+//#define USE_KURTE_MMOD2
+
 
 #include "USBHost_t36.h"
 
@@ -32,21 +41,25 @@
 #define RED ST77XX_RED
 #define CENTER ST7789_t3::CENTER
 #else
+#ifdef USE_ILI9341_t3n
 #include <ILI9341_t3n.h>
 #include <ili9341_t3n_font_Arial.h>
+#define CENTER ILI9341_t3n::CENTER
+#else
+#include <ILI9341_t3.h>
+#include <font_Arial.h>
+#endif
 #define BLACK ILI9341_BLACK
 #define WHITE ILI9341_WHITE
 #define YELLOW ILI9341_YELLOW
 #define GREEN ILI9341_GREEN
 #define RED ILI9341_RED
-#define CENTER ILI9341_t3n::CENTER
 
 #endif
 
 //=============================================================================
 // Connection configuration of ILI9341 LCD TFT
 //=============================================================================
-#define USE_KURTE_MMOD2
 #ifdef USE_KURTE_MMOD2
 #define TFT_RST 31
 #define TFT_DC 9
@@ -58,14 +71,11 @@
 #endif
 
 #ifdef USE_ST77XX
-// define which one you are using
-//DMAMEM uint16_t frame_buffer[ILI9341_TFTWIDTH * ILI9341_TFTHEIGHT];
-// Note there are other options, like defining MOSI, SCK...
-//ST7735_t3 tft = ST7735_t3(cs, dc, rst);
-// For 1.54" TFT with ST7789
 ST7789_t3 tft = ST7789_t3(TFT_CS, TFT_DC, TFT_RST);
-#else
+#elif defined(USE_ILI9341_t3n)
 ILI9341_t3n tft = ILI9341_t3n(TFT_CS, TFT_DC, TFT_RST);
+#else
+ILI9341_t3 tft = ILI9341_t3(TFT_CS, TFT_DC, TFT_RST);
 #endif
 //=============================================================================
 // USB Host Ojbects
@@ -143,8 +153,6 @@ void setup() {
 #else
   tft.begin();
 #endif
-  // explicitly set the frame buffer
-  //  tft.setFrameBuffer(frame_buffer);
   delay(100);
   tft.setRotation(3);  // 180
   delay(100);
@@ -152,7 +160,7 @@ void setup() {
   tft.fillScreen(BLACK);
   tft.setTextColor(YELLOW);
   tft.setTextSize(2);
-  tft.println("Waiting for Device...");
+  TFTDrawTextCentered("Waiting for Device...");
 }
 
 
@@ -164,6 +172,21 @@ void loop() {
 
   // Update the display with
   UpdateActiveDeviceInfo();
+}
+
+//=============================================================================
+// TFTDrawTextCentered
+//=============================================================================
+void TFTDrawTextCentered(const char *psz) {
+#ifdef CENTER
+  tft.setCursor(CENTER, CENTER);
+#else
+  uint16_t x = (tft.width() - tft.measureTextWidth(psz)) / 2;
+  uint16_t y = (tft.height() - tft.measureTextHeight(psz)) / 2;
+  tft.setCursor(x, y);
+#endif  
+  tft.print(psz);
+  
 }
 
 //=============================================================================
@@ -192,7 +215,6 @@ void UpdateActiveDeviceInfo() {
         if (psz && *psz) tft.printf("  product: %s\n", psz);
         psz = drivers[i]->serialNumber();
         if (psz && *psz) tft.printf("  Serial: %s\n", psz);
-        tft.updateScreen();  // update the screen now
       }
     }
   }
@@ -206,9 +228,7 @@ void UpdateActiveDeviceInfo() {
           tft.fillScreen(BLACK);
           tft.setTextColor(YELLOW);
           tft.setTextSize(2);
-          tft.setCursor(CENTER, CENTER);
-          tft.println("Waiting for Device...");
-          tft.updateScreen();  // update the screen now
+          TFTDrawTextCentered("Waiting for Device...");
         }
 
       } else {
@@ -229,7 +249,6 @@ void UpdateActiveDeviceInfo() {
         if (psz && *psz) tft.printf("  Serial: %s\n", psz);
 
         DrawKeyboard();
-        tft.updateScreen();  // update the screen now
       }
     }
   }
@@ -256,7 +275,6 @@ void UpdateActiveDeviceInfo() {
         if (psz && *psz) tft.printf("  product: %s\n", psz);
         psz = bthiddrivers[i]->serialNumber();
         if (psz && *psz) tft.printf("  Serial: %s\n", psz);
-        tft.updateScreen();  // update the screen now
       }
     }
   }
@@ -423,13 +441,17 @@ void DrawKeyboard() {
 void ShowLastKeyChange(const char *sz, bool press) {
   tft.setTextColor(press ? YELLOW : RED, BLACK);
   tft.setCursor(COL_LAST_MSG, ROW_LAST_MSG);
+  #ifdef _ILI9341_t3H_
+  tft.fillRect(COL_LAST_MSG, ROW_LAST_MSG, 320, ROW_SIZE, BLACK);
+  tft.print(sz);
+  #else
   tft.print(sz);
   uint16_t cursor_x = tft.getCursorX();
-  
   if (cursor_x < cursor_last_key_end) {
     tft.fillRect(cursor_x, ROW_LAST_MSG, cursor_last_key_end - cursor_x + 1, ROW_SIZE, BLACK);
   }
   cursor_last_key_end = cursor_x;
+  #endif
 }
 
 
