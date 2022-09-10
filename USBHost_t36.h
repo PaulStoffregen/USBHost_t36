@@ -677,13 +677,15 @@ public:
 	// 
 	uint16_t inSize(void) {return in_size;}
 	uint16_t outSize(void) {return out_size;}
+	uint8_t interfaceSubClass(void) { return bInterfaceSubClass; }
+	uint8_t interfaceProtocol(void) { return bInterfaceProtocol; }
 	void startTimer(uint32_t microseconds) {hidTimer.start(microseconds);}
 	void stopTimer() {hidTimer.stop();}
 	uint8_t interfaceNumber() { return bInterfaceNumber;}
 	const uint8_t * getHIDReportDescriptor() {return descriptor;}
 	uint16_t getHIDReportDescriptorSize() { return descsize;}
 protected:
-	enum { TOPUSAGE_LIST_LEN = 4 };
+	enum { TOPUSAGE_LIST_LEN = 6 };
 	enum { USAGE_LIST_LEN = 24 };
 	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
 	virtual void control(const Transfer_t *transfer);
@@ -710,6 +712,8 @@ private:
 	USBHIDInput *topusage_drivers[TOPUSAGE_LIST_LEN];
 	uint16_t in_size;
 	uint16_t out_size;
+	uint8_t bInterfaceSubClass;
+	uint8_t bInterfaceProtocol;
 	setup_t setup;
 	uint8_t descriptor[800];
 	uint8_t report[64];
@@ -729,7 +733,7 @@ private:
 
 //--------------------------------------------------------------------------
 
-class KeyboardController : public USBDriver , public USBHIDInput, public BTHIDInput {
+class KeyboardController : public USBHIDInput, public BTHIDInput {
 public:
 typedef union {
    struct {
@@ -753,11 +757,11 @@ public:
 	const uint8_t *product();
 	const uint8_t *serialNumber();
 
-	operator bool() { return ((device != nullptr) || (btdevice != nullptr)); }
+	operator bool() { return ((btdevice != nullptr) || (mydevice != nullptr)); }
 	// Main boot keyboard functions. 
 	uint16_t getKey() { return keyCode; }
-	uint8_t  getModifiers() { return modifiers; }
-	uint8_t  getOemKey() { return keyOEM; }
+	uint8_t  getModifiers() { return modifiers_; }
+	uint8_t  getOemKey() { return keyOEM_; }
 	void     attachPress(void (*f)(int unicode)) { keyPressedFunction = f; }
 	void     attachRelease(void (*f)(int unicode)) { keyReleasedFunction = f; }
 	void     attachRawPress(void (*f)(uint8_t keycode)) { rawKeyPressedFunction = f; }
@@ -778,14 +782,7 @@ public:
 	void	 forceBootProtocol();
 	enum {MAX_KEYS_DOWN=4};
 
-	//method to allow HID controller to check if VID/PID should be claimed or not
-	static bool processUsingHID(uint16_t vid, uint16_t pid);
 protected:
-	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
-	virtual void control(const Transfer_t *transfer);
-	virtual void disconnect();
-	static void callback(const Transfer_t *transfer);
-	void new_data(const Transfer_t *transfer);
 	void init();
 
 	// Bluetooth data
@@ -801,39 +798,131 @@ protected:	// HID functions for extra keyboard data.
 	virtual void hid_input_data(uint32_t usage, int32_t value);
 	virtual void hid_input_end();
 	virtual void disconnect_collection(Device_t *dev);
+	virtual bool hid_process_in_data(const Transfer_t *transfer);
+	void process_boot_keyboard_format(const uint8_t *report, bool process_mod_keys);
+
+#ifdef USBHOST_PRINT_DEBUG
+	static void print_(const Transfer_t *transfer);
+	static void print_(const Transfer_t *first, const Transfer_t *last);
+	static void print_token(uint32_t token);
+	static void print_(const Pipe_t *pipe);
+	static void print_driverlist(const char *name, const USBDriver *driver);
+	static void print_qh_list(const Pipe_t *list);
+	static void print_device_descriptor(const uint8_t *p);
+	static void print_config_descriptor(const uint8_t *p, uint32_t maxlen);
+	static void print_string_descriptor(const char *name, const uint8_t *p);
+	static void print_hexbytes(const void *ptr, uint32_t len);
+	static void print_(const char *s)	{ USBHDBGSerial.print(s); }
+	static void print_(int n)		{ USBHDBGSerial.print(n); }
+	static void print_(unsigned int n)	{ USBHDBGSerial.print(n); }
+	static void print_(long n)		{ USBHDBGSerial.print(n); }
+	static void print_(unsigned long n)	{ USBHDBGSerial.print(n); }
+	static void println_(const char *s)	{ USBHDBGSerial.println(s); }
+	static void println_(int n)		{ USBHDBGSerial.println(n); }
+	static void println_(unsigned int n)	{ USBHDBGSerial.println(n); }
+	static void println_(long n)		{ USBHDBGSerial.println(n); }
+	static void println_(unsigned long n)	{ USBHDBGSerial.println(n); }
+	static void println_()			{ USBHDBGSerial.println(); }
+	static void print_(uint32_t n, uint8_t b) { USBHDBGSerial.print(n, b); }
+	static void println_(uint32_t n, uint8_t b) { USBHDBGSerial.println(n, b); }
+	static void print_(const char *s, int n, uint8_t b = DEC) {
+		USBHDBGSerial.print(s); USBHDBGSerial.print(n, b); }
+	static void print_(const char *s, unsigned int n, uint8_t b = DEC) {
+		USBHDBGSerial.print(s); USBHDBGSerial.print(n, b); }
+	static void print_(const char *s, long n, uint8_t b = DEC) {
+		USBHDBGSerial.print(s); USBHDBGSerial.print(n, b); }
+	static void print_(const char *s, unsigned long n, uint8_t b = DEC) {
+		USBHDBGSerial.print(s); USBHDBGSerial.print(n, b); }
+	static void println_(const char *s, int n, uint8_t b = DEC) {
+		USBHDBGSerial.print(s); USBHDBGSerial.println(n, b); }
+	static void println_(const char *s, unsigned int n, uint8_t b = DEC) {
+		USBHDBGSerial.print(s); USBHDBGSerial.println(n, b); }
+	static void println_(const char *s, long n, uint8_t b = DEC) {
+		USBHDBGSerial.print(s); USBHDBGSerial.println(n, b); }
+	static void println_(const char *s, unsigned long n, uint8_t b = DEC) {
+		USBHDBGSerial.print(s); USBHDBGSerial.println(n, b); }
+	friend class USBDriverTimer; // for access to print & println
+#else
+	static void print_(const Transfer_t *transfer) {}
+	static void print_(const Transfer_t *first, const Transfer_t *last) {}
+	static void print_token(uint32_t token) {}
+	static void print_(const Pipe_t *pipe) {}
+	static void print_driverlist(const char *name, const USBDriver *driver) {}
+	static void print_qh_list(const Pipe_t *list) {}
+	static void print_device_descriptor(const uint8_t *p) {}
+	static void print_config_descriptor(const uint8_t *p, uint32_t maxlen) {}
+	static void print_string_descriptor(const char *name, const uint8_t *p) {}
+	static void print_hexbytes(const void *ptr, uint32_t len) {}
+	static void print_(const char *s) {}
+	static void print_(int n) {}
+	static void print_(unsigned int n) {}
+	static void print_(long n) {}
+	static void print_(unsigned long n) {}
+	static void println_(const char *s) {}
+	static void println_(int n) {}
+	static void println_(unsigned int n) {}
+	static void println_(long n) {}
+	static void println_(unsigned long n) {}
+	static void println_() {}
+	static void print_(uint32_t n, uint8_t b) {}
+	static void println_(uint32_t n, uint8_t b) {}
+	static void print_(const char *s, int n, uint8_t b = DEC) {}
+	static void print_(const char *s, unsigned int n, uint8_t b = DEC) {}
+	static void print_(const char *s, long n, uint8_t b = DEC) {}
+	static void print_(const char *s, unsigned long n, uint8_t b = DEC) {}
+	static void println_(const char *s, int n, uint8_t b = DEC) {}
+	static void println_(const char *s, unsigned int n, uint8_t b = DEC) {}
+	static void println_(const char *s, long n, uint8_t b = DEC) {}
+	static void println_(const char *s, unsigned long n, uint8_t b = DEC) {}
+#endif
 
 private:
 	void update();
 	uint16_t convert_to_unicode(uint32_t mod, uint32_t key);
 	void key_press(uint32_t mod, uint32_t key);
 	void key_release(uint32_t mod, uint32_t key);
+	bool process_hid_keyboard_data(uint32_t usage, int32_t value);
 	void (*keyPressedFunction)(int unicode);
 	void (*keyReleasedFunction)(int unicode);
 	void (*rawKeyPressedFunction)(uint8_t keycode) = nullptr;
 	void (*rawKeyReleasedFunction)(uint8_t keycode) = nullptr;
 	Pipe_t *datapipe;
 	setup_t setup;
-	uint8_t report[8];
+	// Need two sets of structures to properly support some keyboards
+	// that do N key roll-over.  They use the Boot report up to 
+	// 6 keys down and then they go to other format for additional
+	// keys. 
+	// Boot format
+	uint8_t report_[8];
+	uint8_t prev_report_[8];
+
+	// N Key reollover
+	uint8_t key_states_[16]; 
+
 	uint16_t keyCode;
-	uint8_t modifiers;
-	uint8_t keyOEM;
-	uint8_t prev_report[8];
+	uint8_t modifiers_ = 0;
+	uint8_t keyOEM_;
+
 	KBDLeds_t leds_ = {0};
-	Pipe_t mypipes[2] __attribute__ ((aligned(32)));
-	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
-	strbuf_t mystring_bufs[1];
 
 	// Added to process secondary HID data. 
 	void (*extrasKeyPressedFunction)(uint32_t top, uint16_t code);
 	void (*extrasKeyReleasedFunction)(uint32_t top, uint16_t code);
 	uint32_t topusage_ = 0;					// What top report am I processing?
+	uint32_t topusage_type_ = 0;
+	uint32_t topusage_index_ = 0;	
 	uint8_t collections_claimed_ = 0;
+	bool keyboard_uses_boot_format_  = false;
 	volatile bool hid_input_begin_ = false;
 	volatile bool hid_input_data_ = false; 	// did we receive any valid data with report?
+
 	uint8_t count_keys_down_ = 0;
 	uint16_t keys_down[MAX_KEYS_DOWN];
 	bool 	force_boot_protocol;  // User or VID/PID said force boot protocol?
-	bool control_queued;
+	bool control_queued = false;
+	// keep back pointer for the three different op levels we claim
+	USBHIDParser *driver_[3] = {nullptr, nullptr, nullptr};
+	static bool s_forceHIDMode;
 };
 
 
