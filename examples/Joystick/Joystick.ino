@@ -9,7 +9,10 @@ USBHub hub1(myusb);
 USBHIDParser hid1(myusb);
 
 #define COUNT_JOYSTICKS 4
-JoystickController joysticks[COUNT_JOYSTICKS](myusb);
+JoystickController joysticks[COUNT_JOYSTICKS] = {
+  JoystickController(myusb), JoystickController(myusb),
+  JoystickController(myusb), JoystickController(myusb)
+};
 int user_axis[64];
 uint32_t buttons_prev = 0;
 
