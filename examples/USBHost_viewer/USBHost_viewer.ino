@@ -79,18 +79,16 @@ RawHIDController rawhid2(myusb);
 
 // Lets only include in the lists The most top level type devices we wish to show information for.
 //USBDriver *drivers[] = {&keyboard1, &keyboard2, &joystick};
-USBDriver *drivers[] = {&keyboard1, &keyboard2, &joystick, &bluet, &hid1, &hid2};
+USBDriver *drivers[] = {&joystick, &bluet, &hid1, &hid2};
 
 #define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[0]))
-//const char * driver_names[CNT_DEVICES] = {"KB1", "KB2", "Joystick(device)"};
-const char * driver_names[CNT_DEVICES] = {"KB1", "KB2", "Joystick(device)", "Bluet", "HID1" , "HID2"};
-//bool driver_active[CNT_DEVICES] = {false, false, false};
-bool driver_active[CNT_DEVICES] = {false, false, false, false, false};
+const char * driver_names[CNT_DEVICES] = {"Joystick(device)", "Bluet", "HID1" , "HID2"};
+bool driver_active[CNT_DEVICES] = {false, false, false, false};
 
 // Lets also look at HID Input devices
-USBHIDInput *hiddrivers[] = {&tablet, &joystick, &mouse, &rawhid2};
+USBHIDInput *hiddrivers[] = {&keyboard1, &keyboard2, &tablet, &joystick, &mouse, &rawhid2};
 #define CNT_HIDDEVICES (sizeof(hiddrivers)/sizeof(hiddrivers[0]))
-const char * hid_driver_names[CNT_HIDDEVICES] = {"tablet", "joystick", "mouse", "RawHid2"};
+const char * hid_driver_names[CNT_HIDDEVICES] = {"KB1", "KB2", "tablet", "joystick", "mouse", "RawHid2"};
 
 bool hid_driver_active[CNT_HIDDEVICES] = {false, false, false, false};
 

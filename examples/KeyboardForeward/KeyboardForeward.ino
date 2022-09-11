@@ -24,13 +24,15 @@ uint8_t keyboard_last_leds = 0;
 
 void setup()
 {
-  myusb.begin();
 #ifdef SHOW_KEYBOARD_DATA
   while (!Serial) ; // wait for Arduino Serial Monitor
-  Serial.println("\n\nUSB Host Testing");
+  Serial.println("\n\nUSB Host Keyboard forward and Testing");
   Serial.println(sizeof(USBHub), DEC);
+#endif
+  myusb.begin();
 
   // Only needed to display...
+#ifdef SHOW_KEYBOARD_DATA
   keyboard1.attachPress(OnPress);
 #endif
   keyboard1.attachRawPress(OnRawPress);
@@ -132,10 +134,17 @@ void OnRawRelease(uint8_t keycode) {
 // Device and Keyboard Output To Serial objects...
 //=============================================================
 #ifdef SHOW_KEYBOARD_DATA
-USBDriver *drivers[] = {&hub1, &keyboard1, &hid1, &hid2};
+USBDriver *drivers[] = {&hub1, &hid1, &hid2};
 #define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[0]))
-const char * driver_names[CNT_DEVICES] = {"Hub1", "KB", "HID1" , "HID2"};
-bool driver_active[CNT_DEVICES] = {false, false, false, false};
+const char * driver_names[CNT_DEVICES] = {"Hub1", "HID1" , "HID2"};
+bool driver_active[CNT_DEVICES] = {false, false, false};
+
+// Lets also look at HID Input devices
+USBHIDInput *hiddrivers[] = { &keyboard1 };
+#define CNT_HIDDEVICES (sizeof(hiddrivers) / sizeof(hiddrivers[0]))
+const char *hid_driver_names[CNT_DEVICES] = { "KB" };
+bool hid_driver_active[CNT_DEVICES] = { false };
+
 #endif
 
 void ShowUpdatedDeviceListInfo()
@@ -157,17 +166,36 @@ void ShowUpdatedDeviceListInfo()
         psz = drivers[i]->serialNumber();
         if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
 
-        // Note: with some keyboards there is an issue that they don't output in boot protocol mode
-        // and may not work.  The above code can try to force the keyboard into boot mode, but there
-        // are issues with doing this blindly with combo devices like wireless keyboard/mouse, which
-        // may cause the mouse to not work.  Note: the above id is in the builtin list of
-        // vendor IDs that are already forced
-        if (drivers[i] == &keyboard1) {
+      }
+    }
+  }
+  for (uint8_t i = 0; i < CNT_HIDDEVICES; i++) {
+    if (*hiddrivers[i] != hid_driver_active[i]) {
+      if (hid_driver_active[i]) {
+        Serial.printf("*** HID Device %s - disconnected ***\n", hid_driver_names[i]);
+        hid_driver_active[i] = false;
+      } else {
+        Serial.printf("*** HID Device %s %x:%x - connected ***\n", hid_driver_names[i], hiddrivers[i]->idVendor(), hiddrivers[i]->idProduct());
+        hid_driver_active[i] = true;
+
+        const uint8_t *psz = hiddrivers[i]->manufacturer();
+        if (psz && *psz) Serial.printf("  manufacturer: %s\n", psz);
+        psz = hiddrivers[i]->product();
+        if (psz && *psz) Serial.printf("  product: %s\n", psz);
+        psz = hiddrivers[i]->serialNumber();
+        if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
+        // Note: with some keyboards there is an issue that they may not output in a format understand
+        // either as in boot format or in a HID format that is recognized.  In that case you
+        // can try forcing the keyboard into boot mode.
+        if (hiddrivers[i] == &keyboard1) {
+          // example Gigabyte uses N key rollover which should now work, but...
+          #if 0
           if (keyboard1.idVendor() == 0x04D9) {
             Serial.println("Gigabyte vendor: force boot protocol");
             // Gigabyte keyboard
             keyboard1.forceBootProtocol();
           }
+          #endif
         }
       }
     }

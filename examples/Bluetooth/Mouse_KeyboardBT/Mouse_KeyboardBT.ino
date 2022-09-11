@@ -20,18 +20,18 @@ MouseController mouse1(myusb);
 
 BluetoothController bluet(myusb);   // version assumes it already was paired
 
-USBDriver *drivers[] = {&hub1, &hub2, &keyboard1, &bluet, &hid1, &hid2, &hid3, &hid4, &hid5};
+USBDriver *drivers[] = {&hub1, &hub2, &bluet, &hid1, &hid2, &hid3, &hid4, &hid5};
 
 #define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[0]))
-const char * driver_names[CNT_DEVICES] = {"Hub1", "Hub2", "KB1", "Bluet", "HID1" , "HID2", "HID3", "HID4", "HID5"};
+const char * driver_names[CNT_DEVICES] = {"Hub1", "Hub2", "Bluet", "HID1" , "HID2", "HID3", "HID4", "HID5"};
 
 bool driver_active[CNT_DEVICES] = {false, false, false, false};
 
 // Lets also look at HID Input devices
-USBHIDInput *hiddrivers[] = {&mouse1};
+USBHIDInput *hiddrivers[] = { &keyboard1, &mouse1};
 
 #define CNT_HIDDEVICES (sizeof(hiddrivers)/sizeof(hiddrivers[0]))
-const char * hid_driver_names[CNT_HIDDEVICES] = {"Mouse1"};
+const char * hid_driver_names[CNT_HIDDEVICES] = {"KB1", "Mouse1"};
 
 bool hid_driver_active[CNT_HIDDEVICES] = {false};
 
