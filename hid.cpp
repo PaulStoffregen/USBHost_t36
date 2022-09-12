@@ -250,7 +250,7 @@ void USBHIDParser::in_data(const Transfer_t *transfer)
 
 void USBHIDParser::out_data(const Transfer_t *transfer)
 {
-	Serial.printf(">>>USBHIDParser::out_data\n");
+	//Serial.printf(">>>USBHIDParser::out_data\n");
 	println("USBHIDParser:out_data called (instance)");
 	// A packet completed. lets mark it as done and call back
 	// to top reports handler.  We unmark our checkmark to
