@@ -35,11 +35,15 @@ void MouseController::init()
 hidclaim_t MouseController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
 {
 	// only claim Desktop/Mouse
+	//USBHDBGSerial.printf("MouseController::claim_collection(%p) Driver:%p(%u %u) Dev:%p Top:%x\n", this, driver, 
+	//	driver->interfaceSubClass(), driver->interfaceProtocol(), dev, topusage);
+
 	if ((topusage != 0x10002) && (topusage != 0x10001)) return CLAIM_NO;
 	// only claim from one physical device
 	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
 	mydevice = dev;
 	collections_claimed++;
+	//USBHDBGSerial.printf("\tMouseController claim collection\n");
 	return CLAIM_REPORT;
 }
 

@@ -396,6 +396,8 @@ bool JoystickController::transmitPS3MotionUserFeedbackMsg() {
 
 hidclaim_t JoystickController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
 {
+	//USBHDBGSerial.printf("JoystickController::claim_collection(%p) Driver:%p(%u %u) Dev:%p Top:%x\n", this, driver, 
+	//	driver->interfaceSubClass(), driver->interfaceProtocol(), dev, topusage);
 	// only claim Desktop/Joystick and Desktop/Gamepad
 	if (topusage != 0x10004 && topusage != 0x10005 && topusage != 0x10008) return CLAIM_NO;
 	// only claim from one physical device
@@ -434,7 +436,8 @@ hidclaim_t JoystickController::claim_collection(USBHIDParser *driver, Device_t *
 			additional_axis_usage_count_ = 5;
 			axis_change_notify_mask_ = 0x3ff;	// Start off assume only the 10 bits...
 	}
-	DBGPrintf("Claim Additional axis: %x %x %d\n", additional_axis_usage_page_, additional_axis_usage_start_, additional_axis_usage_count_);
+	//DBGPrintf("Claim Additional axis: %x %x %d\n", additional_axis_usage_page_, additional_axis_usage_start_, additional_axis_usage_count_);
+	USBHDBGSerial.printf("\tJoystickController claim collection\n");
 	return CLAIM_REPORT;
 }
 

@@ -352,7 +352,11 @@ hidclaim_t KeyboardController::claim_collection(USBHIDParser *driver, Device_t *
 
 	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
 
+	// We will not claim mouse protocol
+	if (driver->interfaceProtocol() == 2) return CLAIM_NO;
+
 	// We will claim if BOOT Keyboard.
+
 	if (((driver->interfaceSubClass() == 1) && (driver->interfaceProtocol() == 1)) 
 		|| (topusage == TOPUSAGE_KEYBOARD))
 	{
@@ -365,15 +369,16 @@ hidclaim_t KeyboardController::claim_collection(USBHIDParser *driver, Device_t *
 		} 
 
      } else if ((topusage == TOPUSAGE_CONSUMER_CONTROL) 
-			 || (topusage == TOPUSAGE_SYS_CONTROL) 
-			 || ((topusage & 0xfffffff0) == 0x10000))  { // See if we can catch the secondary ones. 
+			 || (topusage == TOPUSAGE_SYS_CONTROL) ) {
+
 		driver_[1] = driver;
+
      } else {
 		return CLAIM_NO;
 	}
 	mydevice = dev;
 	collections_claimed_++;
-	//USBHDBGSerial.printf("KeyboardController claim collection\n");
+	//USBHDBGSerial.printf("\tKeyboardController claim collection\n");
 	return CLAIM_REPORT;
 }
 
@@ -404,7 +409,7 @@ bool KeyboardController::hid_process_in_data(const Transfer_t *transfer)
 		keyboard_uses_boot_format_  = true;
 		return true;
 	}
-	USBHDBGSerial.printf("\n");
+	//USBHDBGSerial.printf("\n");
 
 	return false;
 }
