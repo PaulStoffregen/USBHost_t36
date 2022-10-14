@@ -12,6 +12,9 @@
 USBHost myusb;
 USBHub hub1(myusb);
 USBHub hub2(myusb);
+//BluetoothController bluet(myusb, true, "0000");   // Version does pairing to device
+BluetoothController bluet(myusb);   // version assumes it already was paired
+
 KeyboardController keyboard1(myusb);
 KeyboardController keyboard2(myusb);
 USBHIDParser hid1(myusb);
@@ -251,9 +254,9 @@ void OnRawRelease(KeyboardController &kbd, uint8_t &keyboard_last_leds, uint8_t 
 // Device and Keyboard Output To Serial objects...
 //=============================================================
 #ifdef SHOW_KEYBOARD_DATA
-USBDriver *drivers[] = { &hub1, &hub2, &hid1, &hid2, &hid3, &hid4 };
+USBDriver *drivers[] = { &hub1, &hub2, &hid1, &hid2, &hid3, &hid4, &bluet };
 #define CNT_DEVICES (sizeof(drivers) / sizeof(drivers[0]))
-const char *driver_names[CNT_DEVICES] = { "Hub1", "Hub2", "HID1", "HID2", "HID3", "HID4" };
+const char *driver_names[CNT_DEVICES] = { "Hub1", "Hub2", "HID1", "HID2", "HID3", "HID4", "Bluetooth" };
 bool driver_active[CNT_DEVICES] = { false, false, false, false };
 #endif
 
@@ -262,7 +265,16 @@ USBHIDInput *hiddrivers[] = { &keyboard1, &keyboard2, &mouse1 };
 #define CNT_HIDDEVICES (sizeof(hiddrivers) / sizeof(hiddrivers[0]))
 const char *hid_driver_names[CNT_DEVICES] = { "Keyboard1", "Keyboard2", "Mouse1" };
 bool hid_driver_active[CNT_DEVICES] = { false };
+
+BTHIDInput *bthiddrivers[] = {&keyboard1, &keyboard2, &mouse1 };
+#define CNT_BTHIDDEVICES (sizeof(bthiddrivers)/sizeof(bthiddrivers[0]))
+const char * bthid_driver_names[CNT_HIDDEVICES] = {"KB1(BT)", "KB2(BT)", "Mouse(BT)" };
+bool bthid_driver_active[CNT_HIDDEVICES] = {false};
+
+
 bool show_changed_only = false;
+
+
 
 void ShowUpdatedDeviceListInfo() {
 #ifdef SHOW_KEYBOARD_DATA
@@ -300,6 +312,28 @@ void ShowUpdatedDeviceListInfo() {
         if (psz && *psz) Serial.printf("  product: %s\n", psz);
         psz = hiddrivers[i]->serialNumber();
         if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
+      }
+    }
+  }
+  for (uint8_t i = 0; i < CNT_BTHIDDEVICES; i++) {
+    if (*bthiddrivers[i] != bthid_driver_active[i]) {
+      if (bthid_driver_active[i]) {
+        Serial.printf("*** BTHID Device %s - disconnected ***\n", bthid_driver_names[i]);
+        bthid_driver_active[i] = false;
+      } else {
+        Serial.printf("*** BTHID Device %s %x:%x - connected ***\n", bthid_driver_names[i], bthiddrivers[i]->idVendor(), bthiddrivers[i]->idProduct());
+        bthid_driver_active[i] = true;
+        const uint8_t *psz = bthiddrivers[i]->manufacturer();
+        if (psz && *psz) Serial.printf("  manufacturer: %s\n", psz);
+        psz = bthiddrivers[i]->product();
+        if (psz && *psz) Serial.printf("  product: %s\n", psz);
+        psz = bthiddrivers[i]->serialNumber();
+        if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
+        if (bthiddrivers[i] == &keyboard1) {
+          // try force back to HID mode
+          Serial.println("\n Try to force keyboard back into HID protocol");
+          keyboard1.forceHIDProtocol();
+        }
       }
     }
   }

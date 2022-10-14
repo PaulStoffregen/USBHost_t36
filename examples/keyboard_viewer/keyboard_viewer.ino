@@ -25,7 +25,7 @@
 //#define USE_ILI9341_t3n
 
 // optional SPI pins... 
-//#define USE_KURTE_MMOD2
+#define USE_KURTE_MMOD2
 
 
 #include "USBHost_t36.h"

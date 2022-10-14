@@ -47,8 +47,8 @@ uint64_t joystick_full_notify_mask = (uint64_t)-1;
 void setup()
 {
   while (!Serial) ; // wait for Arduino Serial Monitor
-  Serial.println("\n\nUSB Host Testing");
-  Serial.println(sizeof(USBHub), DEC);
+  Serial.println("\n\nUSB Host Testing - Keyboard Bluetooth");
+  if (CrashReport) Serial.print(CrashReport);
   myusb.begin();
   keyboard1.attachPress(OnPress);
   //keyboard2.attachPress(OnPress);
