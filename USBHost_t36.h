@@ -1033,7 +1033,8 @@ protected:
     virtual bool hid_process_in_data(const Transfer_t *transfer);
 
     // Bluetooth data
-    virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName);
+    virtual hidclaim_t claim_bluetooth(BluetoothConnection *btconnection, uint32_t bluetooth_class, uint8_t *remoteName, int type);
+    //virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName);
     virtual bool process_bluetooth_HID_data(const uint8_t *data, uint16_t length);
     virtual void release_bluetooth();
     virtual bool remoteNameComplete(const uint8_t *remoteName);
@@ -1965,6 +1966,7 @@ public:
     uint8_t         seq_number_ = 0;
     bool            use_hid_protocol_ = false; //
     bool            sdp_connected_ = false;
+    bool            supports_SSP_ = false; 
     uint16_t        pending_control_tx_ = 0;
 
     enum {DNIL = 0, DU32, DS32, DU64, DS64, DPB, DLVL};
@@ -2134,12 +2136,13 @@ private:
     void inline sendHCIRemoteNameRequest();
     void inline sendHCIRemoteVersionInfoRequest();
     void inline sendHCIRoleDiscoveryRequest();
-	
+    void inline sendHCIReadRemoteFeatures();
+    void inline sendHCIReadRemoteExtendedFeatures();
 	void inline sendHCISimplePairingMode();
 	void handle_hci_encryption_change_complete();
 	void sendHCISetConnectionEncryption();
     void sendInfoRequest();
-	
+
     void handle_hci_command_complete();
     void handle_hci_command_status();
     void handle_hci_inquiry_result(bool fRSSI = false);

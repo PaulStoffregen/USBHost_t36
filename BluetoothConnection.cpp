@@ -80,6 +80,7 @@ void BluetoothConnection::initializeConnection(BluetoothController *btController
     }
     use_hid_protocol_ = false;
     sdp_connected_ = false;
+    supports_SSP_ = false;
     pending_control_tx_ = 0;
 
     device_driver_ = find_driver(device_name, 0);
@@ -128,7 +129,7 @@ void BluetoothConnection::rx2_data(uint8_t *rx2buf) // called from rx2_data of B
 {
     // need to detect if these are L2CAP or SDP or ...
     uint16_t dcid =  rx2buf[6] + ((uint16_t)rx2buf[7] << 8);
-    //DBGPrintf("@@@@@@ SDP MSG? %x %x %x @@@@@", dcid, sdp_dcid_, rx2buf[8]);
+    DBGPrintf("@@@@@@ SDP MSG? %x %x %x @@@@@", dcid, sdp_dcid_, rx2buf[8]);
 
     if (dcid == sdp_dcid_) {
         switch (rx2buf[8]) {
@@ -188,7 +189,7 @@ void BluetoothConnection::tx_data(uint8_t *data, uint16_t length)
 
 #ifdef DEBUG_BT_VERBOSE
     DBGPrintf("tx_data callback (bluetooth): %d : ", pending_control_tx_);
-    for (uint8_t i = 0; i < length; i++) DBGPrintf("%x ", data[i]);
+    for (uint8_t i = 0; i < length; i++) DBGPrintf("%02x ", data[i]);
     DBGPrintf("\n");
 #endif
     switch (pending_control_tx_) {
@@ -554,8 +555,8 @@ void BluetoothConnection::sendl2cap_ConfigRequest(uint16_t handle, uint8_t rxid,
     l2capbuf[7] = 0x00;
     l2capbuf[8] = 0x01; // Config Opt: type = MTU (Maximum Transmission Unit) - Hint
     l2capbuf[9] = 0x02; // Config Opt: length
-    l2capbuf[10] = 0x00; // MTU
-    l2capbuf[11] = 0x02;
+    l2capbuf[10] = 0xFF; // MTU
+    l2capbuf[11] = 0xFF;
 
     DBGPrintf("L2CAP_ConfigRequest(RXID:%x, DCID:%x)\n", rxid, dcid);
     btController_->sendL2CapCommand(handle, l2capbuf, sizeof(l2capbuf));

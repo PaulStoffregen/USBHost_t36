@@ -36,6 +36,7 @@
 #define HCI_CREATE_CONNECTION               0x0405
 #define HCI_OP_ACCEPT_CONN_REQ              0x0409
 #define HCI_OP_REJECT_CONN_REQ              0x040A
+#define HCI_WRITE_LINK_TO_DEVICE			0x040B
 #define HCI_LINK_KEY_NEG_REPLY              0x040C
 #define HCI_PIN_CODE_REPLY                  0x040D
 #define HCI_AUTH_REQUESTED                  0x0411
