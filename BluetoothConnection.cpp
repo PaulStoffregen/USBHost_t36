@@ -83,6 +83,12 @@ void BluetoothConnection::initializeConnection(BluetoothController *btController
     supports_SSP_ = false;
     pending_control_tx_ = 0;
 
+    find_driver_type_1_called_ = false; // bugbug should combine:
+
+    // hack for now remember the device_name if we have one
+    if (device_name)strcpy((char*)descriptor_, (const char*)device_name);
+    else descriptor_[0] = 0; // null terminated string.
+
     device_driver_ = find_driver(device_name, 0);
 
     // We need to save away the BDADDR and class link type?
@@ -95,6 +101,7 @@ void BluetoothConnection::initializeConnection(BluetoothController *btController
 //=============================================================================
 BTHIDInput * BluetoothConnection::find_driver(uint8_t *remoteName, int type)
 {
+    if (type == 1) find_driver_type_1_called_ = true;
     DBGPrintf("BluetoothController::find_driver(%x) type: %d\n", device_class_, type);
     if (device_class_ & 0x2000) DBGPrintf("  (0x2000)Limited Discoverable Mode\n");
     DBGPrintf("  (0x500)Peripheral device\n");
@@ -111,6 +118,7 @@ BTHIDInput * BluetoothConnection::find_driver(uint8_t *remoteName, int type)
         DBGPrintf("  driver %x\n", (uint32_t)driver);
         hidclaim_t claim_type = driver->claim_bluetooth(this, device_class_, remoteName, type);
         if (claim_type == CLAIM_INTERFACE) {
+            check_for_hid_descriptor_ = false;
             DBGPrintf("    *** Claimed ***\n");
             return driver;
         } else if (claim_type == CLAIM_REPORT) {
@@ -129,7 +137,7 @@ void BluetoothConnection::rx2_data(uint8_t *rx2buf) // called from rx2_data of B
 {
     // need to detect if these are L2CAP or SDP or ...
     uint16_t dcid =  rx2buf[6] + ((uint16_t)rx2buf[7] << 8);
-    DBGPrintf("@@@@@@ SDP MSG? %x %x %x @@@@@", dcid, sdp_dcid_, rx2buf[8]);
+    //DBGPrintf("@@@@@@ SDP MSG? %x %x %x @@@@@", dcid, sdp_dcid_, rx2buf[8]);
 
     if (dcid == sdp_dcid_) {
         switch (rx2buf[8]) {
@@ -254,6 +262,7 @@ void  BluetoothConnection::process_l2cap_connection_request(uint8_t *data) {
     uint16_t psm = data[4] + ((uint16_t)data[5] << 8);
     uint16_t scid = data[6] + ((uint16_t)data[7] << 8);
     connection_started_ = true;
+    btController_->setTimer(nullptr, 0); // clear out timer
     connection_rxid_ = data[1];
     DBGPrintf("    L2CAP Connection Request: ID: %d, PSM: %x, SCID: %x\n", connection_rxid_, psm, scid);
 
@@ -331,13 +340,30 @@ void BluetoothConnection::process_l2cap_config_request(uint8_t *data) {
     if (dcid == control_dcid_) {
         DBGPrintf("      Control Configuration request\n");
         sendl2cap_ConfigResponse(device_connection_handle_, data[1], control_scid_);
+        connection_complete_ |= CCON_CONT;
     } else if (dcid == interrupt_dcid_) {
         DBGPrintf("      Interrupt Configuration request\n");
         sendl2cap_ConfigResponse(device_connection_handle_, data[1], interrupt_scid_);
+        connection_complete_ |= CCON_INT;
     } else if (dcid == sdp_dcid_) {
         DBGPrintf("      SDP Configuration request\n");
+        sendl2cap_ConfigResponse(device_connection_handle_, data[1], sdp_dcid_);
+
+        connection_complete_ |= CCON_SDP;
+        sdp_connected_ = true;
+
+    } else if (dcid == sdp_scid_) {
+        DBGPrintf("      SDP Configuration request (But our SCID?)\n");
+        // maybe we should change the ids around?
         sendl2cap_ConfigResponse(device_connection_handle_, data[1], sdp_scid_);
+        // We see this with some PS4? 
+
+        // Enable SCan to page mode
+        connection_complete_ |= CCON_SDP;
+        sdp_connected_ = true;
     }
+
+
 }
 
 void BluetoothConnection::process_l2cap_config_response(uint8_t *data) {
@@ -373,7 +399,8 @@ void BluetoothConnection::process_l2cap_config_response(uint8_t *data) {
         connection_complete_ |= CCON_CONT;
     } else if (scid == interrupt_dcid_) {
         // Lets try SDP connectin
-        connectToSDP(); // temp to see if we can do this later...
+        if (!check_for_hid_descriptor_) connection_complete_ |= CCON_SDP;  // Don't force connect if no is asking for HID
+        if ((connection_complete_ & CCON_SDP) == 0) connectToSDP(); // temp to see if we can do this later...
 
         // Enable SCan to page mode
         //connection_complete_ = true;
@@ -427,12 +454,18 @@ void BluetoothConnection::handleHIDTHDRData(uint8_t *data) {
     DBGPrintf("HID HDR Data: len: %d, Type: %d Con:%p\n", len, data[9], this);
 
     // ??? How to parse??? Use HID object???
+    if (!find_driver_type_1_called_ && !device_driver_ && !have_hid_descriptor_) {
+        // If we got to here and don't have driver or ... try once to get one
+        DBGPrintf("\t $$$ No HID or Driver: See if one wants it now\n");
+        // BUGBUG we initialize descriptor with name...
+        device_driver_ = find_driver(descriptor_, 1);
+    }
+
     if (device_driver_) {
         device_driver_->process_bluetooth_HID_data(&data[9], len - 1); // We skip the first byte...
     } else if (have_hid_descriptor_) {
         // nead to bias to location within data.
         parse(0x0100 | data[9], &data[10], len - 2);
-
     } else {
         switch (data[9]) {
         case 1:
@@ -465,7 +498,7 @@ void BluetoothConnection::handle_HCI_WRITE_SCAN_ENABLE_complete(uint8_t *rxbuf)
             if (!startSDP_ServiceSearchAttributeRequest(0x206, 0x206, sdp_buffer_, sdp_buffer_len_)) {
                 // Maybe try to claim_driver as we won't get a HID report.
                 DBGPrintf("Failed to start SDP attribute request - so lets try again to find a driver");
-                device_driver_ = find_driver(nullptr, 1);
+                device_driver_ = find_driver(descriptor_, 1);
             }
         }
         connection_complete_ = 0;  // only call once
