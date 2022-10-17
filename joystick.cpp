@@ -898,28 +898,39 @@ void JoystickController::disconnect()
 
 hidclaim_t JoystickController::claim_bluetooth(BluetoothConnection *btconnection, uint32_t bluetooth_class, uint8_t *remoteName, int type)
 {
-    USBHDBGSerial.printf("JoystickController::claim_bluetooth - Class %x\n", bluetooth_class);
+    USBHDBGSerial.printf("JoystickController::claim_bluetooth - Class %x %s\n", bluetooth_class, remoteName);
     // If we are already in use than don't grab another one.  Likewise don't grab if it is used as USB or HID object
     if (btconnect && (btconnection != btconnect)) return CLAIM_NO;
     if (mydevice != NULL) return CLAIM_NO;
 
     if ((bluetooth_class & 0x0f00) == 0x500) {
+        bool name_maps_to_joystick_type = (remoteName && mapNameToJoystickType(remoteName));
         if ((bluetooth_class & 0x3C) == 0x08) {
-            if (type == 1) {
-                // They are telling me to grab it now. SO say yes
-                USBHDBGSerial.printf("JoystickController::claim_bluetooth TRUE\n");
-                btconnect = btconnection;
-                btdevice = (Device_t*)btconnect->btController_; // remember this way
-                btdriver_ = btconnect->btController_;
+            bool claim_interface = (type == 1);
+            if (name_maps_to_joystick_type) {
+                switch (joystickType_) {
+                    default:
+                        // others will experiment with trying for HID.
+                        break;
+
+                    case PS3:
+                    case PS3_MOTION:
+                        special_process_required = SP_PS3_IDS;      // PS3 maybe needs different IDS.
+                        // fall through
+                    case PS4:
+                        claim_interface = true;
+                        break;
+                }
             }
-        }
-        else if (remoteName && mapNameToJoystickType(remoteName)) {
-            if ((joystickType_ == PS3) || (joystickType_ == PS3_MOTION)) {
-                DBGPrintf("JoystickController::claim_bluetooth TRUE PS3 hack...\n");
+            if (claim_interface) {
+                // They are telling me to grab it now. SO say yes
+                USBHDBGSerial.printf("JoystickController::claim_bluetooth Interface\n");
                 btconnect = btconnection;
                 btdevice = (Device_t*)btconnect->btController_; // remember this way
                 btdriver_ = btconnect->btController_;
-                special_process_required = SP_PS3_IDS;      // PS3 maybe needs different IDS.
+
+                // Another big hack try calling the connectionComplete to maybe update what reports we are working with
+               // if (name_maps_to_joystick_type) connectionComplete();
                 return CLAIM_INTERFACE;
             }
         }

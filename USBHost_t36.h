@@ -2186,6 +2186,7 @@ private:
     uint8_t         rx2buf_[64];    // receive buffer from Bulk end point
     uint8_t         rx2buf2_[64];   // receive buffer from Bulk end point
     uint8_t         rx2_packet_data_remaining_ = 0; // how much data remaining
+    uint8_t         rx2_continue_packet_expected_ = 0; // Are we expecting a continue packet. 
     uint8_t         hciVersion;     // what version of HCI do we have?
 
     bool            do_pair_device_;    // Should we do a pair for a new device?
