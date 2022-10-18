@@ -2068,7 +2068,7 @@ public:
 
 
 
-    BluetoothController(USBHost &host, bool pair = false, const char *pin = "0000") : do_pair_device_(pair), pair_pincode_(pin), timer_(this)
+    BluetoothController(USBHost &host, bool pair = false, const char *pin = "0000", bool pair_ssp = false) : do_pair_device_(pair), pair_pincode_(pin), do_pair_ssp_(pair_ssp), timer_(this)
     { init(); }
 
     enum {MAX_ENDPOINTS = 4, NUM_SERVICES = 4, }; // Max number of Bluetooth services - if you need more than 4 simply increase this number
@@ -2076,6 +2076,9 @@ public:
     static void driver_ready_for_bluetooth(BTHIDInput *driver);
 
     const uint8_t*  myBDAddr(void) {return my_bdaddr_;}
+
+    // See if we can start up pairing after sketch is running. 
+    bool startDevicePairing(const char *pin);
 
     // BUGBUG version to allow some of the controlled objects to call?
     enum {CONTROL_SCID = -1, INTERRUPT_SCID = -2, SDP_SCID = -3};
@@ -2137,9 +2140,10 @@ private:
     void inline sendHCIRemoteNameRequest();
     void inline sendHCIRemoteVersionInfoRequest();
     void inline sendHCIRoleDiscoveryRequest();
-    void inline sendHCIReadRemoteFeatures();
+    void inline sendHCIReadRemoteSupportedFeatures();
     void inline sendHCIReadRemoteExtendedFeatures();
 	void inline sendHCISimplePairingMode();
+	void inline sendHCIReadSimplePairingMode();
 	void handle_hci_encryption_change_complete();
 	void sendHCISetConnectionEncryption();
     void sendInfoRequest();
@@ -2194,6 +2198,8 @@ private:
     USBDriverTimer  timer_;
     uint8_t         my_bdaddr_[6];  // The bluetooth dongles Bluetooth address.
     uint8_t         features[8];    // remember our local features.
+	
+	bool			do_pair_ssp_;	// pair device using SSP
 
     typedef struct {
         uint16_t    idVendor;

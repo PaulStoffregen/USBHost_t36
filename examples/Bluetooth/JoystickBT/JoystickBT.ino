@@ -73,6 +73,7 @@ void setup()
   while (!Serial) ; // wait for Arduino Serial Monitor
 
   Serial.println("\n\nUSB Host Testing - Joystick Bluetooth");
+  if (CrashReport) Serial.print(CrashReport);
   myusb.begin();
 
   delay(2000);

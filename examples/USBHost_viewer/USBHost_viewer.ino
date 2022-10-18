@@ -228,6 +228,21 @@ void loop()
 
     // Process Extra keyboard data
     ProcessKeyboardData();
+    
+    // See if we have any Serial input
+    if (Serial.available()) {
+      int ch = Serial.read();
+      while (Serial.read() != -1) ;
+      if (ch == 'P') {
+        if (bluet.startDevicePairing("0000")) {
+          Serial.println("Pairing operation started");
+          
+        } else {
+          Serial.println("Staring of Pairing operation failed");
+        }
+        
+      }
+    } 
 
 }
 

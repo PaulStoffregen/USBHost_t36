@@ -255,6 +255,30 @@ bool BluetoothController::setTimer(BluetoothConnection *connection, uint32_t us)
     return false;
 }
 
+
+/************************************************************/
+//  Try starting a pairing operation after sketch starts
+/************************************************************/
+bool BluetoothController::startDevicePairing(const char *pin)
+{
+    // What should we verify before starting this mode?
+    if (pending_control_ != 0) {
+        DBGPrintf("Pending control not zero.");
+        return false;
+    }
+
+    // BUGBUG:: probably should make copy of pin...
+    pair_pincode_ = pin;
+
+    // Try simple approach first to see if I can simply start it
+    do_pair_device_ = true;
+    pending_control_ = PC_SEND_WRITE_INQUIRE_MODE;
+    queue_next_hci_command();
+
+    return true;
+}
+
+
 /************************************************************/
 //  Interrupt-based Data Movement
 /************************************************************/
@@ -292,7 +316,7 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
     uint32_t len = transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF);
     print_hexbytes((uint8_t*)transfer->buffer, len);
 //  DBGPrintf("<<(00 : %d): ", len);
-    DBGPrintf("<<(01):");
+    DBGPrintf(rx_packet_data_remaining_? "<<(01C):":"<<(01):");
     uint8_t *buffer = (uint8_t*)transfer->buffer;
     for (uint8_t i = 0; i < len; i++) DBGPrintf("%02X ", buffer[i]);
     DBGPrintf("\n");
@@ -332,10 +356,12 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
             handle_hci_disconnect_complete();
             break;
         case EV_AUTHENTICATION_COMPLETE:// 0x06
-			if(has_key == true) sendHCISetConnectionEncryption();  // use simple pairing  qorks if I set before
+			//if(has_key == true) sendHCISetConnectionEncryption();  // use simple pairing  qorks if I set before
             handle_hci_authentication_complete();
-			DBGPrintf("found key: %d\n", has_key);
-			//if(has_key == true) sendHCISetConnectionEncryption();  // use simple pairing   hangs the link 
+			if(has_key == true ) {
+				sendHCISetConnectionEncryption();  // use simple pairing   hangs the link 
+				DBGPrintf("found key: %d\n", has_key);
+			}
             break;
         case EV_REMOTE_NAME_COMPLETE: // 0x07
             handle_hci_remote_name_complete();
@@ -350,17 +376,17 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
 		//use simple pairing
         case EV_READ_REMOTE_EXTENDED_FEATURES_COMPLETE:  //0x23
             USBHDBGSerial.printf(" Extended features read complete:  ");
+			USBHDBGSerial.printf(" Requested to use SSP Pairing: %d\n", do_pair_ssp_);
             if ( ((rxbuf_[7] >> 0) & 0x01) == 1) {
-                USBHDBGSerial.printf("Supports SSP = ");
                 if (current_connection_) {
                     current_connection_->supports_SSP_ = true;
                     USBHDBGSerial.printf("%d\n", current_connection_->supports_SSP_);
                 }
-                sendHCIRemoteNameRequest();
+                //sendHCIRemoteNameRequest();
             } else {
                 USBHDBGSerial.printf("No Support for SPP\n");
             }
-            //sendHCIRoleDiscoveryRequest();
+            sendHCIRoleDiscoveryRequest();
             break;
 		case EV_ENCRYPTION_CHANGE:// < UseSimplePairing
 			handle_hci_encryption_change_complete();
@@ -376,15 +402,11 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
                 USBHDBGSerial.printf("\r\nPairing Failed: ");
             }
 			break;
-		case EV_NUM_COMPLETE_PKT:
-			USBHDBGSerial.printf("Received Completed Packet Msg\n");
-			break;
 		case EV_MAX_SLOTS_CHANGE:
 			USBHDBGSerial.printf("Received Max Slot change Msg\n");
 			break;
 		
 
-			
         case EV_LINK_KEY_REQUEST:   // 0x17
             handle_hci_link_key_request();
             break;
@@ -402,6 +424,10 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
             break;
         case EV_IO_CAPABILITY_REQUEST:
             handle_hci_io_capability_request();
+            break;
+        case EV_NUM_COMPLETE_PKT: //13 05 01 47 00 01 00 
+            VDBGPrintf("    NUM_COMPLETE_PKT: ch:%u fh:%04x comp:%u\n",
+                rxbuf_[2], rxbuf_[3] + (rxbuf_[4] << 8), rxbuf_[rxbuf_[1]] + (rxbuf_[rxbuf_[1] + 1] << 8) );
             break;
         default:
             break;
@@ -484,7 +510,7 @@ void BluetoothController::handle_hci_command_complete()
     case HCI_Read_Local_Version_Information:    //0x1001
         hciVersion = rxbuf_[6];     // Should do error checking above...
         DBGPrintf("    Local Version: %x\n", hciVersion);
-        pending_control_ = (do_pair_device_) ? PC_SEND_WRITE_INQUIRE_MODE : PC_WRITE_SCAN_PAGE;
+        pending_control_ = (do_pair_device_ || do_pair_ssp_) ? PC_SEND_WRITE_INQUIRE_MODE : PC_WRITE_SCAN_PAGE;
         break;
     case HCI_Read_Local_Supported_Commands: //0x1002
         break;
@@ -522,7 +548,10 @@ void BluetoothController::handle_hci_command_complete()
     case HCI_WRITE_SCAN_ENABLE:             //0x0c1a
         current_connection_->handle_HCI_WRITE_SCAN_ENABLE_complete(rxbuf_);
         break;
+	case HCI_READ_SSP_MODE:                    //0x0c55
+		break;
     case HCI_WRITE_SSP_MODE:                    //0x0c56
+		sendHCIReadSimplePairingMode();
         break;
     case HCI_WRITE_EIR:                     //0x0c52
         break;
@@ -615,7 +644,8 @@ void BluetoothController::queue_next_hci_command()
         current_connection_->sendl2cap_ConnectionRequest(current_connection_->device_connection_handle_, current_connection_->connection_rxid_, current_connection_->control_dcid_, HID_CTRL_PSM);
         pending_control_ = 0;  //
         break;
-    // None Pair mode
+    // Done Pair mode
+
     case PC_WRITE_SCAN_PAGE:
         sendHCIWriteScanEnable(2);
         pending_control_ = 0;   //
@@ -769,16 +799,31 @@ void BluetoothController::handle_hci_inquiry_result(bool fRSSI)
             case 0xc: DBGPrintf("        Remote Control\n"); break;
             }
 
+            // We need to allocate a connection for this.
+            current_connection_ = BluetoothConnection::s_first_;
+            while (current_connection_) {
+                if (current_connection_->btController_ == nullptr) break;
+                current_connection_ = current_connection_->next_;
+            }
+            if (current_connection_ == nullptr) {
+                DBGPrintf("\tError no free BluetoothConnection object\n");
+                return;
+            }
+            count_connections_++;
+
+            // BUGBUG, lets hard code to go to new state...
+            current_connection_->initializeConnection(this, &rxbuf_[index_bd], bluetooth_class, nullptr);
+
+            current_connection_->device_ps_repetion_mode_  = rxbuf_[index_ps]; // mode
+            current_connection_->device_clock_offset_[0] = rxbuf_[index_clock_offset];
+            current_connection_->device_clock_offset_[1] = rxbuf_[index_clock_offset + 1];
+
             // BUGBUG, lets hard code to go to new state...
             for (uint8_t i = 0; i < 6; i++) current_connection_->device_bdaddr_[i] = rxbuf_[index_bd + i];
             current_connection_->device_class_ = bluetooth_class;
             current_connection_->device_driver_ = current_connection_->find_driver(nullptr, 0);
 
-            if (current_connection_->device_driver_ ) {
-                current_connection_->device_ps_repetion_mode_  = rxbuf_[index_ps]; // mode
-                current_connection_->device_clock_offset_[0] = rxbuf_[index_clock_offset];
-                current_connection_->device_clock_offset_[1] = rxbuf_[index_clock_offset + 1];
-
+            if (current_connection_->device_driver_  || current_connection_->check_for_hid_descriptor_) {
                 // Now we need to bail from inquiry and setup to try to connect...
                 sendHCIInquiryCancel();
                 pending_control_ = PC_INQUIRE_CANCEL;
@@ -922,10 +967,13 @@ void BluetoothController::handle_hci_connection_complete() {
 
 
     DBGPrintf("    Connection Complete - ST:%x LH:%x\n", rxbuf_[2], current_connection_->device_connection_handle_);
+	DBGPrintf("Pairing - USE SSP PAIRING: %d,  DO PAIRING: %d\n", do_pair_ssp_, do_pair_device_);
     //sendHCIRoleDiscoveryRequest();
-    if (do_pair_device_ && !(current_connection_->device_driver_ && (current_connection_->device_driver_->special_process_required & BTHIDInput::SP_DONT_NEED_CONNECT))) {
+    if ((do_pair_device_ || do_pair_ssp_) && !(current_connection_->device_driver_ && (current_connection_->device_driver_->special_process_required & BTHIDInput::SP_DONT_NEED_CONNECT))) {
         sendHCIAuthenticationRequested();
         pending_control_ = PC_AUTHENTICATION_REQUESTED;
+        // Best place to turn it off?
+        //do_pair_device_ = false;
     } else {
         //sendHCIReadRemoteExtendedFeatures();
         sendHCIReadRemoteExtendedFeatures();
@@ -1060,10 +1108,11 @@ void BluetoothController::handle_hci_link_key_notification() {
         for(uint8_t i = 0; i < 16; i++) hcibuf[i + 6] = rxbuf_[i+8]; // 16 octet link_key
 //        hcibuf[9] = link_key[0]; // 16 octet link_key
 
-    sendHCICommand(HCI_WRITE_LINK_TO_DEVICE,  sizeof(hcibuf), hcibuf);   //use simple pairing  -  if I write it back converts it to keyboard hid
-	pending_control_ = 0;
-	has_key = true;
-
+    if(do_pair_ssp_) {
+		sendHCICommand(HCI_WRITE_LINK_TO_DEVICE,  sizeof(hcibuf), hcibuf);   //use simple pairing  -  if I write it back converts it to keyboard hid
+		pending_control_ = 0;
+		has_key = true;
+	}
 }
 
 void BluetoothController::handle_hci_disconnect_complete()
@@ -1264,12 +1313,12 @@ void BluetoothController::rx2_data(const Transfer_t *transfer)
                 }
                 if (current_connection_ == nullptr) {
                     current_connection_ = previous_connection;
-                    DBGPrintf("??? did not find device_connection_handle_ use previous(%p) == %x\n", current_connection_, rx2buf_[0]);
                 }
             }
 
             // Let the connection processes the message:
             if (current_connection_) current_connection_->rx2_data(rx2buf_);
+            else DBGPrintf("??? There are no device Connections ignore packet Handle: %x\n", rx2buf_[0]);
 
             // Queue up for next read...
             queue_Data_Transfer(rx2pipe_, rx2buf_, rx2_size_, this);
@@ -1405,6 +1454,10 @@ void BluetoothController::sendHCILinkKeyNegativeReply() {
     uint8_t connection_data[6];
     for (uint8_t i = 0; i < 6; i++) connection_data[i] = current_connection_->device_bdaddr_[i];
     sendHCICommand(HCI_LINK_KEY_NEG_REPLY, sizeof(connection_data), connection_data);
+	
+			if(do_pair_ssp_) {
+				sendHCISimplePairingMode();
+			}
 }
 
 //---------------------------------------------
@@ -1500,7 +1553,19 @@ void BluetoothController::sendHCISimplePairingMode() {
 //        hcibuf[3] = enable ? 0x00 : 0x01; // 0x00=OFF 0x01=ON
 
 		DBGPrintf("HCI_Set Simple Pairing Mode\n");
-		//sendHCICommand(HCI_WRITE_SSP_MODE, sizeof(hcibuf), hcibuf);
+		sendHCICommand(HCI_WRITE_SSP_MODE, sizeof(hcibuf), hcibuf);
+}
+
+void BluetoothController::sendHCIReadSimplePairingMode() {
+	uint8_t hcibuf[2];
+        //hcibuf[0] = 0x56; // HCI OCF = 56
+        //hcibuf[1] = 0x03 << 2; // HCI OGF = 3
+        //hcibuf[0] = 0x01; // parameter length = 1
+        //hcibuf[1] = 0x01; // enable = 1
+//        hcibuf[3] = enable ? 0x00 : 0x01; // 0x00=OFF 0x01=ON
+
+		DBGPrintf("HCI_Read Simple Pairing Mode\n");
+		sendHCICommand(HCI_READ_SSP_MODE, 0, hcibuf);
 }
 
 void BluetoothController::handle_hci_encryption_change_complete() {
@@ -1512,16 +1577,17 @@ void BluetoothController::handle_hci_encryption_change_complete() {
 	uint8_t hcibuf[2];
 	hcibuf[0] = rxbuf_[3];
 	hcibuf[1] = rxbuf_[4];
-	//sendHCICommand(HCI_READ_ENCRYPTION_KEY_SIZE, sizeof(hcibuf), hcibuf);
+	sendHCICommand(HCI_READ_ENCRYPTION_KEY_SIZE, sizeof(hcibuf), hcibuf);
 }
 
-void BluetoothController::sendHCIReadRemoteFeatures() {
-    USBHDBGSerial.printf("HCI_OP_READ_REMOTE_FEATURES");
-    uint8_t connection_data[2];
+void inline BluetoothController::sendHCIReadRemoteSupportedFeatures() {
+    uint8_t connection_data[3];
     connection_data[0] = current_connection_->device_connection_handle_ & 0xff;
     connection_data[1] = (current_connection_->device_connection_handle_ >> 8) & 0xff;
+    connection_data[2] = 1;
     sendHCICommand(HCI_OP_READ_REMOTE_FEATURES, sizeof(connection_data), connection_data);
 }
+
 
 void inline BluetoothController::sendHCIReadRemoteExtendedFeatures() {
     uint8_t connection_data[3];
@@ -1576,6 +1642,8 @@ void BluetoothController::tx_data(const Transfer_t *transfer)
 {
     // We assume the current connection should process this but lets make sure.
     uint8_t *buffer = (uint8_t*)transfer->buffer;
+    #if 0
+    // device connection handle is only valid for data packets not command packets.
     if (!current_connection_ || (current_connection_->device_connection_handle_ != buffer[0])) {
         BluetoothConnection  *previous_connection = current_connection_;    // need to figure out when this changes and/or...
         current_connection_ = BluetoothConnection::s_first_;
@@ -1586,10 +1654,11 @@ void BluetoothController::tx_data(const Transfer_t *transfer)
         if (current_connection_ == nullptr) {
             current_connection_ = previous_connection; 
 
-            DBGPrintf("Error: did not find device_connection_handle_ use previous(%p)== %x\n", current_connection_, buffer[0]);
+            DBGPrintf("Error (tx_data): did not find device_connection_handle_ use previous(%p)== %x\n", current_connection_, buffer[0]);
             return;
         }
     }
+    #endif
 
     // Let the connection processes the message:
     if (current_connection_) current_connection_->tx_data(buffer, transfer->length);

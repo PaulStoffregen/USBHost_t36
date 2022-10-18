@@ -1197,7 +1197,7 @@ void JoystickController::connectionComplete()
         packet[1] = 0x02; // Report ID
         DBGPrintf("Set PS4 report\n");
         delay(1);
-        btdriver_->sendL2CapCommand(packet, sizeof(packet), 0x40);
+        btdriver_->sendL2CapCommand(packet, sizeof(packet), BluetoothController::CONTROL_SCID /*0x40*/);
     }
     break;
     case PS3:
