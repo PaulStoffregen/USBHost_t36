@@ -2167,8 +2167,7 @@ private:
     void handle_hci_io_capability_response();
     void handle_hci_io_capability_request();
     void handle_hci_io_capability_request_reply();
-
-
+	void handle_hci_user_confirmation_request_reply();
 
     void setHIDProtocol(uint8_t protocol);
     static BTHIDInput *available_bthid_drivers_list;

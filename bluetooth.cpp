@@ -359,8 +359,8 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
 			//if(has_key == true) sendHCISetConnectionEncryption();  // use simple pairing  qorks if I set before
             handle_hci_authentication_complete();
 			if(has_key == true ) {
+				USBHDBGSerial.printf(" Change to Link Encryption:  ");
 				sendHCISetConnectionEncryption();  // use simple pairing   hangs the link 
-				DBGPrintf("found key: %d\n", has_key);
 			}
             break;
         case EV_REMOTE_NAME_COMPLETE: // 0x07
@@ -390,20 +390,22 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
             break;
 		case EV_ENCRYPTION_CHANGE:// < UseSimplePairing
 			handle_hci_encryption_change_complete();
-			sendInfoRequest();
 			break;		
 		case EV_RETURN_LINK_KEYS:
 			USBHDBGSerial.printf("Returned Link Keys .... \n");
 			break;
 		case EV_SIMPLE_PAIRING_COMPLETE:
 			if(!rxbuf_[2]) { // Check if pairing was Complete
-                USBHDBGSerial.printf("\r\nSimple Pairing Complete");
+                USBHDBGSerial.printf("\r\nSimple Pairing Complete\n");
             } else {
-                USBHDBGSerial.printf("\r\nPairing Failed: ");
+                USBHDBGSerial.printf("\r\nPairing Failed: \n");
             }
 			break;
 		case EV_MAX_SLOTS_CHANGE:
 			USBHDBGSerial.printf("Received Max Slot change Msg\n");
+			break;
+		case EV_USER_CONFIRMATION_REQUEST:
+			handle_hci_user_confirmation_request_reply();
 			break;
 		
 
@@ -510,7 +512,11 @@ void BluetoothController::handle_hci_command_complete()
     case HCI_Read_Local_Version_Information:    //0x1001
         hciVersion = rxbuf_[6];     // Should do error checking above...
         DBGPrintf("    Local Version: %x\n", hciVersion);
-        pending_control_ = (do_pair_device_ || do_pair_ssp_) ? PC_SEND_WRITE_INQUIRE_MODE : PC_WRITE_SCAN_PAGE;
+		if( do_pair_ssp_ ) {
+			pending_control_ = PC_SEND_WRITE_INQUIRE_MODE;
+		} else {
+			pending_control_ = (do_pair_device_) ? PC_SEND_WRITE_INQUIRE_MODE : PC_WRITE_SCAN_PAGE;
+		}
         break;
     case HCI_Read_Local_Supported_Commands: //0x1002
         break;
@@ -579,6 +585,11 @@ void BluetoothController::handle_hci_command_complete()
 	case HCI_WRITE_LINK_TO_DEVICE:
 		DBGPrintf("Link Key Written to Device\n");
 		break;
+	case HCI_USER_CONFIRMATION_REQUEST: //0x042C
+		DBGPrintf("User Confirmation Request Reply\n");
+		break;
+	case HCI_IO_CAPABILITY_RESPONSE:  //0x042B
+		break;
     }
     // And queue up the next command
     queue_next_hci_command();
@@ -604,7 +615,7 @@ void BluetoothController::queue_next_hci_command()
 
     case PC_READ_LOCAL_VERSION:
         sendHCIReadLocalVersionInfo();
-        //pending_control_++;
+        pending_control_++;
         break;
 
     // These are used when we are pairing.
@@ -924,22 +935,19 @@ void BluetoothController::handle_hci_io_capability_request()
 
 void BluetoothController::handle_hci_io_capability_request_reply()
 {
-    uint8_t hcibuf[12];
-    hcibuf[0] = 0x2B; // HCI OCF = 2B
-    hcibuf[1] = 0x01 << 2; // HCI OGF = 1
-    hcibuf[2] = 0x09;
-    hcibuf[3] = current_connection_->device_bdaddr_[0]; // 6 octet bdaddr
-    hcibuf[4] = current_connection_->device_bdaddr_[1];
-    hcibuf[5] = current_connection_->device_bdaddr_[2];
-    hcibuf[6] = current_connection_->device_bdaddr_[3];
-    hcibuf[7] = current_connection_->device_bdaddr_[4];
-    hcibuf[8] = current_connection_->device_bdaddr_[5];
-    hcibuf[9] = 0x03; // NoInputNoOutput
-    hcibuf[10] = 0x00; // OOB authentication data not present
-    hcibuf[11] = 0x00; // MITM Protection Not Required ? No Bonding. Numeric comparison with automatic accept allowed
+    uint8_t hcibuf[9];
+    hcibuf[0] = current_connection_->device_bdaddr_[0]; // 6 octet bdaddr
+    hcibuf[1] = current_connection_->device_bdaddr_[1];
+    hcibuf[2] = current_connection_->device_bdaddr_[2];
+    hcibuf[3] = current_connection_->device_bdaddr_[3];
+    hcibuf[4] = current_connection_->device_bdaddr_[4];
+    hcibuf[5] = current_connection_->device_bdaddr_[5];
+    hcibuf[6] = 0x03; // NoInputNoOutput
+    hcibuf[7] = 0x00; // OOB authentication data not present
+    hcibuf[8] = 0x00; // MITM Protection Not Required ? No Bonding. Numeric comparison with automatic accept allowed
 
     DBGPrintf("HCI_IO_CAPABILITY_REPLY\n");
-    sendHCICommand(0x01, sizeof(hcibuf), hcibuf);
+    sendHCICommand(HCI_IO_CAPABILITY_RESPONSE, sizeof(hcibuf), hcibuf);
 }
 
 void BluetoothController::handle_hci_io_capability_response()
@@ -951,8 +959,23 @@ void BluetoothController::handle_hci_io_capability_response()
     DBGPrintf("%x\n", rxbuf_[9], 0x80);
     DBGPrintf("    nAuthentication request: ");
     DBGPrintf("%x\n", rxbuf_[10]);
+	
+	
 }
 
+void BluetoothController::handle_hci_user_confirmation_request_reply()
+{
+    uint8_t hcibuf[7];
+    hcibuf[0] = current_connection_->device_bdaddr_[0]; // 6 octet bdaddr
+    hcibuf[1] = current_connection_->device_bdaddr_[1];
+    hcibuf[2] = current_connection_->device_bdaddr_[2];
+    hcibuf[3] = current_connection_->device_bdaddr_[3];
+    hcibuf[4] = current_connection_->device_bdaddr_[4];
+    hcibuf[5] = current_connection_->device_bdaddr_[5];
+
+    DBGPrintf("HCI_IO_CAPABILITY_REPLY\n");
+    sendHCICommand(HCI_USER_CONFIRMATION_REQUEST, sizeof(hcibuf), hcibuf);
+}
 
 
 void BluetoothController::handle_hci_inquiry_complete() {
@@ -1109,8 +1132,8 @@ void BluetoothController::handle_hci_link_key_notification() {
 //        hcibuf[9] = link_key[0]; // 16 octet link_key
 
     if(do_pair_ssp_) {
-		sendHCICommand(HCI_WRITE_LINK_TO_DEVICE,  sizeof(hcibuf), hcibuf);   //use simple pairing  -  if I write it back converts it to keyboard hid
-		pending_control_ = 0;
+		sendHCICommand(HCI_WRITE_LINK_TO_DEVICE,  sizeof(hcibuf), hcibuf);   //use simple pairing
+		pending_control_++;
 		has_key = true;
 	}
 }
@@ -1369,11 +1392,19 @@ void  BluetoothController::sendHCIHCIWriteInquiryMode(uint8_t inquiry_mode) {
 void BluetoothController::sendHCISetEventMask() {
     // Setup Inquiry mode
     DBGPrintf("HCI_Set_Event_Mask\n");
-    static const uint8_t hci_event_mask_data[8] = {
-        // Default: 0x0000 1FFF FFFF FFFF
-        0xff, 0xff, 0xff, 0xff, 0xff, 0x5f, 0x00, 0x00
-    };  // default plus extended inquiry mode
-    sendHCICommand(HCI_Set_Event_Mask, sizeof(hci_event_mask_data), hci_event_mask_data);
+	if(do_pair_ssp_) {
+	    static const uint8_t hci_event_mask_data_ssp[8] = {
+			// Default: 0x0000 1FFF FFFF FFFF
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x1F, 0xFF, 0x00
+		};  // default plus extended inquiry mode
+		sendHCICommand(HCI_Set_Event_Mask, sizeof(hci_event_mask_data_ssp), hci_event_mask_data_ssp);
+	} else {
+		static const uint8_t hci_event_mask_data[8] = {
+			// Default: 0x0000 1FFF FFFF FFFF
+			0xff, 0xff, 0xff, 0xff, 0xff, 0x5f, 0x00, 0x00
+		};  // default plus extended inquiry mode
+		sendHCICommand(HCI_Set_Event_Mask, sizeof(hci_event_mask_data), hci_event_mask_data);
+	}
 }
 
 //---------------------------------------------
@@ -1454,10 +1485,7 @@ void BluetoothController::sendHCILinkKeyNegativeReply() {
     uint8_t connection_data[6];
     for (uint8_t i = 0; i < 6; i++) connection_data[i] = current_connection_->device_bdaddr_[i];
     sendHCICommand(HCI_LINK_KEY_NEG_REPLY, sizeof(connection_data), connection_data);
-	
-			if(do_pair_ssp_) {
-				sendHCISimplePairingMode();
-			}
+
 }
 
 //---------------------------------------------
@@ -1488,6 +1516,10 @@ void BluetoothController::sendHDCWriteClassOfDev() {
     const static uint8_t device_class_data[] = {BT_CLASS_DEVICE & 0xff, (BT_CLASS_DEVICE >> 8) & 0xff, (BT_CLASS_DEVICE >> 16) & 0xff};
     DBGPrintf("HCI_WRITE_CLASS_OF_DEV\n");
     sendHCICommand(HCI_WRITE_CLASS_OF_DEV, sizeof(device_class_data), device_class_data);
+	
+	if(do_pair_ssp_) {
+	  sendHCISimplePairingMode();
+	}
 }
 
 
@@ -1546,8 +1578,6 @@ void BluetoothController::sendHCIRoleDiscoveryRequest() {
 
 void BluetoothController::sendHCISimplePairingMode() {
 	uint8_t hcibuf[2];
-        //hcibuf[0] = 0x56; // HCI OCF = 56
-        //hcibuf[1] = 0x03 << 2; // HCI OGF = 3
         hcibuf[0] = 0x01; // parameter length = 1
         hcibuf[1] = 0x01; // enable = 1
 //        hcibuf[3] = enable ? 0x00 : 0x01; // 0x00=OFF 0x01=ON
@@ -1558,26 +1588,30 @@ void BluetoothController::sendHCISimplePairingMode() {
 
 void BluetoothController::sendHCIReadSimplePairingMode() {
 	uint8_t hcibuf[2];
-        //hcibuf[0] = 0x56; // HCI OCF = 56
-        //hcibuf[1] = 0x03 << 2; // HCI OGF = 3
-        //hcibuf[0] = 0x01; // parameter length = 1
-        //hcibuf[1] = 0x01; // enable = 1
-//        hcibuf[3] = enable ? 0x00 : 0x01; // 0x00=OFF 0x01=ON
-
-		DBGPrintf("HCI_Read Simple Pairing Mode\n");
-		sendHCICommand(HCI_READ_SSP_MODE, 0, hcibuf);
+	DBGPrintf("HCI_Read Simple Pairing Mode\n");
+	sendHCICommand(HCI_READ_SSP_MODE, 0, hcibuf);
 }
+
+void BluetoothController::sendHCISetConnectionEncryption() {
+	uint8_t hcibuf[3];
+    hcibuf[0] = current_connection_->device_connection_handle_ & 0xff; //Connection_Handle - low byte
+    hcibuf[1] = (current_connection_->device_connection_handle_ >> 8) & 0xff; //Connection_Handle - high byte
+    hcibuf[2] = 0x01; // 0x00=OFF 0x01=ON 
+    
+    sendHCICommand(HCI_SET_CONN_ENCRYPTION, sizeof(hcibuf), hcibuf);
+}
+
 
 void BluetoothController::handle_hci_encryption_change_complete() {
     DBGPrintf("    Event: Encryption Change %x:%x:%x:%x:%x:%x:%x\n",
               rxbuf_[2], rxbuf_[3], rxbuf_[4], rxbuf_[5], rxbuf_[6], rxbuf_[7], rxbuf_[24]);
     for (uint8_t i = 8; i < 24; i++) DBGPrintf("%02x ", rxbuf_[i]);
 	
-	DBGPrintf("\nRead Encryption Key Size!\n");
-	uint8_t hcibuf[2];
-	hcibuf[0] = rxbuf_[3];
-	hcibuf[1] = rxbuf_[4];
-	sendHCICommand(HCI_READ_ENCRYPTION_KEY_SIZE, sizeof(hcibuf), hcibuf);
+	//DBGPrintf("\nRead Encryption Key Size!\n");
+	//uint8_t hcibuf[2];
+	//hcibuf[0] = rxbuf_[3];
+	//hcibuf[1] = rxbuf_[4];
+	//sendHCICommand(HCI_READ_ENCRYPTION_KEY_SIZE, sizeof(hcibuf), hcibuf);
 }
 
 void inline BluetoothController::sendHCIReadRemoteSupportedFeatures() {
@@ -1595,15 +1629,6 @@ void inline BluetoothController::sendHCIReadRemoteExtendedFeatures() {
     connection_data[1] = (current_connection_->device_connection_handle_ >> 8) & 0xff;
     connection_data[2] = 1;
     sendHCICommand(HCI_OP_READ_REMOTE_EXTENDED_FEATURE, sizeof(connection_data), connection_data);
-}
-
-void BluetoothController::sendHCISetConnectionEncryption() {
-	uint8_t hcibuf[3];
-	hcibuf[0] = rxbuf_[3];
-	hcibuf[1] = rxbuf_[4];
-	hcibuf[2] = 0x01;  // LinkLevel Encryption is ON
-	
-	sendHCICommand(HCI_SET_CONN_ENCRYPTION,  sizeof(hcibuf), hcibuf);
 }
 
 void BluetoothController::sendInfoRequest() {
