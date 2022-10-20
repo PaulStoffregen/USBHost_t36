@@ -89,11 +89,12 @@ void BluetoothConnection::initializeConnection(BluetoothController *btController
     if (device_name)strcpy((char*)descriptor_, (const char *)device_name);
     else descriptor_[0] = 0; // null terminated string.
 
-    device_driver_ = find_driver(device_name, 0);
-
     // We need to save away the BDADDR and class link type?
     for (uint8_t i = 0; i < 6; i++) device_bdaddr_[i] = bdaddr[i];
     device_class_ = class_of_device;
+
+    device_driver_ = find_driver(device_name, 0);
+
 }
 
 //=============================================================================

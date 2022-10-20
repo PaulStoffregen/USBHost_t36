@@ -357,12 +357,7 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
             handle_hci_disconnect_complete();
             break;
         case EV_AUTHENTICATION_COMPLETE:// 0x06
-			//if(has_key == true) sendHCISetConnectionEncryption();  // use simple pairing  qorks if I set before
             handle_hci_authentication_complete();
-			if(has_key == true ) {
-				USBHDBGSerial.printf(" Change to Link Encryption:  ");
-				sendHCISetConnectionEncryption();  // use simple pairing   hangs the link 
-			}
             break;
         case EV_REMOTE_NAME_COMPLETE: // 0x07
             handle_hci_remote_name_complete();
@@ -390,6 +385,11 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
             sendHCIRoleDiscoveryRequest();
             break;
 		case EV_ENCRYPTION_CHANGE:// < UseSimplePairing
+			if(has_key == true ) {
+				USBHDBGSerial.printf(" Change to Link Encryption:  ");
+				sendHCISetConnectionEncryption();  // use simple pairing   hangs the link 
+				has_key = false;
+			}
 			handle_hci_encryption_change_complete();
 			break;		
 		case EV_RETURN_LINK_KEYS:
@@ -983,7 +983,7 @@ void BluetoothController::handle_hci_io_capability_response()
 
 void BluetoothController::handle_hci_user_confirmation_request_reply()
 {
-    uint8_t hcibuf[7];
+    uint8_t hcibuf[6];
     hcibuf[0] = current_connection_->device_bdaddr_[0]; // 6 octet bdaddr
     hcibuf[1] = current_connection_->device_bdaddr_[1];
     hcibuf[2] = current_connection_->device_bdaddr_[2];
@@ -1413,7 +1413,7 @@ void BluetoothController::sendHCISetEventMask() {
 	if(do_pair_ssp_) {
 	    static const uint8_t hci_event_mask_data_ssp[8] = {
 			// Default: 0x0000 1FFF FFFF FFFF
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x5F, 0xFF, 0x00
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x1F, 0xFF, 0x00
 		};  // default plus extended inquiry mode
 		sendHCICommand(HCI_Set_Event_Mask, sizeof(hci_event_mask_data_ssp), hci_event_mask_data_ssp);
 	} else {
@@ -1618,11 +1618,11 @@ void BluetoothController::handle_hci_encryption_change_complete() {
               rxbuf_[2], rxbuf_[3], rxbuf_[4], rxbuf_[5], rxbuf_[6], rxbuf_[7], rxbuf_[24]);
     for (uint8_t i = 8; i < 24; i++) DBGPrintf("%02x ", rxbuf_[i]);
 	
-	//DBGPrintf("\nRead Encryption Key Size!\n");
-	//uint8_t hcibuf[2];
-	//hcibuf[0] = rxbuf_[3];
-	//hcibuf[1] = rxbuf_[4];
-	//sendHCICommand(HCI_READ_ENCRYPTION_KEY_SIZE, sizeof(hcibuf), hcibuf);
+	DBGPrintf("\nRead Encryption Key Size!\n");
+	uint8_t hcibuf[2];
+	hcibuf[0] = rxbuf_[3];
+	hcibuf[1] = rxbuf_[4];
+	sendHCICommand(HCI_READ_ENCRYPTION_KEY_SIZE, sizeof(hcibuf), hcibuf);
 }
 
 void inline BluetoothController::sendHCIReadRemoteSupportedFeatures() {
