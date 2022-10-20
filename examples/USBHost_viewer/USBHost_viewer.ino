@@ -86,8 +86,8 @@ USBHIDParser hid7(myusb);
 MouseController mouse(myusb);
 DigitizerController tablet(myusb);
 JoystickController joystick(myusb);
-BluetoothController bluet(myusb, false, "0000", true);   // Version does pairing to device
-//BluetoothController bluet(myusb);   // version assumes it already was paired
+//BluetoothController bluet(myusb, true, "0000");   // Version does pairing to device
+BluetoothController bluet(myusb);   // version assumes it already was paired
 RawHIDController rawhid2(myusb);
 
 // Lets only include in the lists The most top level type devices we wish to show information for.
@@ -234,9 +234,9 @@ void loop()
       int ch = Serial.read();
       while (Serial.read() != -1) ;
       if (ch == 'P') {
-        if (bluet.startDevicePairing("0000", true)) {
+        if (bluet.startDevicePairing("0000")) {
           Serial.println("Pairing operation started");
-
+          
         } else {
           Serial.println("Staring of Pairing operation failed");
         }

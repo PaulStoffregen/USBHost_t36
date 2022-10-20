@@ -2078,7 +2078,7 @@ public:
     const uint8_t*  myBDAddr(void) {return my_bdaddr_;}
 
     // See if we can start up pairing after sketch is running. 
-    bool startDevicePairing(const char *pin, bool pair_ssp = false);
+    bool startDevicePairing(const char *pin);
 
     // BUGBUG version to allow some of the controlled objects to call?
     enum {CONTROL_SCID = -1, INTERRUPT_SCID = -2, SDP_SCID = -3};
@@ -2194,11 +2194,11 @@ private:
 
     bool            do_pair_device_;    // Should we do a pair for a new device?
     const char      *pair_pincode_; // What pin code to use for the pairing
-    bool            do_pair_ssp_;   // pair device using SSP
     USBDriverTimer  timer_;
     uint8_t         my_bdaddr_[6];  // The bluetooth dongles Bluetooth address.
     uint8_t         features[8];    // remember our local features.
 	
+	bool			do_pair_ssp_;	// pair device using SSP
 
     typedef struct {
         uint16_t    idVendor;
