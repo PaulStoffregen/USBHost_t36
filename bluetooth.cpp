@@ -259,7 +259,7 @@ bool BluetoothController::setTimer(BluetoothConnection *connection, uint32_t us)
 /************************************************************/
 //  Try starting a pairing operation after sketch starts
 /************************************************************/
-bool BluetoothController::startDevicePairing(const char *pin)
+bool BluetoothController::startDevicePairing(const char *pin, bool pair_ssp)
 {
     // What should we verify before starting this mode?
     if (pending_control_ != 0) {
@@ -269,9 +269,10 @@ bool BluetoothController::startDevicePairing(const char *pin)
 
     // BUGBUG:: probably should make copy of pin...
     pair_pincode_ = pin;
+    do_pair_ssp_ = pair_ssp;
 
     // Try simple approach first to see if I can simply start it
-    do_pair_device_ = true;
+    do_pair_device_ = !do_pair_ssp_;
     pending_control_ = PC_SEND_WRITE_INQUIRE_MODE;
     queue_next_hci_command();
 
@@ -460,7 +461,7 @@ void BluetoothController::handle_hci_command_complete()
     case HCI_OP_REMOTE_NAME_REQ:
         break;
     case HCI_RESET: //0x0c03
-        if (!rxbuf_[5]) pending_control_ = PC_WRITE_CLASS_DEVICE;
+        if (!rxbuf_[5]) pending_control_++;
         //  If it fails, will retry. maybe should have repeat max...
         break;
     case HCI_Set_Event_Filter_Clear:    //0x0c05
@@ -557,7 +558,7 @@ void BluetoothController::handle_hci_command_complete()
 	case HCI_READ_SSP_MODE:                    //0x0c55
 		break;
     case HCI_WRITE_SSP_MODE:                    //0x0c56
-		sendHCIReadSimplePairingMode();
+		//sendHCIReadSimplePairingMode();
         break;
     case HCI_WRITE_EIR:                     //0x0c52
         break;
@@ -608,6 +609,23 @@ void BluetoothController::queue_next_hci_command()
         sendHDCWriteClassOfDev();
         pending_control_++;
         break;
+
+    case PC_MAYBE_WRITE_SIMPLE_PAIR:
+        pending_control_++;
+        if(do_pair_ssp_) {
+            sendHCISimplePairingMode();
+             break;
+        }
+        // otherwise fall through
+
+    case PC_MAYBE_READ_SIMPLE_PAIR:
+        pending_control_++;
+        if(do_pair_ssp_) {
+            sendHCIReadSimplePairingMode();
+            break;
+        }
+        // otherwise fall through
+
     case PC_READ_BDADDR:
         sendHCIReadBDAddr();
         pending_control_++;
@@ -1395,7 +1413,7 @@ void BluetoothController::sendHCISetEventMask() {
 	if(do_pair_ssp_) {
 	    static const uint8_t hci_event_mask_data_ssp[8] = {
 			// Default: 0x0000 1FFF FFFF FFFF
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x1F, 0xFF, 0x00
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x5F, 0xFF, 0x00
 		};  // default plus extended inquiry mode
 		sendHCICommand(HCI_Set_Event_Mask, sizeof(hci_event_mask_data_ssp), hci_event_mask_data_ssp);
 	} else {
@@ -1516,10 +1534,6 @@ void BluetoothController::sendHDCWriteClassOfDev() {
     const static uint8_t device_class_data[] = {BT_CLASS_DEVICE & 0xff, (BT_CLASS_DEVICE >> 8) & 0xff, (BT_CLASS_DEVICE >> 16) & 0xff};
     DBGPrintf("HCI_WRITE_CLASS_OF_DEV\n");
     sendHCICommand(HCI_WRITE_CLASS_OF_DEV, sizeof(device_class_data), device_class_data);
-	
-	if(do_pair_ssp_) {
-	  sendHCISimplePairingMode();
-	}
 }
 
 
@@ -1577,11 +1591,8 @@ void BluetoothController::sendHCIRoleDiscoveryRequest() {
 //*******************************************************************
 
 void BluetoothController::sendHCISimplePairingMode() {
-	uint8_t hcibuf[2];
-        hcibuf[0] = 0x01; // parameter length = 1
-        hcibuf[1] = 0x01; // enable = 1
-//        hcibuf[3] = enable ? 0x00 : 0x01; // 0x00=OFF 0x01=ON
-
+	uint8_t hcibuf[1];
+        hcibuf[0] = 0x01; // enable = 1
 		DBGPrintf("HCI_Set Simple Pairing Mode\n");
 		sendHCICommand(HCI_WRITE_SSP_MODE, sizeof(hcibuf), hcibuf);
 }
