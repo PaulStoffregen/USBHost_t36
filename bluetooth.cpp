@@ -417,10 +417,15 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
             handle_hci_link_key_notification();
             break;
         case EV_INQUIRY_RESULTS_WITH_RSSI:
-            handle_hci_inquiry_result(true);
+            //handle_hci_inquiry_result(true);
+            DBGPrintf("$$$ EV_INQUIRY_RESULTS_WITH_RSSI = disabled\n");
             break;
         case EV_EXTENDED_INQUIRY_RESULT:
+            #if 0
             handle_hci_extended_inquiry_result();
+            #else
+            DBGPrintf("$$$ EV_EXTENDED_INQUIRY_RESULT Disabled\n");
+            #endif
             break;
         case EV_IO_CAPABILITY_RESPONSE:
             handle_hci_io_capability_response();
@@ -605,6 +610,11 @@ void BluetoothController::queue_next_hci_command()
     case PC_RESET:
         sendResetHCI();
         break;
+    case PC_SEND_SET_EVENT_MASK:
+        sendHCISetEventMask();  // Set the event mask to include extend inquire event
+        pending_control_++;
+        break;
+
     case PC_WRITE_CLASS_DEVICE:
         sendHDCWriteClassOfDev();
         pending_control_++;
@@ -638,14 +648,10 @@ void BluetoothController::queue_next_hci_command()
 
     // These are used when we are pairing.
     case PC_SEND_WRITE_INQUIRE_MODE:
-        sendHCIHCIWriteInquiryMode(2);  // lets set into extended inquire mode
+        sendHCIHCIWriteInquiryMode(0/*2 */);  // lets set into extended inquire mode
         pending_control_++;
         break;
 
-    case PC_SEND_SET_EVENT_MASK:
-        sendHCISetEventMask();  // Set the event mask to include extend inquire event
-        pending_control_++;
-        break;
 
     case PC_SEND_INQUIRE:
         sendHCI_INQUIRY();
@@ -841,27 +847,31 @@ void BluetoothController::handle_hci_inquiry_result(bool fRSSI)
             count_connections_++;
 
             // BUGBUG, lets hard code to go to new state...
-            current_connection_->initializeConnection(this, &rxbuf_[index_bd], bluetooth_class, nullptr);
+            current_connection_->initializeConnection(this, &rxbuf_[index_bd], bluetooth_class, true);
 
             current_connection_->device_ps_repetion_mode_  = rxbuf_[index_ps]; // mode
-            current_connection_->device_clock_offset_[0] = rxbuf_[index_clock_offset];
-            current_connection_->device_clock_offset_[1] = rxbuf_[index_clock_offset + 1];
+            //current_connection_->device_clock_offset_[0] = rxbuf_[index_clock_offset];
+            //current_connection_->device_clock_offset_[1] = rxbuf_[index_clock_offset + 1];
 
             // BUGBUG, lets hard code to go to new state...
-            for (uint8_t i = 0; i < 6; i++) current_connection_->device_bdaddr_[i] = rxbuf_[index_bd + i];
-            current_connection_->device_class_ = bluetooth_class;
-            current_connection_->device_driver_ = current_connection_->find_driver(nullptr, 0);
-
+            //for (uint8_t i = 0; i < 6; i++) current_connection_->device_bdaddr_[i] = rxbuf_[index_bd + i];
+            //current_connection_->device_class_ = bluetooth_class;
+            //current_connection_->device_driver_ = current_connection_->find_driver(nullptr, 0);
+            
+            // lets get the remote name now.
+            sendHCIRemoteNameRequest();
+#if 0
             if (current_connection_->device_driver_  || current_connection_->check_for_hid_descriptor_) {
                 // Now we need to bail from inquiry and setup to try to connect...
                 sendHCIInquiryCancel();
                 pending_control_ = PC_INQUIRE_CANCEL;
                 break;
             }
+#endif            
         }
     }
 }
-
+#if 0
 void BluetoothController::handle_hci_extended_inquiry_result()
 {
     DBGPrintf("    Extended Inquiry Result - Count: %d\n", rxbuf_[2]);
@@ -944,6 +954,7 @@ void BluetoothController::handle_hci_extended_inquiry_result()
         pending_control_ = PC_INQUIRE_CANCEL;
     }
 }
+#endif
 
 void BluetoothController::handle_hci_io_capability_request()
 {
@@ -1100,7 +1111,7 @@ void BluetoothController::handle_hci_incoming_connect() {
         count_connections_++;
 
         // Lets reinitialize some of the fields of this back to startup settings.
-        current_connection_->initializeConnection(this, &rxbuf_[2], class_of_device, nullptr);
+        current_connection_->initializeConnection(this, &rxbuf_[2], class_of_device, false);
 
         sendHCIRemoteNameRequest();
     }
@@ -1211,6 +1222,25 @@ void BluetoothController::handle_hci_remote_name_complete() {
         for (uint8_t *psz = &rxbuf_[9]; *psz; psz++) DBGPrintf("%c", *psz);
         DBGPrintf("\n");
     }
+
+    current_connection_->remoteNameComplete((rxbuf_[2] == 0)? &rxbuf_[9] : nullptr);
+
+    if (current_connection_->inquire_mode_) {
+        // we are in some form of inquire pairing mode
+        if (current_connection_->device_driver_  || current_connection_->check_for_hid_descriptor_) {
+            // Now we need to bail from inquiry and setup to try to connect...
+            sendHCIInquiryCancel();
+            pending_control_ = PC_INQUIRE_CANCEL;
+        }
+
+    } else {
+        // This was from an incomming connect.
+        sendHCIAcceptConnectionRequest();
+    }
+
+#if 0
+    // not sure yet where this was used in newer stuff...
+
     if (current_connection_->supports_SSP_ == false) {
         if (current_connection_->device_driver_) {
             if (!current_connection_->device_driver_->remoteNameComplete(&rxbuf_[9])) {
@@ -1257,6 +1287,7 @@ void BluetoothController::handle_hci_remote_name_complete() {
     } else {
         sendHCIAuthenticationRequested();
     }
+#endif    
 }
 
 void BluetoothController::handle_hci_remote_version_information_complete() {

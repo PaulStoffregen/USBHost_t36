@@ -906,7 +906,7 @@ hidclaim_t JoystickController::claim_bluetooth(BluetoothConnection *btconnection
     if ((bluetooth_class & 0x0f00) == 0x500) {
         bool name_maps_to_joystick_type = (remoteName && mapNameToJoystickType(remoteName));
         if ((bluetooth_class & 0x3C) == 0x08) {
-            bool claim_interface = (type == 1);
+            bool claim_interface = (type == 1) || (remoteName == nullptr);
             if (name_maps_to_joystick_type) {
                 switch (joystickType_) {
                     default:
@@ -918,6 +918,7 @@ hidclaim_t JoystickController::claim_bluetooth(BluetoothConnection *btconnection
                         special_process_required = SP_PS3_IDS;      // PS3 maybe needs different IDS.
                         // fall through
                     case PS4:
+                    case  XBOXONE:
                         claim_interface = true;
                         break;
                 }

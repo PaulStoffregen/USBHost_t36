@@ -65,7 +65,8 @@ BluetoothConnection *BluetoothConnection::s_first_ = NULL;
 //=============================================================================
 // initialize the connection data
 //=============================================================================
-void BluetoothConnection::initializeConnection(BluetoothController *btController, uint8_t bdaddr[6], uint32_t class_of_device, uint8_t *device_name)
+void BluetoothConnection::initializeConnection(BluetoothController *btController, uint8_t bdaddr[6], uint32_t class_of_device, 
+        bool inquire_mode)
 {
     device_driver_ = nullptr;
     btController_ = btController;  // back pointer to main object
@@ -82,25 +83,28 @@ void BluetoothConnection::initializeConnection(BluetoothController *btController
     sdp_connected_ = false;
     supports_SSP_ = false;
     pending_control_tx_ = 0;
-
+    inquire_mode_ = inquire_mode; 
     find_driver_type_1_called_ = false; // bugbug should combine:
-
-    // hack for now remember the device_name if we have one
-    if (device_name)strcpy((char*)descriptor_, (const char *)device_name);
-    else descriptor_[0] = 0; // null terminated string.
 
     // We need to save away the BDADDR and class link type?
     for (uint8_t i = 0; i < 6; i++) device_bdaddr_[i] = bdaddr[i];
     device_class_ = class_of_device;
+}
+
+void BluetoothConnection::remoteNameComplete(const uint8_t *device_name)
+{
+    // hack for now remember the device_name if we have one
+    if (device_name)strcpy((char*)descriptor_, (const char *)device_name);
+    else descriptor_[0] = 0; // null terminated string.
 
     device_driver_ = find_driver(device_name, 0);
-
 }
+
 
 //=============================================================================
 // Find a driver
 //=============================================================================
-BTHIDInput * BluetoothConnection::find_driver(uint8_t *remoteName, int type)
+BTHIDInput * BluetoothConnection::find_driver(const uint8_t *remoteName, int type)
 {
     if (type == 1) find_driver_type_1_called_ = true;
     DBGPrintf("BluetoothController::find_driver(%x) type: %d\n", device_class_, type);
@@ -117,7 +121,8 @@ BTHIDInput * BluetoothConnection::find_driver(uint8_t *remoteName, int type)
     BTHIDInput *driver = BluetoothController::available_bthid_drivers_list;
     while (driver) {
         DBGPrintf("  driver %x\n", (uint32_t)driver);
-        hidclaim_t claim_type = driver->claim_bluetooth(this, device_class_, remoteName, type);
+        // should make const all the way through
+        hidclaim_t claim_type = driver->claim_bluetooth(this, device_class_, (uint8_t*)remoteName, type);
         if (claim_type == CLAIM_INTERFACE) {
             check_for_hid_descriptor_ = false;
             DBGPrintf("    *** Claimed ***\n");

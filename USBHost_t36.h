@@ -1927,12 +1927,13 @@ public:
     BluetoothConnection() {init();}
     void init() {next_ = s_first_; s_first_ = this; }
 
-    void initializeConnection(BluetoothController *btController, uint8_t bdaddr[6], uint32_t class_of_device, uint8_t *device_name);
+    void initializeConnection(BluetoothController *btController, uint8_t bdaddr[6], uint32_t class_of_device, bool inquire_mode);
+    void remoteNameComplete(const uint8_t *remote_name);
 
     void parse(void);
     void parse(uint16_t type_and_report_id, const uint8_t *data, uint32_t len);
     BTHIDInput * find_driver(uint32_t topusage);
-    BTHIDInput * find_driver(uint8_t *remoteName, int type);
+    BTHIDInput * find_driver(const uint8_t *remoteName, int type);
 
     void dumpHIDReportDescriptor();
     void print_input_output_feature_bits(uint8_t val);
@@ -1954,7 +1955,7 @@ public:
     uint16_t        sdp_scid_;
     uint8_t         device_bdaddr_[6];// remember devices address
     uint8_t         device_ps_repetion_mode_ ; // mode
-    uint8_t         device_clock_offset_[2];
+    //uint8_t         device_clock_offset_[2];
     uint32_t        device_class_;  // class of device.
     uint16_t        device_connection_handle_;  // handle to connection
     uint8_t         remote_ver_;
@@ -1966,6 +1967,7 @@ public:
     bool            find_driver_type_1_called_ = false; 
     uint8_t         seq_number_ = 0;
     bool            use_hid_protocol_ = false; //
+    bool            inquire_mode_ = false; // inquire mode?  or incomming connect
     bool            sdp_connected_ = false;
     bool            supports_SSP_ = false; 
     uint16_t        pending_control_tx_ = 0;
