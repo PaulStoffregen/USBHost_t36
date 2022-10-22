@@ -427,7 +427,7 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
             #endif
             break;
         case EV_IO_CAPABILITY_RESPONSE:
-            handle_hci_io_capability_response();
+            handle_HCI_IO_CAPABILITY_REQUEST_REPLY();
             break;
         case EV_IO_CAPABILITY_REQUEST:
             handle_hci_io_capability_request();
@@ -447,6 +447,165 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
         return;     // Don't process the message yet as we still have data to receive.
     }
 }
+
+#ifdef DEBUG_BT_VERBOSE
+void print_supported_commands(uint8_t *cmd_data) { 
+    typedef struct {
+        uint8_t octet;
+        uint8_t bit;
+        const char *name;
+    } pss_data_t;
+    static const pss_data_t pssd[] = {
+    { 0, 0, /*0x0401*/  "HCI_INQUIRY"},                         
+    { 0, 1, /*0x0402*/  "HCI_INQUIRY_CANCEL"},                  
+    { 0, 4, /*0x0405*/  "HCI_CREATE_CONNECTION"},               
+    { 1, 0, /*0x0409*/  "HCI_OP_ACCEPT_CONN_REQ"},              
+    { 1, 1, /*0x040A*/  "HCI_OP_REJECT_CONN_REQ"},              
+    { 1, 2, /*0x040B*/  "HCI_LINK_KEY_REQUEST_REPLY"},            
+    { 1, 3, /*0x040C*/  "HCI_LINK_KEY_NEG_REPLY"},              
+    { 1, 4, /*0x040D*/  "HCI_PIN_CODE_REPLY"},                  
+    { 1, 7, /*0x0411*/  "HCI_AUTH_REQUESTED"},                  
+    { 2, 0, /*0x0413*/  "HCI_SET_CONN_ENCRYPTION"},             
+    { 2, 3, /*0x0419*/  "HCI_OP_REMOTE_NAME_REQ"},              
+    { 2, 4, /*0x041a*/  "HCI_OP_REMOTE_NAME_REQ_CANCEL"},       
+    { 2, 5, /*0x041b*/  "HCI_OP_READ_REMOTE_FEATURES"},         
+    { 2, 6, /*0x041c*/  "HCI_OP_READ_REMOTE_EXTENDED_FEATURE"}, 
+    { 2, 7, /*0x041D*/  "HCI_OP_READ_REMOTE_VERSION_INFORMATION"}, 
+    { 18, 7, /*0x042B*/  "HCI_IO_CAPABILITY_REQUEST_REPLY"},          
+    { 19, 0, /*0x042C*/  "HCI_USER_CONFIRMATION_REQUEST"},       
+    { 4, 7, /*0x0809*/  "HCI_OP_ROLE_DISCOVERY"},               
+    { 5, 4, /*0x080f*/  "HCI_Write_Default_Link_Policy_Settings"},  
+    { 5, 6, /*0x0c01*/  "HCI_Set_Event_Mask"},                  
+    { 5, 7, /*0x0c03*/  "HCI_RESET"},                           
+    { 6, 0, /*0x0c05*/  "HCI_SET_EVENT_FILTER"},          
+    { 6, 5, /*0x0c0d*/  "HCI_Read_Stored_Link_Key"},            
+    { 6, 7, /*0x0c12*/  "HCI_DELETE_STORED_LINK_KEY"},          
+    { 7, 0, /*0x0c13*/  "HCI_WRITE_LOCAL_NAME"},                
+    { 7, 1, /*0x0c14*/  "HCI_Read_Local_Name"},                 
+    { 7, 3, /*0x0c16*/  "HCI_Write_Connection_Accept_Timeout"},     
+    { 7, 6, /*0x0c1a*/  "HCI_WRITE_SCAN_ENABLE"},               
+    { 8, 0, /*0x0c1b*/  "HCI_Read_Page_Scan_Activity"},         
+    { 9, 0, /*0x0c23*/  "HCI_READ_CLASS_OF_DEVICE"},            
+    { 9, 1, /*0x0C24*/  "HCI_WRITE_CLASS_OF_DEV"},              
+    { 9, 2, /*0x0c25*/  "HCI_Read_Voice_Setting"},              
+    { 11, 2, /*0x0c38*/  "HCI_Read_Number_Of_Supported_IAC"},    
+    { 11, 3, /*0x0c39*/  "HCI_Read_Current_IAC_LAP"},            
+    { 12, 6, /*0x0c45*/  "HCI_WRITE_INQUIRY_MODE"},              
+    { 13, 1, /*0x0c46*/  "HCI_Read_Page_Scan_Type"},             
+    { 17, 1, /*0x0c52*/  "HCI_WRITE_EXTENDED_INQUIRY_RESPONSE"},                       
+    { 17, 5, /*0x0c55*/  "HCI_READ_SIMPLE_PAIRING_MODE"},                   
+    { 17, 6, /*0x0c56*/  "HCI_WRITE_SIMPLE_PAIRING_MODE"},                  
+    { 18, 0, /*0x0c58*/  "HCI_Read_Inquiry_Response_Transmit_Power_Level"}, 
+    { 24, 5, /*???? */  "HCI_READ_LE_HOST_SUPPORTED"},         
+    { 24, 6, /*0x0c6d*/  "HCI_WRITE_LE_HOST_SUPPORTED"},         
+
+    #if 0
+    { 0, 0, /*0x1001*/  "HCI_Read_Local_Version_Information"},  
+    { 0, 0, /*0x1002*/  "HCI_Read_Local_Supported_Commands"},   
+    { 25, 2, /*0x1003*/  "HCI_Read_Local_Supported_Features"},   
+    { 0, 0, /*0x1004*/  "HCI_Read_Local_Extended_Features"},    
+    { 25, 1, /*0x1005*/  "HCI_Read_Buffer_Size"},                
+    { 0, 0, /*0x1009*/  "HCI_Read_BD_ADDR"},                    
+    { 0, 0, /*0x1408*/  "HCI_READ_ENCRYPTION_KEY_SIZE"},        
+    { 0, 0, /*0x2001*/  "HCI_LE_SET_EVENT_MASK"},               
+    { 0, 0, /*0x2002*/  "HCI_LE_Read_Buffer_Size"},             
+    { 0, 0, /*0x2003*/  "HCI_LE_Read_Local_supported_Features"}, 
+    { 0, 0, /*0x2007*/  "HCI_LE_READ_ADV_TX_POWER"},            
+    { 0, 0, /*0x2008*/  "HCI_LE_SET_ADV_DATA"},                 
+    { 0, 0, /*0x2009*/  "HCI_LE_SET_SCAN_RSP_DATA"},            
+    { 0, 0, /*0x200f*/  "HCI_LE_READ_WHITE_LIST_SIZE"},         
+    { 0, 0, /*0x2010*/  "HCI_LE_CLEAR_WHITE_LIST"},             
+    { 0, 0, /*0x201c*/  "HCI_LE_Supported_States"},             
+    #endif
+    };
+
+    USBHDBGSerial.printf("\n### Local Supported Commands ###\n");
+
+    for (uint16_t i = 0; i < (sizeof(pssd) / sizeof(pssd[0])); i++) {
+        uint8_t mask = 1 << pssd[i].bit;
+        USBHDBGSerial.printf("\t%s - ", pssd[i].name);
+        if (cmd_data[pssd[i].octet] & mask) USBHDBGSerial.printf("yes\n");
+        else USBHDBGSerial.printf("** NO ***\n");
+    }
+}
+#endif
+
+#ifdef DEBUG_BT_VERBOSE
+void print_supported_features(uint8_t *cmd_data) { 
+    typedef struct {
+        uint8_t octet;
+        uint8_t bit;
+        const char *name;
+    } pss_data_t;
+    static const pss_data_t pssd[] = {
+        {0, 0, "3 slot packets"}, 
+        {0, 1, "5 slot packets"}, 
+        {0, 2, "Encryption"}, 
+        {0, 3, "Slot offset"}, 
+        {0, 4, "Timing accuracy"}, 
+        {0, 5, "Role switch"}, 
+        {0, 6, "Hold mode"}, 
+        {0, 7, "Sniff mode"}, 
+        {1, 0, "Reserved"}, 
+        {1, 1, "Power control requests"}, 
+        {1, 2, "Channel quality driven data rate (CQDDR)"}, 
+        {1, 3, "SCO link"}, 
+        {1, 4, "HV2 packets"}, 
+        {1, 5, "HV3 packets"}, 
+        {1, 6, "μ-law log synchronous data"}, 
+        {1, 7, "A-law log synchronous data"}, 
+        {2, 0, "CVSD synchronous data"}, 
+        {2, 1, "Paging parameter negotiation"}, 
+        {2, 2, "Power control"}, 
+        {2, 3, "Transparent synchronous data"}, 
+        {2, 4, "Flow control lag (least significant bit)"}, 
+        {2, 5, "Flow control lag (middle bit)"}, 
+        {2, 6, "Flow control lag (most significant bit)"}, 
+        {2, 7, "Broadcast Encryption"}, 
+        {3, 1, "Enhanced Data Rate ACL 2 Mb/s mode"}, 
+        {3, 2, "Enhanced Data Rate ACL 3 Mb/s mode"}, 
+        {3, 3, "Enhanced inquiry scan"}, 
+        {3, 4, "Interlaced inquiry scan"}, 
+        {3, 5, "Interlaced page scan"}, 
+        {3, 6, "RSSI with inquiry results"}, 
+        {3, 7, "Extended SCO link (EV3 packets)"}, 
+        {4, 0, "EV4 packets"}, 
+        {4, 1, "EV5 packets"}, 
+        {4, 3, "AFH capable slave"}, 
+        {4, 4, "AFH classification slave"}, 
+        {4, 5, "BR/EDR Not Supported"}, 
+        {4, 6, "LE Supported (Controller)"}, 
+        {4, 7, "3-slot Enhanced Data Rate ACL packets"}, 
+        {5, 0, "5-slot Enhanced Data Rate ACL packets"}, 
+        {5, 1, "Sniff subrating"}, 
+        {5, 2, "Pause encryption"}, 
+        {5, 3, "AFH capable master"}, 
+        {5, 4, "AFH classification master"}, 
+        {5, 5, "Enhanced Data Rate eSCO 2 Mb/s mode"}, 
+        {5, 6, "Enhanced Data Rate eSCO 3 Mb/s mode"}, 
+        {5, 7, "3-slot Enhanced Data Rate eSCO packets"}, 
+        {6, 0, "Extended Inquiry Response"}, 
+        {6, 1, "Simultaneous LE and BR/EDR to Same Device Capable(Controller)"}, 
+        {6, 3, "Secure Simple Pairing"}, 
+        {6, 4, "Encapsulated PDU"}, 
+        {6, 5, "Erroneous Data Reporting"}, 
+        {6, 6, "Non-flushable Packet Boundary Flag"}, 
+        {7, 0, "Link Supervision Timeout Changed Event"}, 
+        {7, 1, "Inquiry TX Power Level"}, 
+        {7, 2, "Enhanced Power Control"}, 
+        {7, 7, "Extended features"}
+    };
+    USBHDBGSerial.printf("\n### Local Supported Features ###\n");
+
+    for (uint16_t i = 0; i < (sizeof(pssd) / sizeof(pssd[0])); i++) {
+        uint8_t mask = 1 << pssd[i].bit;
+        USBHDBGSerial.printf("\t%s - ", pssd[i].name);
+        if (cmd_data[pssd[i].octet] & mask) USBHDBGSerial.printf("yes\n");
+        else USBHDBGSerial.printf("** NO ***\n");
+    }
+}
+#endif
+
 
 //===================================================================
 // Called when an HCI command completes.
@@ -541,7 +700,7 @@ void BluetoothController::handle_hci_command_complete()
         if (!rxbuf_[5]) pending_control_++;
         //  If it fails, will retry. maybe should have repeat max...
         break;
-    case HCI_Set_Event_Filter_Clear:    //0x0c05
+    case HCI_SET_EVENT_FILTER:    //0x0c05
         break;
     case HCI_Read_Local_Name:   //0x0c14
         // received name back...
@@ -573,7 +732,18 @@ void BluetoothController::handle_hci_command_complete()
         break;
     case HCI_Read_Inquiry_Response_Transmit_Power_Level: //0x0c58
         break;
+    case HCI_Read_Local_Supported_Commands: //0x1002
+        DBGPrintf("    HCI_Read_Local_Supported_Commands\n");
+        #ifdef DEBUG_BT_VERBOSE
+        print_supported_commands(&rxbuf_[6]);
+        #endif
+        break;
+    
     case HCI_Read_Local_Supported_Features: //0x1003
+        DBGPrintf("    HCI_Read_Local_Supported_Features\n");
+        #ifdef DEBUG_BT_VERBOSE
+        print_supported_features(&rxbuf_[6]);
+        #endif
         // Remember the features supported by local...
         for (buffer_index = 0; buffer_index < 8; buffer_index++) {
             features[buffer_index] = rxbuf_[buffer_index + 6];
@@ -595,8 +765,6 @@ void BluetoothController::handle_hci_command_complete()
 		} else {
 			pending_control_ = (do_pair_device_) ? PC_SEND_WRITE_INQUIRE_MODE : PC_WRITE_SCAN_PAGE;
 		}
-        break;
-    case HCI_Read_Local_Supported_Commands: //0x1002
         break;
     case HCI_LE_Read_Buffer_Size:   //0x2002
         break;
@@ -632,12 +800,12 @@ void BluetoothController::handle_hci_command_complete()
     case HCI_WRITE_SCAN_ENABLE:             //0x0c1a
         current_connection_->handle_HCI_WRITE_SCAN_ENABLE_complete(rxbuf_);
         break;
-	case HCI_READ_SSP_MODE:                    //0x0c55
+	case HCI_READ_SIMPLE_PAIRING_MODE:                    //0x0c55
 		break;
-    case HCI_WRITE_SSP_MODE:                    //0x0c56
+    case HCI_WRITE_SIMPLE_PAIRING_MODE:                    //0x0c56
 		//sendHCIReadSimplePairingMode();
         break;
-    case HCI_WRITE_EIR:                     //0x0c52
+    case HCI_WRITE_EXTENDED_INQUIRY_RESPONSE:                     //0x0c52
         break;
     case HCI_WRITE_LE_HOST_SUPPORTED:           //0x0c6d
         break;
@@ -660,13 +828,13 @@ void BluetoothController::handle_hci_command_complete()
 		break;
 	case HCI_READ_ENCRYPTION_KEY_SIZE:
 		break;
-	case HCI_WRITE_LINK_TO_DEVICE:
+	case HCI_LINK_KEY_REQUEST_REPLY:
 		DBGPrintf("Link Key Written to Device\n");
 		break;
 	case HCI_USER_CONFIRMATION_REQUEST: //0x042C
 		DBGPrintf("User Confirmation Request Reply\n");
 		break;
-	case HCI_IO_CAPABILITY_RESPONSE:  //0x042B
+	case HCI_IO_CAPABILITY_REQUEST_REPLY:  //0x042B
 		break;
     }
     // And queue up the next command
@@ -681,6 +849,14 @@ void BluetoothController::queue_next_hci_command()
     // Initial setup states.
     case PC_RESET:
         sendResetHCI();
+        break;
+    case PC_READ_LOCAL_SUPPORTED_COMMANDS:
+        sendHCIReadLocalSupportedCommands();
+        pending_control_++;
+        break;
+    case PC_READ_LOCAL_SUPPORTED_FEATURES:
+        sendHCIReadLocalSupportedFeatures();
+        pending_control_++;
         break;
     case PC_SEND_SET_EVENT_MASK:
         sendHCISetEventMask();  // Set the event mask to include extend inquire event
@@ -788,7 +964,7 @@ void BluetoothController::handle_hci_command_status()
             case 0x080f: DBGPrintf("HCI_Write_Default_Link_Policy_Settings"); break;
             case 0x0c01: DBGPrintf("HCI_Set_Event_Mask"); break;
             case 0x0c03: DBGPrintf("HCI_RESET"); break;
-            case 0x0c05: DBGPrintf("HCI_Set_Event_Filter_Clear"); break;
+            case 0x0c05: DBGPrintf("HCI_SET_EVENT_FILTER"); break;
             case 0x0c14: DBGPrintf("HCI_Read_Local_Name"); break;
             case 0x0c0d: DBGPrintf("HCI_Read_Stored_Link_Key"); break;
             case 0x0c12: DBGPrintf("HCI_DELETE_STORED_LINK_KEY"); break;
@@ -803,8 +979,8 @@ void BluetoothController::handle_hci_command_status()
             case 0x0c39: DBGPrintf("HCI_Read_Current_IAC_LAP"); break;
             case 0x0c45: DBGPrintf("HCI_WRITE_INQUIRY_MODE"); break;
             case 0x0c46: DBGPrintf("HCI_Read_Page_Scan_Type"); break;
-            case 0x0c52: DBGPrintf("HCI_WRITE_EIR"); break;
-            case 0x0c56: DBGPrintf("HCI_WRITE_SSP_MODE"); break;
+            case 0x0c52: DBGPrintf("HCI_WRITE_EXTENDED_INQUIRY_RESPONSE"); break;
+            case 0x0c56: DBGPrintf("HCI_WRITE_SIMPLE_PAIRING_MODE"); break;
             case 0x0c58: DBGPrintf("HCI_Read_Inquiry_Response_Transmit_Power_Level"); break;
             case 0x0c6d: DBGPrintf("HCI_WRITE_LE_HOST_SUPPORTED"); break;
             case 0x1003: DBGPrintf("HCI_Read_Local_Supported_Features"); break;
@@ -1049,10 +1225,10 @@ void BluetoothController::handle_hci_io_capability_request_reply()
     hcibuf[8] = 0x00; // MITM Protection Not Required ? No Bonding. Numeric comparison with automatic accept allowed
 
     DBGPrintf("HCI_IO_CAPABILITY_REPLY\n");
-    sendHCICommand(HCI_IO_CAPABILITY_RESPONSE, sizeof(hcibuf), hcibuf);
+    sendHCICommand(HCI_IO_CAPABILITY_REQUEST_REPLY, sizeof(hcibuf), hcibuf);
 }
 
-void BluetoothController::handle_hci_io_capability_response()
+void BluetoothController::handle_HCI_IO_CAPABILITY_REQUEST_REPLY()
 {
     DBGPrintf("    Received IO Capability Response:\n");
     DBGPrintf("    IO capability: ");
@@ -1237,7 +1413,7 @@ void BluetoothController::handle_hci_link_key_notification() {
 //        hcibuf[9] = link_key[0]; // 16 octet link_key
 
     if(do_pair_ssp_) {
-		sendHCICommand(HCI_WRITE_LINK_TO_DEVICE,  sizeof(hcibuf), hcibuf);   //use simple pairing
+		sendHCICommand(HCI_LINK_KEY_REQUEST_REPLY,  sizeof(hcibuf), hcibuf);   //use simple pairing
 		pending_control_++;
 		has_key = true;
 	}
@@ -1514,6 +1690,18 @@ void  BluetoothController::sendHCIHCIWriteInquiryMode(uint8_t inquiry_mode) {
     sendHCICommand(HCI_WRITE_INQUIRY_MODE, 1, &inquiry_mode);
 }
 
+void BluetoothController::sendHCIReadLocalSupportedCommands() {
+    DBGPrintf("HCI_Read_Local_Supported_Commands\n");
+    sendHCICommand(HCI_Read_Local_Supported_Commands, 0, nullptr);
+
+}
+
+void BluetoothController::sendHCIReadLocalSupportedFeatures() {
+    DBGPrintf("HCI_Read_Local_Supported_Features\n");
+    sendHCICommand(HCI_Read_Local_Supported_Features, 0, nullptr);
+
+}
+
 void BluetoothController::sendHCISetEventMask() {
     // Setup Inquiry mode
     DBGPrintf("HCI_Set_Event_Mask\n");
@@ -1704,13 +1892,13 @@ void BluetoothController::sendHCISimplePairingMode() {
 	uint8_t hcibuf[1];
         hcibuf[0] = 0x01; // enable = 1
 		DBGPrintf("HCI_Set Simple Pairing Mode\n");
-		sendHCICommand(HCI_WRITE_SSP_MODE, sizeof(hcibuf), hcibuf);
+		sendHCICommand(HCI_WRITE_SIMPLE_PAIRING_MODE, sizeof(hcibuf), hcibuf);
 }
 
 void BluetoothController::sendHCIReadSimplePairingMode() {
 	uint8_t hcibuf[2];
 	DBGPrintf("HCI_Read Simple Pairing Mode\n");
-	sendHCICommand(HCI_READ_SSP_MODE, 0, hcibuf);
+	sendHCICommand(HCI_READ_SIMPLE_PAIRING_MODE, 0, hcibuf);
 }
 
 void BluetoothController::sendHCISetConnectionEncryption() {

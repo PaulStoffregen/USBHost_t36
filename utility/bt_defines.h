@@ -36,7 +36,7 @@
 #define HCI_CREATE_CONNECTION               0x0405
 #define HCI_OP_ACCEPT_CONN_REQ              0x0409
 #define HCI_OP_REJECT_CONN_REQ              0x040A
-#define HCI_WRITE_LINK_TO_DEVICE			0x040B
+#define HCI_LINK_KEY_REQUEST_REPLY			0x040B
 #define HCI_LINK_KEY_NEG_REPLY              0x040C
 #define HCI_PIN_CODE_REPLY                  0x040D
 #define HCI_AUTH_REQUESTED                  0x0411
@@ -46,7 +46,7 @@
 #define HCI_OP_READ_REMOTE_FEATURES         0x041b
 #define HCI_OP_READ_REMOTE_EXTENDED_FEATURE 0x041c
 #define HCI_OP_READ_REMOTE_VERSION_INFORMATION 0x041D
-#define HCI_IO_CAPABILITY_RESPONSE			0x042B
+#define HCI_IO_CAPABILITY_REQUEST_REPLY		0x042B
 #define HCI_USER_CONFIRMATION_REQUEST		0x042C
 
 #define HCI_OP_ROLE_DISCOVERY               0x0809
@@ -55,7 +55,7 @@
 #define HCI_Write_Default_Link_Policy_Settings  0x080f
 #define HCI_Set_Event_Mask                  0x0c01
 #define HCI_RESET                           0x0c03
-#define HCI_Set_Event_Filter_Clear          0x0c05
+#define HCI_SET_EVENT_FILTER                0x0c05
 #define HCI_Read_Local_Name                 0x0c14
 #define HCI_Read_Stored_Link_Key            0x0c0d
 #define HCI_DELETE_STORED_LINK_KEY          0x0c12
@@ -70,9 +70,9 @@
 #define HCI_Read_Current_IAC_LAP            0x0c39
 #define HCI_WRITE_INQUIRY_MODE              0x0c45
 #define HCI_Read_Page_Scan_Type             0x0c46
-#define HCI_WRITE_EIR                       0x0c52
-#define HCI_READ_SSP_MODE					0x0c55
-#define HCI_WRITE_SSP_MODE                  0x0c56
+#define HCI_WRITE_EXTENDED_INQUIRY_RESPONSE                       0x0c52
+#define HCI_READ_SIMPLE_PAIRING_MODE					0x0c55
+#define HCI_WRITE_SIMPLE_PAIRING_MODE                  0x0c56
 #define HCI_Read_Inquiry_Response_Transmit_Power_Level 0x0c58
 #define HCI_WRITE_LE_HOST_SUPPORTED         0x0c6d
 
@@ -147,7 +147,7 @@ enum {EV_INQUIRY_COMPLETE = 0x01, EV_INQUIRY_RESULT = 0x02, EV_CONNECT_COMPLETE 
 // Note: The states may be moved or splirt up.
 
 // different modes
-enum {PC_RESET = 1, PC_SEND_SET_EVENT_MASK, PC_WRITE_CLASS_DEVICE, PC_MAYBE_WRITE_SIMPLE_PAIR, PC_MAYBE_READ_SIMPLE_PAIR,
+enum {PC_RESET = 1, PC_READ_LOCAL_SUPPORTED_COMMANDS, PC_READ_LOCAL_SUPPORTED_FEATURES, PC_SEND_SET_EVENT_MASK, PC_WRITE_CLASS_DEVICE, PC_MAYBE_WRITE_SIMPLE_PAIR, PC_MAYBE_READ_SIMPLE_PAIR,
       PC_READ_BDADDR, PC_READ_LOCAL_VERSION,
       // Pairing.mode
       PC_SEND_WRITE_SCAN_PAGE_0 = 0x20, // not sure if we will need a cancel before inquire...

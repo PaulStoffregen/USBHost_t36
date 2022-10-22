@@ -59,7 +59,7 @@
 
 
 // Uncomment this line to see lots of debugging info!
-//#define USBHOST_PRINT_DEBUG
+#define USBHOST_PRINT_DEBUG
 
 
 // This can let you control where to send the debugging messages
@@ -2134,6 +2134,8 @@ private:
     void inline sendResetHCI();
     void inline sendHDCWriteClassOfDev();
     void inline sendHCIReadBDAddr();
+    void inline sendHCIReadLocalSupportedCommands();
+    void inline sendHCIReadLocalSupportedFeatures();
     void inline sendHCIReadLocalVersionInfo();
     void  sendHCIWriteScanEnable(uint8_t scan_op);
     void inline sendHCIHCIWriteInquiryMode(uint8_t inquiry_mode);
@@ -2166,7 +2168,7 @@ private:
     void handle_hci_link_key_request();
     void queue_next_hci_command();
 
-    void handle_hci_io_capability_response();
+    void handle_HCI_IO_CAPABILITY_REQUEST_REPLY();
     void handle_hci_io_capability_request();
     void handle_hci_io_capability_request_reply();
 	void handle_hci_user_confirmation_request_reply();
