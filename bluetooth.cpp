@@ -417,8 +417,7 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
             handle_hci_link_key_notification();
             break;
         case EV_INQUIRY_RESULTS_WITH_RSSI:
-            //handle_hci_inquiry_result(true);
-            DBGPrintf("$$$ EV_INQUIRY_RESULTS_WITH_RSSI = disabled\n");
+            handle_hci_inquiry_result(true);
             break;
         case EV_EXTENDED_INQUIRY_RESULT:
             #if 0
@@ -648,7 +647,7 @@ void BluetoothController::queue_next_hci_command()
 
     // These are used when we are pairing.
     case PC_SEND_WRITE_INQUIRE_MODE:
-        sendHCIHCIWriteInquiryMode(0/*2 */);  // lets set into extended inquire mode
+        sendHCIHCIWriteInquiryMode(1/*2 */);  // lets set into extended inquire mode
         pending_control_++;
         break;
 
@@ -847,11 +846,12 @@ void BluetoothController::handle_hci_inquiry_result(bool fRSSI)
             count_connections_++;
 
             // BUGBUG, lets hard code to go to new state...
+            current_connection_->device_ps_repetion_mode_ = rxbuf_[index_ps]; // mode
+            current_connection_->device_clock_offset_[0] = rxbuf_[index_clock_offset];
+            current_connection_->device_clock_offset_[1] = rxbuf_[index_clock_offset + 1];
+
             current_connection_->initializeConnection(this, &rxbuf_[index_bd], bluetooth_class, true);
 
-            current_connection_->device_ps_repetion_mode_  = rxbuf_[index_ps]; // mode
-            //current_connection_->device_clock_offset_[0] = rxbuf_[index_clock_offset];
-            //current_connection_->device_clock_offset_[1] = rxbuf_[index_clock_offset + 1];
 
             // BUGBUG, lets hard code to go to new state...
             //for (uint8_t i = 0; i < 6; i++) current_connection_->device_bdaddr_[i] = rxbuf_[index_bd + i];
@@ -1111,6 +1111,9 @@ void BluetoothController::handle_hci_incoming_connect() {
         count_connections_++;
 
         // Lets reinitialize some of the fields of this back to startup settings.
+        current_connection_->device_ps_repetion_mode_ = 1; // mode we were always using?
+        current_connection_->device_clock_offset_[0] = 0;
+        current_connection_->device_clock_offset_[1] = 0;
         current_connection_->initializeConnection(this, &rxbuf_[2], class_of_device, false);
 
         sendHCIRemoteNameRequest();
@@ -1593,10 +1596,10 @@ void BluetoothController::sendHCIRemoteNameRequest() {      // 0x0419
     DBGPrintf("HCI_OP_REMOTE_NAME_REQ\n");
     uint8_t connection_data[10];
     for (uint8_t i = 0; i < 6; i++) connection_data[i] = current_connection_->device_bdaddr_[i];
-    connection_data[6] = 1; // page scan repeat mode...
+    connection_data[6] = current_connection_->device_ps_repetion_mode_; // page scan repeat mode...
     connection_data[7] = 0;  // 0
-    connection_data[8] = 0; // Clk offset
-    connection_data[9] = 0;
+    connection_data[8] = current_connection_->device_clock_offset_[0]; // Clk offset
+    connection_data[9] = current_connection_->device_clock_offset_[1];
     sendHCICommand(HCI_OP_REMOTE_NAME_REQ, sizeof(connection_data), connection_data);
 }
 

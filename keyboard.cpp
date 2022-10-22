@@ -790,20 +790,3 @@ const uint8_t *KeyboardController::serialNumber()
 	return nullptr;
 }
 
-#ifdef USBHOST_PRINT_DEBUG
-#undef print
-#undef println
-
-void KeyboardController::print_hexbytes(const void *ptr, uint32_t len)
-{
-	if (ptr == NULL || len == 0) return;
-	const uint8_t *p = (const uint8_t *)ptr;
-	do {
-		if (*p < 16) USBHDBGSerial.print('0');
-		USBHDBGSerial.print(*p++, HEX);
-		USBHDBGSerial.print(' ');
-	} while (--len);
-	USBHDBGSerial.println();
-}
-#endif
-

@@ -1955,7 +1955,7 @@ public:
     uint16_t        sdp_scid_;
     uint8_t         device_bdaddr_[6];// remember devices address
     uint8_t         device_ps_repetion_mode_ ; // mode
-    //uint8_t         device_clock_offset_[2];
+    uint8_t         device_clock_offset_[2];
     uint32_t        device_class_;  // class of device.
     uint16_t        device_connection_handle_;  // handle to connection
     uint8_t         remote_ver_;
