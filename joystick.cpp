@@ -138,6 +138,13 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
         return transmitPS4UserFeedbackMsg();
     case XBOXONE:
         // Lets try sending a request to the XBox 1.
+        if (btdriver_) {
+            // To Do...
+            DBGPrintf("\nXBOXONE BT Joystick update Rumble %d %d %d %d %d\n", lValue, rValue, timeout);
+            //btdriver_->sendL2CapCommand(txbuf_, 50, BluetoothController::CONTROL_SCID);
+            return true;
+        }
+
         txbuf_[0] = 0x9;
         txbuf_[1] = 0x0;
         txbuf_[2] = 0x0;

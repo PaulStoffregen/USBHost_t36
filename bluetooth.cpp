@@ -216,12 +216,24 @@ bool BluetoothController::claim(Device_t *dev, int type, const uint8_t *descript
 void BluetoothController::disconnect()
 {
     USBHDBGSerial.printf("Bluetooth Disconnect");
-    if (current_connection_->device_driver_) {
-        current_connection_->device_driver_->release_bluetooth();
-        current_connection_->device_driver_->remote_name_[0] = 0;
-        current_connection_->device_driver_ = nullptr;
+    // lets clear out any active connecitons
+    current_connection_ = BluetoothConnection::s_first_;
+    while (current_connection_) {
+        // see if this one is in use         
+        if (current_connection_->btController_ == this) {
+            if (current_connection_->device_driver_) {
+                current_connection_->device_driver_->release_bluetooth();
+                current_connection_->device_driver_->remote_name_[0] = 0;
+                current_connection_->device_driver_ = nullptr;
+            }
+            current_connection_->btController_ = nullptr;
+        }
+        current_connection_ = current_connection_->next_;
     }
-    current_connection_->connection_complete_ = 0;
+    // Maybe leave it pointing to first one just in case.
+    count_connections_ = 0;
+    timer_connection_ = nullptr;
+    current_connection_ = BluetoothConnection::s_first_;
 }
 
 void BluetoothController::timer_event(USBDriverTimer *whichTimer)
