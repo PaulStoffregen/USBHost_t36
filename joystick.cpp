@@ -138,29 +138,18 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
         return transmitPS4UserFeedbackMsg();
     case XBOXONE:
         // Lets try sending a request to the XBox 1.
-        if (btdriver_) {
-            // To Do...
-            DBGPrintf("\nXBOXONE BT Joystick update Rumble %d %d %d\n", lValue, rValue, timeout);
-            //btdriver_->sendL2CapCommand(txbuf_, 50, BluetoothController::CONTROL_SCID);
-            return true;
-        }
-
-        txbuf_[0] = 0x9;
-        txbuf_[1] = 0x0;
-        txbuf_[2] = 0x0;
-        txbuf_[3] = 0x09; // Substructure (what substructure rest of this packet has)
-        txbuf_[4] = 0x00; // Mode
-        txbuf_[5] = 0x0f; // Rumble mask (what motors are activated) (0000 lT rT L R)
-        txbuf_[6] = 0x0; // lT force
-        txbuf_[7] = 0x0; // rT force
-        txbuf_[8] = lValue; // L force
-        txbuf_[9] = rValue; // R force
-        txbuf_[10] = 0xff; // Length of pulse
-        txbuf_[11] = 0x00; // Period between pulses
-        txbuf_[12] = 0x00; // Repeat
-        if (!queue_Data_Transfer(txpipe_, txbuf_, 13, this)) {
-            println("XBoxOne rumble transfer fail");
-        }
+        DBGPrintf("\nXBOXONE BT Joystick update Rumble %d %d %d\n", lValue, rValue, timeout);
+        txbuf_[0] = 0xA2;                  // HID BT DATA (0xA0) | Report Type (Output 0x02)
+        txbuf_[1] = 0x03; // ID 0x03
+		txbuf_[2] = 0x0F; // Rumble mask (what motors are activated) (0000 lT rT L R)
+        txbuf_[3] = map(lValue, 0, 1023, 0, 100); // lT force
+        txbuf_[4] = map(rValue, 0, 1023, 0, 100); // rT force
+        txbuf_[5] = map(lValue, 0, 1023, 0, 100); // L force
+        txbuf_[6] = map(rValue, 0, 1023, 0, 100); // R force
+        txbuf_[7] = 0xff; // Length of pulse
+        txbuf_[8] = 0x00; // Period between pulses
+        txbuf_[9] = 0x00; // Repeat
+		btdriver_->sendL2CapCommand(txbuf_, 10, BluetoothController::INTERRUPT_SCID);
         return true;    //
     case XBOX360:
         txbuf_[0] = 0x00;
@@ -1067,7 +1056,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
                     // The first two values were unsigned.
                     int axis_value = (i < 4) ? (int)(uint16_t)xb1d->axis[i] : xb1d->axis[i];
 
-					DBGPrintf(" axis value [ %d ] = %d \n", i, axis_value);
+					//DBGPrintf(" axis value [ %d ] = %d \n", i, axis_value);
 					
                     if (axis_value != axis[xbox_bt_axis_order_mapping[i]]) {
                         axis[xbox_bt_axis_order_mapping[i]] = axis_value;

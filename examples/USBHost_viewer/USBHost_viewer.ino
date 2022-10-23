@@ -594,30 +594,39 @@ void tft_JoystickData() {
         wheel_cur = user_axis[9];
         something_changed = true;
     }
-    //Second Axis
-    if (user_axis[2] != x2_cur) {  //xR
-        x2_cur = user_axis[2];
-        something_changed = true;
-    }
 
     //Rumble Axis
     switch (joystick.joystickType()) {
     case JoystickController::XBOXONE:
-      if (user_axis[3] != y2_cur) {  //yR or z-axis
-        y2_cur = user_axis[3];
-        something_changed = true;
-      }
-      if (user_axis[4] != L1_cur) {  //xR
-          L1_cur = user_axis[4];
-          something_changed = true;
-      }
-      if (user_axis[5] != R1_cur) {  //yR or z-axis
-          R1_cur = user_axis[5];
-          something_changed = true;
-      }
-        break;
+        //Second Axis
+        if (user_axis[2] != x2_cur) {  //xR
+            x2_cur = user_axis[2];
+            something_changed = true;
+        }
+        if (user_axis[3] != y2_cur) {  //yR or z-axis
+            y2_cur = user_axis[3];
+            something_changed = true;
+        }
+    
+        if (user_axis[4] != L1_cur) {  //xR
+            L1_cur = user_axis[4];
+            something_changed = true;
+        }
+        if (user_axis[5] != R1_cur) {  //yR or z-axis
+            R1_cur = user_axis[5];
+            something_changed = true;
+        }
     case JoystickController::XBOX360:
     case JoystickController::PS4:
+        //Second Axis
+        if (user_axis[2] != x2_cur) {  //xR
+            x2_cur = user_axis[2];
+            something_changed = true;
+        }
+        if (user_axis[5] != y2_cur) {  //yR or z-axis
+            y2_cur = user_axis[5];
+            something_changed = true;
+        }
         if (user_axis[3] != L1_cur) {  //xR
             L1_cur = user_axis[3];
             something_changed = true;
@@ -628,6 +637,15 @@ void tft_JoystickData() {
         }
         break;
     case JoystickController::PS3:
+        //Second Axis
+        if (user_axis[2] != x2_cur) {  //xR
+            x2_cur = user_axis[2];
+            something_changed = true;
+        }
+        if (user_axis[5] != y2_cur) {  //yR or z-axis
+            y2_cur = user_axis[5];
+            something_changed = true;
+        }
         if (user_axis[18] != L1_cur) {  //xR
             L1_cur = user_axis[18];
             something_changed = true;
