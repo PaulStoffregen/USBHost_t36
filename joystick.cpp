@@ -140,7 +140,7 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
         // Lets try sending a request to the XBox 1.
         if (btdriver_) {
             // To Do...
-            DBGPrintf("\nXBOXONE BT Joystick update Rumble %d %d %d %d %d\n", lValue, rValue, timeout);
+            DBGPrintf("\nXBOXONE BT Joystick update Rumble %d %d %d\n", lValue, rValue, timeout);
             //btdriver_->sendL2CapCommand(txbuf_, 50, BluetoothController::CONTROL_SCID);
             return true;
         }
@@ -1034,6 +1034,50 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
                 }
                 mask <<= 1; // shift down the mask.
             }
+
+        } else if (joystickType_ == XBOXONE) {
+            // Process XBOX One data
+            typedef struct __attribute__ ((packed)) {
+                uint8_t report_type; // 1
+                int16_t axis[6];
+                uint32_t buttons;
+                // From online references button order:
+                //     sync, dummy, start, back, a, b, x, y
+                //     dpad up, down left, right
+                //     lb, rb, left stick, right stick
+                // Axis:
+                //     lt, rt, lx, ly, rx, ry
+                //
+            } xbox1data20bt_t;
+
+            static const uint8_t xbox_bt_axis_order_mapping[] = { 0, 1, 2, 3, 4, 5};
+            axis_mask_ = 0x3f;
+            axis_changed_mask_ = 0; // assume none for now
+			
+            xbox1data20bt_t *xb1d = (xbox1data20bt_t *)data;
+            //if ((xb1d->type == 0x20) && (length >= sizeof (xbox1data20bt_t))) {
+                // We have a data transfer.  Lets see what is new...
+                if (xb1d->buttons != buttons) {
+                    buttons = xb1d->buttons;
+                    anychange = true;
+                    joystickEvent = true;
+                    println("  Button Change: ", buttons, HEX);
+                }
+                for (uint8_t i = 0; i < sizeof (xbox_axis_order_mapping); i++) {
+                    // The first two values were unsigned.
+                    int axis_value = (i < 4) ? (int)(uint16_t)xb1d->axis[i] : xb1d->axis[i];
+
+					DBGPrintf(" axis value [ %d ] = %d \n", i, axis_value);
+					
+                    if (axis_value != axis[xbox_bt_axis_order_mapping[i]]) {
+                        axis[xbox_bt_axis_order_mapping[i]] = axis_value;
+                        axis_changed_mask_ |= (1 << xbox_bt_axis_order_mapping[i]);
+                        anychange = true;
+                    }
+                }
+
+                joystickEvent = true;
+            //}
 
         } else {
             uint64_t mask = 0x1;
