@@ -599,13 +599,23 @@ void tft_JoystickData() {
         x2_cur = user_axis[2];
         something_changed = true;
     }
-    if (user_axis[5] != y2_cur) {  //yR or z-axis
-        y2_cur = user_axis[5];
-        something_changed = true;
-    }
+
     //Rumble Axis
     switch (joystick.joystickType()) {
     case JoystickController::XBOXONE:
+      if (user_axis[3] != y2_cur) {  //yR or z-axis
+        y2_cur = user_axis[3];
+        something_changed = true;
+      }
+      if (user_axis[4] != L1_cur) {  //xR
+          L1_cur = user_axis[4];
+          something_changed = true;
+      }
+      if (user_axis[5] != R1_cur) {  //yR or z-axis
+          R1_cur = user_axis[5];
+          something_changed = true;
+      }
+        break;
     case JoystickController::XBOX360:
     case JoystickController::PS4:
         if (user_axis[3] != L1_cur) {  //xR
