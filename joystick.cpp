@@ -34,6 +34,19 @@
 #define DBGPrintf(...)
 #endif
 
+bool JoystickController::queue_Data_Transfer_Debug(Pipe_t *pipe, void *buffer, 
+    uint32_t len, USBDriver *driver, uint32_t line) 
+{
+    if ((pipe == nullptr) || (driver == nullptr) || ((len > 0) && (buffer == nullptr))) {
+        // something wrong:
+        USBHDBGSerial.printf("\n !!!!!!!!!!! JoystickController::queue_Data_Transfer called with bad data line: %u\n", line);
+        USBHDBGSerial.printf("\t pipe:%p buffer:%p len:%u driver:%p\n", pipe, buffer, len, driver);
+        return false;
+    }
+    return queue_Data_Transfer(pipe, buffer, len, driver);
+}
+
+
 // PID/VID to joystick mapping - Only the XBOXOne is used to claim the USB interface directly,
 // The others are used after claim-hid code to know which one we have and to use it for
 // doing other features.
@@ -167,7 +180,7 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
         txbuf_[10] = 0xff; // Length of pulse
         txbuf_[11] = 0x00; // Period between pulses
         txbuf_[12] = 0x00; // Repeat
-        if (!queue_Data_Transfer(txpipe_, txbuf_, 13, this)) {
+        if (!queue_Data_Transfer_Debug(txpipe_, txbuf_, 13, this, __LINE__)) {
             println("XBoxOne rumble transfer fail");
         }
         return true;    //
@@ -184,7 +197,7 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
         txbuf_[9] = 0x00;
         txbuf_[10] = 0x00;
         txbuf_[11] = 0x00;
-        if (!queue_Data_Transfer(txpipe_, txbuf_, 12, this)) {
+        if (!queue_Data_Transfer_Debug(txpipe_, txbuf_, 12, this, __LINE__)) {
             println("XBox360 rumble transfer fail");
         }
         return true;
@@ -215,7 +228,7 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
             txbuf_[9 + 6] = rValue;
         }
 
-        if (!queue_Data_Transfer(txpipe_, txbuf_, 18, this)) {
+        if (!queue_Data_Transfer_Debug(txpipe_, txbuf_, 18, this, __LINE__)) {
             println("switch rumble transfer fail");
             Serial.printf("Switch Rumble transfer fail\n");
         }
@@ -258,7 +271,7 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
             txbuf_[9] = 0x00;
             txbuf_[10] = 0x00;
             txbuf_[11] = 0x00;
-            if (!queue_Data_Transfer(txpipe_, txbuf_, 12, this)) {
+            if (!queue_Data_Transfer_Debug(txpipe_, txbuf_, 12, this, __LINE__)) {
                 println("XBox360 set leds fail");
             }
             return true;
@@ -285,7 +298,7 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
             txbuf_[9 + 10] = lr;
             println("Switch set leds: driver? ", (uint32_t)driver_, HEX);
             print_hexbytes((uint8_t*)txbuf_, 20);
-            if (!queue_Data_Transfer(txpipe_, txbuf_, 20, this)) {
+            if (!queue_Data_Transfer_Debug(txpipe_, txbuf_, 20, this, __LINE__)) {
                 println("switch set leds fail");
             }
 
@@ -677,18 +690,18 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
         return false;
     }
     rxpipe_->callback_function = rx_callback;
-    queue_Data_Transfer(rxpipe_, rxbuf_, rx_size_, this);
+    queue_Data_Transfer_Debug(rxpipe_, rxbuf_, rx_size_, this, __LINE__);
 
     txpipe_->callback_function = tx_callback;
 
     if (jtype == XBOXONE) {
-        queue_Data_Transfer(txpipe_, xboxone_start_input, sizeof(xboxone_start_input), this);
+        queue_Data_Transfer_Debug(txpipe_, xboxone_start_input, sizeof(xboxone_start_input), this, __LINE__);
         connected_ = true;      // remember that hardware is actually connected...
     } else if (jtype == XBOX360) {
-        queue_Data_Transfer(txpipe_, xbox360w_inquire_present, sizeof(xbox360w_inquire_present), this);
+        queue_Data_Transfer_Debug(txpipe_, xbox360w_inquire_present, sizeof(xbox360w_inquire_present), this, __LINE__);
         connected_ = 0;     // remember that hardware is actually connected...
     } else if (jtype == SWITCH) {
-        queue_Data_Transfer(txpipe_, switch_start_input, sizeof(switch_start_input), this);
+        queue_Data_Transfer_Debug(txpipe_, switch_start_input, sizeof(switch_start_input), this, __LINE__);
         connected_ = true;      // remember that hardware is actually connected...
     }
     memset(axis, 0, sizeof(axis));  // clear out any data.
@@ -898,7 +911,7 @@ void JoystickController::rx_data(const Transfer_t *transfer)
         if (anychange) joystickEvent = true;
     }
 
-    queue_Data_Transfer(rxpipe_, rxbuf_, rx_size_, this);
+    queue_Data_Transfer_Debug(rxpipe_, rxbuf_, rx_size_, this, __LINE__);
 }
 
 void JoystickController::tx_data(const Transfer_t *transfer)

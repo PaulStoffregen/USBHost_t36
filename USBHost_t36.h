@@ -59,7 +59,7 @@
 
 
 // Uncomment this line to see lots of debugging info!
-#define USBHOST_PRINT_DEBUG
+//#define USBHOST_PRINT_DEBUG
 
 
 // This can let you control where to send the debugging messages
@@ -1042,6 +1042,9 @@ protected:
 
     joytype_t joystickType_ = UNKNOWN;
 private:
+    static bool queue_Data_Transfer_Debug(Pipe_t *pipe, void *buffer,
+                                    uint32_t len, USBDriver *driver,
+                                    uint32_t line);
 
     // Class specific
     void init();
@@ -2057,6 +2060,37 @@ protected:
 };
 
 //=============================================================================
+// Bluetooth Pairing Callback class
+//=============================================================================
+class BluetoothPairingCB {
+public:
+    //  About to send HCI_WRITE_INQUIRY_MODE
+    virtual bool writeInquiryMode(uint8_t inquiry_mode) { return true;}
+
+    // The inquiry is complete
+    virtual bool inquiryComplete(uint8_t status) {return true;}
+
+    // we received an Inquiry result, use it?
+    virtual bool useInquireResult(uint8_t bdaddr[6], uint32_t bluetooth_class, const uint8_t *name)
+        {return true;}
+
+
+    virtual bool writeLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]) {return false;}
+    virtual bool readLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]) {return false;}
+
+    // Asked for PinCode?
+    virtual bool sendPinCode(const char *pinCode)
+        {return true;}
+    virtual bool pinCodeComplete()
+        {return true;}
+
+    virtual bool authenticationComplete()
+        {return true;}
+
+};
+
+
+//=============================================================================
 // Bluetooth Connection class
 //  Will try to handle all of the processing of one Bluetooth connection.
 //=============================================================================
@@ -2081,6 +2115,7 @@ public:
 
     // See if we can start up pairing after sketch is running. 
     bool startDevicePairing(const char *pin, bool pair_ssp = false);
+    void setBluetoothPairingCB(BluetoothPairingCB *pairing_cb) {pairing_cb_ = pairing_cb;}
 
     // BUGBUG version to allow some of the controlled objects to call?
     enum {CONTROL_SCID = -1, INTERRUPT_SCID = -2, SDP_SCID = -3};
@@ -2107,6 +2142,7 @@ protected:
     uint8_t count_connections_ = 0;
     BluetoothConnection  *current_connection_ = nullptr;    // need to figure out when this changes and/or...
     BluetoothConnection  *timer_connection_ = nullptr;    // need to figure out when this changes and/or...
+    BluetoothPairingCB   *pairing_cb_ = nullptr;
 
 private:
     friend class BTHIDInput;
@@ -2120,6 +2156,10 @@ private:
 
     void init();
 
+    static bool queue_Data_Transfer_Debug(Pipe_t *pipe, void *buffer,
+                                    uint32_t len, USBDriver *driver,
+                                    uint32_t line);
+
     // HCI support functions...
     void sendHCICommand(uint16_t hciCommand, uint16_t cParams, const uint8_t* data);
     //void sendHCIReadLocalSupportedFeatures();
@@ -2129,6 +2169,7 @@ private:
     void inline sendHCIAuthenticationRequested();
     void inline sendHCIAcceptConnectionRequest();
     void inline sendHCIRejectConnectionRequest(uint8_t bdaddr[6], uint8_t error);
+    void inline sendHCILinkKeyRequestReply(uint8_t link_key[16]);
     void inline sendHCILinkKeyNegativeReply();
     void inline sendHCIPinCodeReply();
     void inline sendResetHCI();
@@ -2148,6 +2189,9 @@ private:
     void inline sendHCIReadRemoteExtendedFeatures();
 	void inline sendHCISimplePairingMode();
 	void inline sendHCIReadSimplePairingMode();
+    bool inline sendHCIReadStoredLinkKey(uint8_t link_key[16]);
+    void inline sendHCIWriteStoredLinkKey(uint8_t link_key[16]);
+
 	void handle_hci_encryption_change_complete();
 	void sendHCISetConnectionEncryption();
     void sendInfoRequest();
@@ -2166,6 +2210,7 @@ private:
     void handle_hci_pin_code_request();
     void handle_hci_link_key_notification();
     void handle_hci_link_key_request();
+    void handle_hci_return_link_keys();
     void queue_next_hci_command();
 
     void handle_HCI_IO_CAPABILITY_REQUEST_REPLY();

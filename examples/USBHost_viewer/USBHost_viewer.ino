@@ -21,6 +21,7 @@
 #define USE_KURTE_MMOD2
 
 #include "USBHost_t36.h"
+#include <EEPROM.h>
 
 #ifdef USE_ST77XX
 #include <ST7735_t3.h>
@@ -149,6 +150,124 @@ uint64_t joystick_full_notify_mask = (uint64_t) - 1;
 uint8_t keyboard_battery_level = 0xff; // default have nto seen it...
 
 //=============================================================================
+// Pairing CB class
+//=============================================================================
+
+class BTPCB : public BluetoothPairingCB {
+    bool writeInquiryMode(uint8_t inquiry_mode) { 
+        tft.fillScreen(BLACK);  // clear the screen.
+        tft.setCursor(0, 0);
+        tft.setTextColor(YELLOW);
+        tft.setFont(Arial_12);
+        tft.printf("Start Pairing Mode(%u)\n", inquiry_mode);
+        tft.updateScreen();
+        return true;
+    }
+
+    // The inquiry is complete
+    bool inquiryComplete(uint8_t status) {
+        tft.printf("Inquiry complete: (%u)\n", status);
+        tft.updateScreen();
+        return true;
+    }
+
+    // we received an Inquiry result, use it?
+    bool useInquireResult(uint8_t bdaddr[6], uint32_t bluetooth_class, const uint8_t *name) {
+        tft.printf("Object found class: (%x)\n", bluetooth_class);
+        if (name) tft.printf("name: %s\n", name);
+        tft.updateScreen();
+        return true;
+    }
+
+    // Asked for PinCode?
+    bool sendPinCode(const char *pinCode) {
+        tft.printf("Pin Code: %s\n", pinCode);
+        tft.updateScreen();
+        return true;
+    }
+    
+    bool pinCodeComplete() {
+        tft.printf("Pin Code complete\n");
+        tft.updateScreen();
+        return true;
+    }
+
+    bool authenticationComplete() {
+        tft.printf("Authentication complete\n");
+        tft.updateScreen();
+        return true;
+    }
+    
+    bool writeLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]) {
+        if (eeprom_start == (uint16_t)-1) eeprom_start = EEPROM.length() - EEPROM_OFFSET_FROM_END;
+
+        Serial.printf("@@@ writeLinkKey: %02x:%02x:%02x:%02x:%02x:%02x = ", bdaddr[0],bdaddr[1],bdaddr[2],bdaddr[3],bdaddr[4],bdaddr[5]);
+        for (uint8_t j=0; j < 16; j++) Serial.printf(" %02x",link_key[j]);
+        Serial.println();
+
+        for (uint8_t i = 0; i < MAX_KEYS; i++) {
+            uint16_t addr = eeprom_start + (i * 22); // bddr plus link_key
+            bool key_matched = true;
+            bool key_empty = true;
+            for (uint8_t j=0; j < 6; j++) {
+                uint8_t val = EEPROM.read(addr++);
+                if (val != bdaddr[j]) {
+                    key_matched = false;
+                    if (val != 0xff) {
+                        key_empty = false;
+                        break;
+                    }
+                }
+            }
+            if (key_empty) {
+                addr = eeprom_start + (i * 22); // bddr plus link_key
+                for (uint8_t j=0; j < 6; j++) EEPROM.write(addr++, bdaddr[j]);
+            }
+            if (key_empty || key_matched) {
+                Serial.printf("\tSaved in slot: %u\n", i);
+                for (uint8_t j=0; j < 16; j++) EEPROM.write(addr++, link_key[j]);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool readLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]) {
+        if (eeprom_start == (uint16_t)-1) eeprom_start = EEPROM.length() - EEPROM_OFFSET_FROM_END;
+        Serial.printf("@@@ readLinkKey: %02x:%02x:%02x:%02x:%02x:%02x\n", bdaddr[0],bdaddr[1],bdaddr[2],bdaddr[3],bdaddr[4],bdaddr[5]);
+        for (uint8_t i = 0; i < MAX_KEYS; i++) {
+            uint16_t addr = eeprom_start + (i * 22); // bddr plus link_key
+            bool key_matched = true;
+            for (uint8_t j=0; j < 6; j++) {
+                uint8_t val = EEPROM.read(addr++);
+                if (val != bdaddr[j]) {
+                    key_matched = false;
+                    break;
+                }
+            }
+            if (key_matched) {
+                for (uint8_t j=0; j < 16; j++) link_key[j] = EEPROM.read(addr++);
+                Serial.printf("\t Found Match(%d): ", i);
+                for (uint8_t j=0; j < 16; j++) Serial.printf(" %02x",link_key[j]);
+                Serial.println();
+                return true;
+            }
+        }
+        Serial.println("\tNo Match");
+        return false;
+    }
+
+protected:
+    enum {MAX_KEYS=5, EEPROM_FUDGE = 128, EEPROM_OFFSET_FROM_END = (MAX_KEYS * 22) + EEPROM_FUDGE};
+    uint16_t eeprom_start = (uint16_t)-1;
+
+};
+
+BTPCB btpcb;
+
+
+//=============================================================================
 // Setup
 //=============================================================================
 void setup()
@@ -171,6 +290,7 @@ void setup()
     keyboard1.attachExtrasRelease(OnHIDExtrasRelease);
     keyboard2.attachExtrasPress(OnHIDExtrasPress);
     keyboard2.attachExtrasRelease(OnHIDExtrasRelease);
+    bluet.setBluetoothPairingCB(&btpcb);
 
     // The below forceBootProtocol will force which ever
     // next keyboard that attaches to this device to be in boot protocol
@@ -234,6 +354,7 @@ void loop()
       int ch = Serial.read();
       while (Serial.read() != -1) ;
       if (ch == 'P') {
+        bluet.setBluetoothPairingCB(&btpcb);
         if (bluet.startDevicePairing("0000", true)) {
           Serial.println("Pairing operation started");
 

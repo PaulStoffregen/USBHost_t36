@@ -57,7 +57,8 @@
 #define HCI_RESET                           0x0c03
 #define HCI_SET_EVENT_FILTER                0x0c05
 #define HCI_Read_Local_Name                 0x0c14
-#define HCI_Read_Stored_Link_Key            0x0c0d
+#define HCI_READ_STORED_LINK_KEY            0x0c0d
+#define HCI_WRITE_STORED_LINK_KEY           0x0c11
 #define HCI_DELETE_STORED_LINK_KEY          0x0c12
 #define HCI_WRITE_LOCAL_NAME                0x0c13
 #define Write_Connection_Accept_Timeout     0x0c16
@@ -153,7 +154,11 @@ enum {PC_RESET = 1, PC_READ_LOCAL_SUPPORTED_COMMANDS, PC_READ_LOCAL_SUPPORTED_FE
       PC_SEND_WRITE_SCAN_PAGE_0 = 0x20, // not sure if we will need a cancel before inquire...
       PC_SEND_WRITE_INQUIRE_MODE = 0x21, PC_SEND_INQUIRE,
       PC_INQUIRE_CANCEL = 100,
-      PC_AUTHENTICATION_REQUESTED = 110,
+      PC_SEND_AUTHENTICATION_REQUEST = 110,
+      PC_AUTHENTICATION_REQUESTED,
+
+      PC_SEND_READ_REMOTE_EXTENDED_FEATURES = 115,
+
       PC_LINK_KEY_NEGATIVE = 120,
       PC_PIN_CODE_REPLY = 130,
       PC_CONNECT_AFTER_SDP_DISCONNECT = 140,

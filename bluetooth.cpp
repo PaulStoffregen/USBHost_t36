@@ -81,6 +81,20 @@ void BluetoothController::driver_ready_for_bluetooth(BTHIDInput *driver)
     }
 }
 
+bool BluetoothController::queue_Data_Transfer_Debug(Pipe_t *pipe, void *buffer, 
+    uint32_t len, USBDriver *driver, uint32_t line) 
+{
+    if ((pipe == nullptr) || (driver == nullptr) || ((len > 0) && (buffer == nullptr))) {
+        // something wrong:
+        USBHDBGSerial.printf("\n !!!!!!!!!!! BluetoothController::queue_Data_Transfer called with bad data line: %u\n", line);
+        USBHDBGSerial.printf("\t pipe:%p buffer:%p len:%u driver:%p\n", pipe, buffer, len, driver);
+        return false;
+    }
+    return queue_Data_Transfer(pipe, buffer, len, driver);
+}
+
+
+
 //12 01 00 02 FF 01 01 40 5C 0A E8 21 12 01 01 02 03 01
 //VendorID = 0A5C, ProductID = 21E8, Version = 0112
 //Class/Subclass/Protocol = 255 / 1 / 1
@@ -196,10 +210,10 @@ bool BluetoothController::claim(Device_t *dev, int type, const uint8_t *descript
     }
 
     rxpipe_->callback_function = rx_callback;
-    queue_Data_Transfer(rxpipe_, rxbuf_, rx_size_, this);
+    queue_Data_Transfer_Debug(rxpipe_, rxbuf_, rx_size_, this, __LINE__);
 
     rx2pipe_->callback_function = rx2_callback;
-    queue_Data_Transfer(rx2pipe_, rx2buf_, rx2_size_, this);
+    queue_Data_Transfer_Debug(rx2pipe_, rx2buf_, rx2_size_, this, __LINE__);
 
     txpipe_->callback_function = tx_callback;
 
@@ -234,6 +248,7 @@ void BluetoothController::disconnect()
     count_connections_ = 0;
     timer_connection_ = nullptr;
     current_connection_ = BluetoothConnection::s_first_;
+    USBHDBGSerial.printf("Bluetooth Disconnect complete"); USBHDBGSerial.flush();
 }
 
 void BluetoothController::timer_event(USBDriverTimer *whichTimer)
@@ -329,7 +344,7 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
     uint32_t len = transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF);
     print_hexbytes((uint8_t*)transfer->buffer, len);
 //  DBGPrintf("<<(00 : %d): ", len);
-    DBGPrintf(rx_packet_data_remaining_? "<<(01C):":"<<(01):");
+    DBGPrintf(rx_packet_data_remaining_? "<<C(01):":"<<(01):");
     uint8_t *buffer = (uint8_t*)transfer->buffer;
     for (uint8_t i = 0; i < len; i++) DBGPrintf("%02X ", buffer[i]);
     DBGPrintf("\n");
@@ -405,7 +420,7 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
 			handle_hci_encryption_change_complete();
 			break;		
 		case EV_RETURN_LINK_KEYS:
-			USBHDBGSerial.printf("Returned Link Keys .... \n");
+            handle_hci_return_link_keys();
 			break;
 		case EV_SIMPLE_PAIRING_COMPLETE:
 			if(!rxbuf_[2]) { // Check if pairing was Complete
@@ -452,10 +467,10 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
             break;
         }
         // Start read at start of buffer.
-        queue_Data_Transfer(rxpipe_, rxbuf_, rx_size_, this);
+        queue_Data_Transfer_Debug(rxpipe_, rxbuf_, rx_size_, this, __LINE__);
     } else {
         // Continue the read - Todo - maybe verify len == rx_size_
-        queue_Data_Transfer(rxpipe_, buffer + rx_size_, rx_size_, this);
+        queue_Data_Transfer_Debug(rxpipe_, buffer + rx_size_, rx_size_, this, __LINE__);
         return;     // Don't process the message yet as we still have data to receive.
     }
 }
@@ -490,7 +505,7 @@ void print_supported_commands(uint8_t *cmd_data) {
     { 5, 6, /*0x0c01*/  "HCI_Set_Event_Mask"},                  
     { 5, 7, /*0x0c03*/  "HCI_RESET"},                           
     { 6, 0, /*0x0c05*/  "HCI_SET_EVENT_FILTER"},          
-    { 6, 5, /*0x0c0d*/  "HCI_Read_Stored_Link_Key"},            
+    { 6, 5, /*0x0c0d*/  "HCI_READ_STORED_LINK_KEY"},            
     { 6, 7, /*0x0c12*/  "HCI_DELETE_STORED_LINK_KEY"},          
     { 7, 0, /*0x0c13*/  "HCI_WRITE_LOCAL_NAME"},                
     { 7, 1, /*0x0c14*/  "HCI_Read_Local_Name"},                 
@@ -789,7 +804,12 @@ void BluetoothController::handle_hci_command_complete()
         break;
     case HCI_Set_Event_Mask:                    //0x0c01
         break;
-    case HCI_Read_Stored_Link_Key:          //0x0c0d
+    case HCI_READ_STORED_LINK_KEY:          //0x0c0d
+        DBGPrintf("    HCI_READ_STORED_LINK_KEY keys total:%u read:%u\n", 
+            rxbuf_[6] + (rxbuf_[7] << 8), rxbuf_[8]);
+        break;
+    case HCI_WRITE_STORED_LINK_KEY:          //0xc011
+        DBGPrintf("    HCI_WRITE_STORED_LINK_KEY keys written:%u\n", rxbuf_[6]);
         break;
     case HCI_Write_Default_Link_Policy_Settings:    //0x080f
         break;
@@ -841,7 +861,7 @@ void BluetoothController::handle_hci_command_complete()
 	case HCI_READ_ENCRYPTION_KEY_SIZE:
 		break;
 	case HCI_LINK_KEY_REQUEST_REPLY:
-		DBGPrintf("Link Key Written to Device\n");
+		DBGPrintf("\tHCI_LINK_KEY_REQUEST_REPLY\n");
 		break;
 	case HCI_USER_CONFIRMATION_REQUEST: //0x042C
 		DBGPrintf("User Confirmation Request Reply\n");
@@ -978,7 +998,7 @@ void BluetoothController::handle_hci_command_status()
             case 0x0c03: DBGPrintf("HCI_RESET"); break;
             case 0x0c05: DBGPrintf("HCI_SET_EVENT_FILTER"); break;
             case 0x0c14: DBGPrintf("HCI_Read_Local_Name"); break;
-            case 0x0c0d: DBGPrintf("HCI_Read_Stored_Link_Key"); break;
+            case 0x0c0d: DBGPrintf("HCI_READ_STORED_LINK_KEY"); break;
             case 0x0c12: DBGPrintf("HCI_DELETE_STORED_LINK_KEY"); break;
             case 0x0c13: DBGPrintf("HCI_WRITE_LOCAL_NAME"); break;
             case 0x0c16: DBGPrintf("Write_Connection_Accept_Timeout"); break;
@@ -1094,6 +1114,12 @@ void BluetoothController::handle_hci_inquiry_result(bool fRSSI)
             case 0xc: DBGPrintf("        Remote Control\n"); break;
             }
 
+            if (pairing_cb_) {
+                if (!pairing_cb_->useInquireResult( &rxbuf_[index_bd], bluetooth_class, nullptr)) {
+                    DBGPrintf("    $$ Callback return NO\n");
+                    continue;
+                }
+            }
             // We need to allocate a connection for this.
             current_connection_ = BluetoothConnection::s_first_;
             while (current_connection_) {
@@ -1180,6 +1206,13 @@ void BluetoothController::handle_hci_extended_inquiry_result()
         case 0xc: DBGPrintf("        Remote Control\n"); break;
         }
 
+        // try callback. 
+        if (pairing_cb_) {
+            if (!pairing_cb_->useInquireResult( &rxbuf_[index_bd], bluetooth_class, index_local_name ? &rxbuf_[index_local_name] : nullptr)) {
+                DBGPrintf("    $$ Callback return NO\n");
+                return;
+            }
+        }
         // We need to allocate a connection for this.
         current_connection_ = BluetoothConnection::s_first_;
         while (current_connection_) {
@@ -1400,8 +1433,25 @@ void BluetoothController::handle_hci_link_key_request() {
 
     // Now here is where we need to decide to say we have key or tell them to
     // cancel key...  right now hard code to cancel...
+    #if 1
+    // see if we can read in stored key...
+    // two ways out of this 
+    // 1 we will receive an event with a kay
+    // 2 we won't receive event but the command complete will show 0 returned.
+    uint8_t link_key[16];
+    if (pairing_cb_ && pairing_cb_->readLinkKey(current_connection_->device_bdaddr_, link_key)) {
+        sendHCILinkKeyRequestReply(link_key);
+        pending_control_ = 0; // NOT sure what this should be?
+
+    } else {
+        sendHCILinkKeyNegativeReply();
+        pending_control_ = PC_LINK_KEY_NEGATIVE;
+    }
+
+    #else    
     sendHCILinkKeyNegativeReply();
     pending_control_ = PC_LINK_KEY_NEGATIVE;
+    #endif
 }
 
 void BluetoothController::handle_hci_link_key_notification() {
@@ -1412,6 +1462,13 @@ void BluetoothController::handle_hci_link_key_notification() {
     for (uint8_t i = 8; i < 24; i++) DBGPrintf("%02x ", rxbuf_[i]);
     DBGPrintf("\n");
 
+#if 1
+    // Should we always try to save away the key? 
+    sendHCIWriteStoredLinkKey(&rxbuf_[8]);
+    has_key = true;
+    //pending_control_ ???
+
+#else
     // Now here is where we need to decide to say we have key or tell them to
     // cancel key...  right now hard code to cancel...
 	
@@ -1429,7 +1486,14 @@ void BluetoothController::handle_hci_link_key_notification() {
 		pending_control_++;
 		has_key = true;
 	}
+#endif    
 }
+void BluetoothController::handle_hci_return_link_keys()
+{
+    DBGPrintf("Returned Link Keys .... \n");
+
+}
+
 
 void BluetoothController::handle_hci_disconnect_complete()
 {
@@ -1471,6 +1535,7 @@ void BluetoothController::handle_hci_authentication_complete()
     DBGPrintf("    Event: HCI Authentication complete(%d): handle: %x\n", rxbuf_[2],
               rxbuf_[3] + (rxbuf_[4] << 8));
     // Start up lcap connection...
+    if (pairing_cb_) pairing_cb_->authenticationComplete(); 
     current_connection_->connection_rxid_ = 0;
     current_connection_->sendl2cap_ConnectionRequest(current_connection_->device_connection_handle_, current_connection_->connection_rxid_, current_connection_->control_dcid_, HID_CTRL_PSM);
 }
@@ -1657,20 +1722,20 @@ void BluetoothController::rx2_data(const Transfer_t *transfer)
             else DBGPrintf("??? There are no device Connections ignore packet Handle: %x\n", rx2buf_[0]);
 
             // Queue up for next read...
-            queue_Data_Transfer(rx2pipe_, rx2buf_, rx2_size_, this);
+            queue_Data_Transfer_Debug(rx2pipe_, rx2buf_, rx2_size_, this, __LINE__);
         } else {
             // size issue?
             rx2_packet_data_remaining_ = (l2cap_length + 4) - hci_length;
             rx2_continue_packet_expected_ = 1;
             DBGPrintf("?? expect continue packet ?? len:%u, hci_len=%u l2cap_len=%u expect=%u\n", len, hci_length, l2cap_length, rx2_packet_data_remaining_);
             // Queue up for next read secondary buffer.
-            queue_Data_Transfer(rx2pipe_, rx2buf2_, rx2_size_, this);
+            queue_Data_Transfer_Debug(rx2pipe_, rx2buf2_, rx2_size_, this, __LINE__);
         }
     } else {
         // Need to retrieve the last few bytes of data.
         //
         DBGPrintf("?? RX2_Read continue on 2nd packet ?? len:%u, hci_len=%u l2cap_len=%u expect=%u\n", len, hci_length, l2cap_length, rx2_packet_data_remaining_);
-        queue_Data_Transfer(rx2pipe_, rx2buf2_, rx2_size_, this);
+        queue_Data_Transfer_Debug(rx2pipe_, rx2buf2_, rx2_size_, this, __LINE__);
         rx2_continue_packet_expected_ = 0;
         return;     // Don't process the message yet as we still have data to receive. 
     }
@@ -1692,12 +1757,24 @@ void BluetoothController::sendHCICommand(uint16_t hciCommand, uint16_t cParams, 
     for (uint8_t i = 0; i < nbytes; i++) DBGPrintf("%02X ", txbuf_[i]);
     DBGPrintf("\n");
     mk_setup(setup, 0x20, 0x0, 0, 0, nbytes);
+    if (device == nullptr) {
+        // something wrong:
+        USBHDBGSerial.printf("\n !!!!!!!!!!! BluetoothController::sendHCICommand called with device == nullptr\n");
+        return; // don't send it. 
+    }
     queue_Control_Transfer(device, &setup, txbuf_, this);
 }
 
 //---------------------------------------------
 void  BluetoothController::sendHCIHCIWriteInquiryMode(uint8_t inquiry_mode) {
     // Setup Inquiry mode
+    if (pairing_cb_) {
+        if (!pairing_cb_->writeInquiryMode(inquiry_mode)) {
+            DBGPrintf("WRITE_INQUIRE_MODE aborted\n");
+            return ; //false;
+        }
+    }
+
     DBGPrintf("HCI_WRITE_INQUIRY_MODE\n");
     sendHCICommand(HCI_WRITE_INQUIRY_MODE, 1, &inquiry_mode);
 }
@@ -1808,12 +1885,46 @@ void BluetoothController::sendHCIAuthenticationRequested() {
 }
 
 //---------------------------------------------
+void BluetoothController::sendHCILinkKeyRequestReply(uint8_t link_key[16]) {
+    DBGPrintf("HCI_LINK_KEY_REQUEST_REPLY\n");
+    uint8_t connection_data[22];
+    for (uint8_t i = 0; i < 6; i++) connection_data[i] = current_connection_->device_bdaddr_[i];
+    for(uint8_t i = 0; i < 16; i++) connection_data[i + 6] = link_key[i]; // 16 octet link_key
+    sendHCICommand(HCI_LINK_KEY_REQUEST_REPLY, sizeof(connection_data), connection_data);
+}
+
+//---------------------------------------------
 void BluetoothController::sendHCILinkKeyNegativeReply() {
     DBGPrintf("HCI_LINK_KEY_NEG_REPLY\n");
     uint8_t connection_data[6];
     for (uint8_t i = 0; i < 6; i++) connection_data[i] = current_connection_->device_bdaddr_[i];
     sendHCICommand(HCI_LINK_KEY_NEG_REPLY, sizeof(connection_data), connection_data);
+}
 
+//---------------------------------------------
+bool BluetoothController::sendHCIReadStoredLinkKey(uint8_t link_key[16]) {
+#if 0
+    uint8_t link_key_data[7];
+    for (uint8_t i = 0; i < 6; i++) link_key_data[i] = current_connection_->device_bdaddr_[i];
+    link_key_data[6] = 0; // return the BDADDR key only
+    sendHCICommand(HCI_READ_STORED_LINK_KEY, sizeof(link_key_data), link_key_data);
+#endif    
+    return true;
+}
+
+//---------------------------------------------
+void BluetoothController::sendHCIWriteStoredLinkKey(uint8_t link_key[16]) {
+    DBGPrintf("HCI_WRITE_STORED_LINK_KEY\n");
+    if (pairing_cb_) {
+        if (pairing_cb_->writeLinkKey(current_connection_->device_bdaddr_, link_key)) {
+            return;
+        }
+    }
+    uint8_t link_key_data[23];
+    link_key_data[0] = 1; // only store 1 key
+    for (uint8_t i = 0; i < 6; i++) link_key_data[i+1] = current_connection_->device_bdaddr_[i];
+    for(uint8_t i = 0; i < 16; i++) link_key_data[i + 7] = link_key[i]; // 16 octet link_key
+    sendHCICommand(HCI_WRITE_STORED_LINK_KEY, sizeof(link_key_data), link_key_data);
 }
 
 //---------------------------------------------
@@ -1824,6 +1935,8 @@ void BluetoothController::sendHCIPinCodeReply() {
     DBGPrintf("HCI_PIN_CODE_REPLY\n");
     uint8_t connection_data[23];
     uint8_t i;
+    // maybe allow editing?
+    if (pairing_cb_) pairing_cb_->sendPinCode(pair_pincode_);
 
     for (i = 0; i < 6; i++) connection_data[i] = current_connection_->device_bdaddr_[i];
 
@@ -2062,7 +2175,7 @@ void BluetoothController::sendL2CapCommand(uint16_t handle, uint8_t* data, uint8
     for (uint8_t i = 0; i < nbytes; i++) DBGPrintf("%02X ", txbuf_[i]);
     DBGPrintf("\n");
 
-    if (!queue_Data_Transfer(txpipe_, txbuf_, nbytes, this)) {
+    if (!queue_Data_Transfer_Debug(txpipe_, txbuf_, nbytes, this, __LINE__)) {
         println("sendL2CapCommand failed");
     }
 }
