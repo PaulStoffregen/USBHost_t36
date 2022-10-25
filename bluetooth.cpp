@@ -322,11 +322,11 @@ void BluetoothController::rx2_callback(const Transfer_t *transfer)
     uint32_t len = transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF);
     print_hexbytes((uint8_t*)transfer->buffer, len);
 //  DBGPrintf("<<(00 : %d): ", len);
-    DBGPrintf("<<(02 %u %p %u):", (uint32_t)em_rx_tx2, transfer->driver, len);
-    em_rx_tx2 = 0;
-    uint8_t *buffer = (uint8_t*)transfer->buffer;
-    for (uint8_t i = 0; i < len; i++) DBGPrintf("%02X ", buffer[i]);
-    DBGPrintf("\n");
+//    DBGPrintf("<<(02 %u %p %u):", (uint32_t)em_rx_tx2, transfer->driver, len);
+//    em_rx_tx2 = 0;
+//    uint8_t *buffer = (uint8_t*)transfer->buffer;
+//    for (uint8_t i = 0; i < len; i++) DBGPrintf("%02X ", buffer[i]);
+//    DBGPrintf("\n");
 
     if (!transfer->driver) return;
     ((BluetoothController *)(transfer->driver))->rx2_data(transfer);
@@ -1636,11 +1636,15 @@ void BluetoothController::handle_hci_remote_version_information_complete() {
 void BluetoothController::rx2_data(const Transfer_t *transfer)
 {
     uint32_t len = transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF);
-    DBGPrintf("\n=====================\n<<(02 %u):", (uint32_t)em_rx_tx2);
+    #ifdef DEBUG_BT
+    if (rx2_continue_packet_expected_) DBGPrintf("<<P(02 %u %u):", (uint32_t)em_rx_tx2, len);
+    else if (rx2_packet_data_remaining_) DBGPrintf("<<C(02 %u %u):", (uint32_t)em_rx_tx2, len);
+    else DBGPrintf("\n=====================\n<<(02 %u %u):", (uint32_t)em_rx_tx2, len);
     em_rx_tx2 = 0;
     uint8_t *buffer = (uint8_t*)transfer->buffer;
     for (uint8_t i = 0; i < len; i++) DBGPrintf("%02X ", buffer[i]);
     DBGPrintf("\n");
+    #endif
 
     // Note the logical packets returned from the device may be larger
     // than can fit in one of our packets, so we will detect this and
@@ -1685,9 +1689,9 @@ void BluetoothController::rx2_data(const Transfer_t *transfer)
         hci_length = rx2buf_[2] + ((uint16_t)rx2buf_[3] << 8);
 
         rx2_packet_data_remaining_ = 0; // I am asuming only two for all of this
-        DBGPrintf("<<(2 comb):");
-        for (uint8_t i = 0; i < (hci_length + 4); i++) DBGPrintf("%02X ", rx2buf_[i]);
-        DBGPrintf("\n");
+        //DBGPrintf("<<(2 comb):");
+        //for (uint8_t i = 0; i < (hci_length + 4); i++) DBGPrintf("%02X ", rx2buf_[i]);
+        //DBGPrintf("\n");
         rx2_packet_data_remaining_ = 0;
         rx2_continue_packet_expected_ = 0; // don't expect another one. 
     } else {
@@ -1727,14 +1731,14 @@ void BluetoothController::rx2_data(const Transfer_t *transfer)
             // size issue?
             rx2_packet_data_remaining_ = (l2cap_length + 4) - hci_length;
             rx2_continue_packet_expected_ = 1;
-            DBGPrintf("?? expect continue packet ?? len:%u, hci_len=%u l2cap_len=%u expect=%u\n", len, hci_length, l2cap_length, rx2_packet_data_remaining_);
+            //DBGPrintf("?? expect continue packet ?? len:%u, hci_len=%u l2cap_len=%u expect=%u\n", len, hci_length, l2cap_length, rx2_packet_data_remaining_);
             // Queue up for next read secondary buffer.
             queue_Data_Transfer_Debug(rx2pipe_, rx2buf2_, rx2_size_, this, __LINE__);
         }
     } else {
         // Need to retrieve the last few bytes of data.
         //
-        DBGPrintf("?? RX2_Read continue on 2nd packet ?? len:%u, hci_len=%u l2cap_len=%u expect=%u\n", len, hci_length, l2cap_length, rx2_packet_data_remaining_);
+        //DBGPrintf("?? RX2_Read continue on 2nd packet ?? len:%u, hci_len=%u l2cap_len=%u expect=%u\n", len, hci_length, l2cap_length, rx2_packet_data_remaining_);
         queue_Data_Transfer_Debug(rx2pipe_, rx2buf2_, rx2_size_, this, __LINE__);
         rx2_continue_packet_expected_ = 0;
         return;     // Don't process the message yet as we still have data to receive. 
