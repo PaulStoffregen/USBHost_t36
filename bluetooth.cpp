@@ -633,6 +633,82 @@ void print_supported_features(uint8_t *cmd_data) {
 }
 #endif
 
+#ifdef DEBUG_BT_VERBOSE
+void print_error_codes(uint8_t error_code) {
+    switch (error_code) {
+        case 0x01: VDBGPrintf(" ( Unknown HCI Command)\n"); break;
+        case 0x02: VDBGPrintf(" ( Unknown Connection Identifier)\n"); break;
+        case 0x03: VDBGPrintf(" ( Hardware Failure)\n"); break;
+        case 0x04: VDBGPrintf(" ( Page Timeout)\n"); break;
+        case 0x05: VDBGPrintf(" ( Authentication Failure)\n"); break;
+        case 0x06: VDBGPrintf(" ( PIN or Key Missing)\n"); break;
+        case 0x07: VDBGPrintf(" ( Memory Capacity Exceeded)\n"); break;
+        case 0x08: VDBGPrintf(" ( Connection Timeout)\n"); break;
+        case 0x09: VDBGPrintf(" ( Connection Limit Exceeded)\n"); break;
+        case 0x0A: VDBGPrintf(" ( Synchronous Connection Limit To A Device Exceeded)\n"); break;
+        case 0x0B: VDBGPrintf(" ( Connection Already Exists)\n"); break;
+        case 0x0C: VDBGPrintf(" ( Command Disallowed)\n"); break;
+        case 0x0D: VDBGPrintf(" ( Connection Rejected due to Limited Resources)\n"); break;
+        case 0x0E: VDBGPrintf(" ( Connection Rejected Due To Security Reasons)\n"); break;
+        case 0x0F: VDBGPrintf(" ( Connection Rejected due to Unacceptable BD_ADDR)\n"); break;
+        case 0x10: VDBGPrintf(" ( Connection Accept Timeout Exceeded)\n"); break;
+        case 0x11: VDBGPrintf(" ( Unsupported Feature or Parameter Value)\n"); break;
+        case 0x12: VDBGPrintf(" ( Invalid HCI Command Parameters)\n"); break;
+        case 0x13: VDBGPrintf(" ( Remote User Terminated Connection)\n"); break;
+        case 0x14: VDBGPrintf(" ( Remote Device Terminated Connection due to Low Resources)\n"); break;
+        case 0x15: VDBGPrintf(" ( Remote Device Terminated Connection due to Power Off)\n"); break;
+        case 0x16: VDBGPrintf(" ( Connection Terminated By Local Host)\n"); break;
+        case 0x17: VDBGPrintf(" ( Repeated Attempts)\n"); break;
+        case 0x18: VDBGPrintf(" ( Pairing Not Allowed)\n"); break;
+        case 0x19: VDBGPrintf(" ( Unknown LMP PDU)\n"); break;
+        case 0x1A: VDBGPrintf(" ( Unsupported Remote Feature)\n"); break;
+        case 0x1B: VDBGPrintf(" ( SCO Offset Rejected)\n"); break;
+        case 0x1C: VDBGPrintf(" ( SCO Interval Rejected)\n"); break;
+        case 0x1D: VDBGPrintf(" ( SCO Air Mode Rejected)\n"); break;
+        case 0x1E: VDBGPrintf(" ( Invalid LMP Parameters / Invalid LL Parameters)\n"); break;
+        case 0x1F: VDBGPrintf(" ( Unspecified Error)\n"); break;
+        case 0x20: VDBGPrintf(" ( Unsupported LMP Parameter Value / Unsupported LL Parameter Value)\n"); break;
+        case 0x21: VDBGPrintf(" ( Role Change Not Allowed)\n"); break;
+        case 0x22: VDBGPrintf(" ( LMP Response Timeout / LL Response Timeout)\n"); break;
+        case 0x23: VDBGPrintf(" ( LMP Error Transaction Collision / LL Procedure Collision)\n"); break;
+        case 0x24: VDBGPrintf(" ( LMP PDU Not Allowed)\n"); break;
+        case 0x25: VDBGPrintf(" ( Encryption Mode Not Acceptable)\n"); break;
+        case 0x26: VDBGPrintf(" ( Link Key cannot be Changed)\n"); break;
+        case 0x27: VDBGPrintf(" ( Requested QoS Not Supported)\n"); break;
+        case 0x28: VDBGPrintf(" ( Instant Passed)\n"); break;
+        case 0x29: VDBGPrintf(" ( Pairing With Unit Key Not Supported)\n"); break;
+        case 0x2A: VDBGPrintf(" ( Different Transaction Collision)\n"); break;
+        case 0x2B: VDBGPrintf(" ( Reserved for future use)\n"); break;
+        case 0x2C: VDBGPrintf(" ( QoS Unacceptable Parameter)\n"); break;
+        case 0x2D: VDBGPrintf(" ( QoS Rejected)\n"); break;
+        case 0x2E: VDBGPrintf(" ( Channel Classification Not Supported)\n"); break;
+        case 0x2F: VDBGPrintf(" ( Insufficient Security)\n"); break;
+        case 0x30: VDBGPrintf(" ( Parameter Out Of Mandatory Range)\n"); break;
+        case 0x31: VDBGPrintf(" ( Reserved for future use)\n"); break;
+        case 0x32: VDBGPrintf(" ( Role Switch Pending)\n"); break;
+        case 0x33: VDBGPrintf(" ( Reserved for future use)\n"); break;
+        case 0x34: VDBGPrintf(" ( Reserved Slot Violation)\n"); break;
+        case 0x35: VDBGPrintf(" ( Role Switch Failed)\n"); break;
+        case 0x36: VDBGPrintf(" ( Extended Inquiry Response Too Large)\n"); break;
+        case 0x37: VDBGPrintf(" ( Secure Simple Pairing Not Supported By Host)\n"); break;
+        case 0x38: VDBGPrintf(" ( Host Busy - Pairing)\n"); break;
+        case 0x39: VDBGPrintf(" ( Connection Rejected due to No Suitable Channel Found)\n"); break;
+        case 0x3A: VDBGPrintf(" ( Controller Busy)\n"); break;
+        case 0x3B: VDBGPrintf(" ( Unacceptable Connection Parameters)\n"); break;
+        case 0x3C: VDBGPrintf(" ( Advertising Timeout)\n"); break;
+        case 0x3D: VDBGPrintf(" ( Connection Terminated due to MIC Failure)\n"); break;
+        case 0x3E: VDBGPrintf(" ( Connection Failed to be Established / Synchronization Timeout)\n"); break;
+        case 0x3F: VDBGPrintf(" ( Previously used)\n"); break;
+        case 0x40: VDBGPrintf(" ( Coarse Clock Adjustment Rejected but Will Try to Adjust Using Clock Dragging)\n"); break;
+        case 0x41: VDBGPrintf(" ( Type0 Submap Not Defined)\n"); break;
+        case 0x42: VDBGPrintf(" ( Unknown Advertising Identifier)\n"); break;
+        case 0x43: VDBGPrintf(" ( Limit Reached)\n"); break;
+        case 0x44: VDBGPrintf(" ( Operation Cancelled by Host)\n"); break;
+        case 0x45: VDBGPrintf(" ( Packet Too Long)\n"); break;
+        default: VDBGPrintf("\n");
+    }    
+}
+#endif
 
 //===================================================================
 // Called when an HCI command completes.
@@ -646,78 +722,7 @@ void BluetoothController::handle_hci_command_complete()
     } else {
         VDBGPrintf("    Command(%x) Completed - Error: 0x%x!", hci_command, rxbuf_[5], rxbuf_[5]);
         // BUGBUG:: probably need to queue something?
-        switch (rxbuf_[5]) {
-            case 0x01: VDBGPrintf(" ( Unknown HCI Command)\n"); break;
-            case 0x02: VDBGPrintf(" ( Unknown Connection Identifier)\n"); break;
-            case 0x03: VDBGPrintf(" ( Hardware Failure)\n"); break;
-            case 0x04: VDBGPrintf(" ( Page Timeout)\n"); break;
-            case 0x05: VDBGPrintf(" ( Authentication Failure)\n"); break;
-            case 0x06: VDBGPrintf(" ( PIN or Key Missing)\n"); break;
-            case 0x07: VDBGPrintf(" ( Memory Capacity Exceeded)\n"); break;
-            case 0x08: VDBGPrintf(" ( Connection Timeout)\n"); break;
-            case 0x09: VDBGPrintf(" ( Connection Limit Exceeded)\n"); break;
-            case 0x0A: VDBGPrintf(" ( Synchronous Connection Limit To A Device Exceeded)\n"); break;
-            case 0x0B: VDBGPrintf(" ( Connection Already Exists)\n"); break;
-            case 0x0C: VDBGPrintf(" ( Command Disallowed)\n"); break;
-            case 0x0D: VDBGPrintf(" ( Connection Rejected due to Limited Resources)\n"); break;
-            case 0x0E: VDBGPrintf(" ( Connection Rejected Due To Security Reasons)\n"); break;
-            case 0x0F: VDBGPrintf(" ( Connection Rejected due to Unacceptable BD_ADDR)\n"); break;
-            case 0x10: VDBGPrintf(" ( Connection Accept Timeout Exceeded)\n"); break;
-            case 0x11: VDBGPrintf(" ( Unsupported Feature or Parameter Value)\n"); break;
-            case 0x12: VDBGPrintf(" ( Invalid HCI Command Parameters)\n"); break;
-            case 0x13: VDBGPrintf(" ( Remote User Terminated Connection)\n"); break;
-            case 0x14: VDBGPrintf(" ( Remote Device Terminated Connection due to Low Resources)\n"); break;
-            case 0x15: VDBGPrintf(" ( Remote Device Terminated Connection due to Power Off)\n"); break;
-            case 0x16: VDBGPrintf(" ( Connection Terminated By Local Host)\n"); break;
-            case 0x17: VDBGPrintf(" ( Repeated Attempts)\n"); break;
-            case 0x18: VDBGPrintf(" ( Pairing Not Allowed)\n"); break;
-            case 0x19: VDBGPrintf(" ( Unknown LMP PDU)\n"); break;
-            case 0x1A: VDBGPrintf(" ( Unsupported Remote Feature)\n"); break;
-            case 0x1B: VDBGPrintf(" ( SCO Offset Rejected)\n"); break;
-            case 0x1C: VDBGPrintf(" ( SCO Interval Rejected)\n"); break;
-            case 0x1D: VDBGPrintf(" ( SCO Air Mode Rejected)\n"); break;
-            case 0x1E: VDBGPrintf(" ( Invalid LMP Parameters / Invalid LL Parameters)\n"); break;
-            case 0x1F: VDBGPrintf(" ( Unspecified Error)\n"); break;
-            case 0x20: VDBGPrintf(" ( Unsupported LMP Parameter Value / Unsupported LL Parameter Value)\n"); break;
-            case 0x21: VDBGPrintf(" ( Role Change Not Allowed)\n"); break;
-            case 0x22: VDBGPrintf(" ( LMP Response Timeout / LL Response Timeout)\n"); break;
-            case 0x23: VDBGPrintf(" ( LMP Error Transaction Collision / LL Procedure Collision)\n"); break;
-            case 0x24: VDBGPrintf(" ( LMP PDU Not Allowed)\n"); break;
-            case 0x25: VDBGPrintf(" ( Encryption Mode Not Acceptable)\n"); break;
-            case 0x26: VDBGPrintf(" ( Link Key cannot be Changed)\n"); break;
-            case 0x27: VDBGPrintf(" ( Requested QoS Not Supported)\n"); break;
-            case 0x28: VDBGPrintf(" ( Instant Passed)\n"); break;
-            case 0x29: VDBGPrintf(" ( Pairing With Unit Key Not Supported)\n"); break;
-            case 0x2A: VDBGPrintf(" ( Different Transaction Collision)\n"); break;
-            case 0x2B: VDBGPrintf(" ( Reserved for future use)\n"); break;
-            case 0x2C: VDBGPrintf(" ( QoS Unacceptable Parameter)\n"); break;
-            case 0x2D: VDBGPrintf(" ( QoS Rejected)\n"); break;
-            case 0x2E: VDBGPrintf(" ( Channel Classification Not Supported)\n"); break;
-            case 0x2F: VDBGPrintf(" ( Insufficient Security)\n"); break;
-            case 0x30: VDBGPrintf(" ( Parameter Out Of Mandatory Range)\n"); break;
-            case 0x31: VDBGPrintf(" ( Reserved for future use)\n"); break;
-            case 0x32: VDBGPrintf(" ( Role Switch Pending)\n"); break;
-            case 0x33: VDBGPrintf(" ( Reserved for future use)\n"); break;
-            case 0x34: VDBGPrintf(" ( Reserved Slot Violation)\n"); break;
-            case 0x35: VDBGPrintf(" ( Role Switch Failed)\n"); break;
-            case 0x36: VDBGPrintf(" ( Extended Inquiry Response Too Large)\n"); break;
-            case 0x37: VDBGPrintf(" ( Secure Simple Pairing Not Supported By Host)\n"); break;
-            case 0x38: VDBGPrintf(" ( Host Busy - Pairing)\n"); break;
-            case 0x39: VDBGPrintf(" ( Connection Rejected due to No Suitable Channel Found)\n"); break;
-            case 0x3A: VDBGPrintf(" ( Controller Busy)\n"); break;
-            case 0x3B: VDBGPrintf(" ( Unacceptable Connection Parameters)\n"); break;
-            case 0x3C: VDBGPrintf(" ( Advertising Timeout)\n"); break;
-            case 0x3D: VDBGPrintf(" ( Connection Terminated due to MIC Failure)\n"); break;
-            case 0x3E: VDBGPrintf(" ( Connection Failed to be Established / Synchronization Timeout)\n"); break;
-            case 0x3F: VDBGPrintf(" ( Previously used)\n"); break;
-            case 0x40: VDBGPrintf(" ( Coarse Clock Adjustment Rejected but Will Try to Adjust Using Clock Dragging)\n"); break;
-            case 0x41: VDBGPrintf(" ( Type0 Submap Not Defined)\n"); break;
-            case 0x42: VDBGPrintf(" ( Unknown Advertising Identifier)\n"); break;
-            case 0x43: VDBGPrintf(" ( Limit Reached)\n"); break;
-            case 0x44: VDBGPrintf(" ( Operation Cancelled by Host)\n"); break;
-            case 0x45: VDBGPrintf(" ( Packet Too Long)\n"); break;
-            default: VDBGPrintf("\n");
-        }
+        print_error_codes(rxbuf_[5]);
     }
     #endif
     switch (hci_command) {
@@ -1439,7 +1444,7 @@ void BluetoothController::handle_hci_link_key_request() {
     // 1 we will receive an event with a kay
     // 2 we won't receive event but the command complete will show 0 returned.
     uint8_t link_key[16];
-    if (pairing_cb_ && pairing_cb_->readLinkKey(current_connection_->device_bdaddr_, link_key)) {
+    if (!do_pair_ssp_ && pairing_cb_ && pairing_cb_->readLinkKey(current_connection_->device_bdaddr_, link_key)) {
         sendHCILinkKeyRequestReply(link_key);
         pending_control_ = 0; // NOT sure what this should be?
 
@@ -1498,8 +1503,14 @@ void BluetoothController::handle_hci_return_link_keys()
 void BluetoothController::handle_hci_disconnect_complete()
 {
     //5 4 0 48 0 13
-    DBGPrintf("    Event: HCI Disconnect complete(%d): handle: %x, reason:%x\n", rxbuf_[2],
+    DBGPrintf("    Event: HCI Disconnect complete(%d): handle: %x, reason:%x", rxbuf_[2],
               rxbuf_[3] + (rxbuf_[4] << 8), rxbuf_[5]);
+    #ifdef DEBUG_BT_VERBOSE
+    print_error_codes(rxbuf_[5]);
+    #else
+    DBGPrintf("\n")
+    #endif 
+
     if (current_connection_->device_driver_) {
         current_connection_->device_driver_->release_bluetooth();
         current_connection_->device_driver_->remote_name_[0] = 0;

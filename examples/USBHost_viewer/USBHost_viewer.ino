@@ -87,8 +87,8 @@ USBHIDParser hid7(myusb);
 MouseController mouse(myusb);
 DigitizerController tablet(myusb);
 JoystickController joystick(myusb);
-BluetoothController bluet(myusb, false, "0000", true);   // Version does pairing to device
-//BluetoothController bluet(myusb);   // version assumes it already was paired
+//BluetoothController bluet(myusb, false, "0000", true);   // Version does pairing to device
+BluetoothController bluet(myusb);   // version assumes it already was paired
 RawHIDController rawhid2(myusb);
 
 // Lets only include in the lists The most top level type devices we wish to show information for.
@@ -154,6 +154,7 @@ uint8_t keyboard_battery_level = 0xff; // default have nto seen it...
 //=============================================================================
 
 class BTPCB : public BluetoothPairingCB {
+public:
     bool writeInquiryMode(uint8_t inquiry_mode) { 
         tft.fillScreen(BLACK);  // clear the screen.
         tft.setCursor(0, 0);
@@ -258,6 +259,16 @@ class BTPCB : public BluetoothPairingCB {
         return false;
     }
 
+    void eraseLinkKeys() {
+        if (eeprom_start == (uint16_t)-1) eeprom_start = EEPROM.length() - EEPROM_OFFSET_FROM_END;
+
+        for (uint8_t i = 0; i < MAX_KEYS; i++) {
+            uint16_t addr = eeprom_start + (i * 22); // bddr plus link_key
+            for (uint8_t j=0; j < 6; j++) EEPROM.write(addr++, 0xff);
+        }
+        Serial.println("*** Link Keys Erased ***");
+    }
+
 protected:
     enum {MAX_KEYS=5, EEPROM_FUDGE = 128, EEPROM_OFFSET_FROM_END = (MAX_KEYS * 22) + EEPROM_FUDGE};
     uint16_t eeprom_start = (uint16_t)-1;
@@ -354,14 +365,23 @@ void loop()
       int ch = Serial.read();
       while (Serial.read() != -1) ;
       if (ch == 'P') {
-        bluet.setBluetoothPairingCB(&btpcb);
-        if (bluet.startDevicePairing("0000", true)) {
-          Serial.println("Pairing operation started");
+        if (bluet.startDevicePairing("0000", false)) {
+          Serial.println("Pairing operation started with SSP false");
 
         } else {
           Serial.println("Staring of Pairing operation failed");
         }
         
+      } else if (ch == 'S') {
+        if (bluet.startDevicePairing("0000", true)) {
+          Serial.println("Pairing operation started with SSP true");
+
+        } else {
+          Serial.println("Staring of Pairing operation failed");
+        }    
+      } else if (ch == 'E') {
+        Serial.println("Erase Pairing Link Keys");
+        btpcb.eraseLinkKeys();
       }
     } 
 
