@@ -946,8 +946,9 @@ hidclaim_t JoystickController::claim_bluetooth(BluetoothConnection *btconnection
                     case PS3_MOTION:
                         special_process_required = SP_PS3_IDS;      // PS3 maybe needs different IDS.
                         // fall through
+                    case SWITCH:
                     case PS4:
-                    case  XBOXONE:
+                    case XBOXONE:
                         claim_interface = true;
                         break;
                 }
@@ -1237,6 +1238,9 @@ bool JoystickController::mapNameToJoystickType(const uint8_t *remoteName)
     } else if (strncmp((const char *)remoteName, "Xbox Wireless", 13) == 0) {
         DBGPrintf("  JoystickController::mapNameToJoystickType %x %s - set to XBOXONE\n", (uint32_t)this, remoteName);
         joystickType_ = XBOXONE;
+    } else if (strncmp((const char *)remoteName, "Pro Controller", 13) == 0) {
+        DBGPrintf("  JoystickController::mapNameToJoystickType %x %s - set to Nintendo Pro Controller\n", (uint32_t)this, remoteName);
+        joystickType_ = SWITCH;
     } else {
         DBGPrintf("  JoystickController::mapNameToJoystickType %s - Unknown\n", remoteName);
     }

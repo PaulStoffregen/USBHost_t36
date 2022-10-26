@@ -46,6 +46,7 @@ void inline DBGPrintf(...) {};
 #define DBGPrintf USBHDBGSerial.printf
 #endif
 elapsedMillis em_rx_tx2 = 0;
+elapsedMillis em_rx_tx = 0;
 
 #ifndef DEBUG_BT_VERBOSE
 void inline VDBGPrintf(...) {};
@@ -270,6 +271,10 @@ void BluetoothController::control(const Transfer_t *transfer)
 
 bool BluetoothController::setTimer(BluetoothConnection *connection, uint32_t us)  // set to NULL ptr will clear:
 {
+    static uint32_t millis_last = 0;
+    DBGPrintf("BluetoothController::setTimer(%p, %u) TO:%u, dt:%u\n", connection, us,
+        millis(), millis()-millis_last);
+    millis_last = millis();
     if (connection == nullptr) {
         timer_connection_ = nullptr;
         timer_.stop();
@@ -306,6 +311,82 @@ bool BluetoothController::startDevicePairing(const char *pin, bool pair_ssp)
     return true;
 }
 
+#ifdef DEBUG_BT
+void print_error_codes(uint8_t error_code) {
+    switch (error_code) {
+        case 0x01: DBGPrintf(" ( Unknown HCI Command)\n"); break;
+        case 0x02: DBGPrintf(" ( Unknown Connection Identifier)\n"); break;
+        case 0x03: DBGPrintf(" ( Hardware Failure)\n"); break;
+        case 0x04: DBGPrintf(" ( Page Timeout)\n"); break;
+        case 0x05: DBGPrintf(" ( Authentication Failure)\n"); break;
+        case 0x06: DBGPrintf(" ( PIN or Key Missing)\n"); break;
+        case 0x07: DBGPrintf(" ( Memory Capacity Exceeded)\n"); break;
+        case 0x08: DBGPrintf(" ( Connection Timeout)\n"); break;
+        case 0x09: DBGPrintf(" ( Connection Limit Exceeded)\n"); break;
+        case 0x0A: DBGPrintf(" ( Synchronous Connection Limit To A Device Exceeded)\n"); break;
+        case 0x0B: DBGPrintf(" ( Connection Already Exists)\n"); break;
+        case 0x0C: DBGPrintf(" ( Command Disallowed)\n"); break;
+        case 0x0D: DBGPrintf(" ( Connection Rejected due to Limited Resources)\n"); break;
+        case 0x0E: DBGPrintf(" ( Connection Rejected Due To Security Reasons)\n"); break;
+        case 0x0F: DBGPrintf(" ( Connection Rejected due to Unacceptable BD_ADDR)\n"); break;
+        case 0x10: DBGPrintf(" ( Connection Accept Timeout Exceeded)\n"); break;
+        case 0x11: DBGPrintf(" ( Unsupported Feature or Parameter Value)\n"); break;
+        case 0x12: DBGPrintf(" ( Invalid HCI Command Parameters)\n"); break;
+        case 0x13: DBGPrintf(" ( Remote User Terminated Connection)\n"); break;
+        case 0x14: DBGPrintf(" ( Remote Device Terminated Connection due to Low Resources)\n"); break;
+        case 0x15: DBGPrintf(" ( Remote Device Terminated Connection due to Power Off)\n"); break;
+        case 0x16: DBGPrintf(" ( Connection Terminated By Local Host)\n"); break;
+        case 0x17: DBGPrintf(" ( Repeated Attempts)\n"); break;
+        case 0x18: DBGPrintf(" ( Pairing Not Allowed)\n"); break;
+        case 0x19: DBGPrintf(" ( Unknown LMP PDU)\n"); break;
+        case 0x1A: DBGPrintf(" ( Unsupported Remote Feature)\n"); break;
+        case 0x1B: DBGPrintf(" ( SCO Offset Rejected)\n"); break;
+        case 0x1C: DBGPrintf(" ( SCO Interval Rejected)\n"); break;
+        case 0x1D: DBGPrintf(" ( SCO Air Mode Rejected)\n"); break;
+        case 0x1E: DBGPrintf(" ( Invalid LMP Parameters / Invalid LL Parameters)\n"); break;
+        case 0x1F: DBGPrintf(" ( Unspecified Error)\n"); break;
+        case 0x20: DBGPrintf(" ( Unsupported LMP Parameter Value / Unsupported LL Parameter Value)\n"); break;
+        case 0x21: DBGPrintf(" ( Role Change Not Allowed)\n"); break;
+        case 0x22: DBGPrintf(" ( LMP Response Timeout / LL Response Timeout)\n"); break;
+        case 0x23: DBGPrintf(" ( LMP Error Transaction Collision / LL Procedure Collision)\n"); break;
+        case 0x24: DBGPrintf(" ( LMP PDU Not Allowed)\n"); break;
+        case 0x25: DBGPrintf(" ( Encryption Mode Not Acceptable)\n"); break;
+        case 0x26: DBGPrintf(" ( Link Key cannot be Changed)\n"); break;
+        case 0x27: DBGPrintf(" ( Requested QoS Not Supported)\n"); break;
+        case 0x28: DBGPrintf(" ( Instant Passed)\n"); break;
+        case 0x29: DBGPrintf(" ( Pairing With Unit Key Not Supported)\n"); break;
+        case 0x2A: DBGPrintf(" ( Different Transaction Collision)\n"); break;
+        case 0x2B: DBGPrintf(" ( Reserved for future use)\n"); break;
+        case 0x2C: DBGPrintf(" ( QoS Unacceptable Parameter)\n"); break;
+        case 0x2D: DBGPrintf(" ( QoS Rejected)\n"); break;
+        case 0x2E: DBGPrintf(" ( Channel Classification Not Supported)\n"); break;
+        case 0x2F: DBGPrintf(" ( Insufficient Security)\n"); break;
+        case 0x30: DBGPrintf(" ( Parameter Out Of Mandatory Range)\n"); break;
+        case 0x31: DBGPrintf(" ( Reserved for future use)\n"); break;
+        case 0x32: DBGPrintf(" ( Role Switch Pending)\n"); break;
+        case 0x33: DBGPrintf(" ( Reserved for future use)\n"); break;
+        case 0x34: DBGPrintf(" ( Reserved Slot Violation)\n"); break;
+        case 0x35: DBGPrintf(" ( Role Switch Failed)\n"); break;
+        case 0x36: DBGPrintf(" ( Extended Inquiry Response Too Large)\n"); break;
+        case 0x37: DBGPrintf(" ( Secure Simple Pairing Not Supported By Host)\n"); break;
+        case 0x38: DBGPrintf(" ( Host Busy - Pairing)\n"); break;
+        case 0x39: DBGPrintf(" ( Connection Rejected due to No Suitable Channel Found)\n"); break;
+        case 0x3A: DBGPrintf(" ( Controller Busy)\n"); break;
+        case 0x3B: DBGPrintf(" ( Unacceptable Connection Parameters)\n"); break;
+        case 0x3C: DBGPrintf(" ( Advertising Timeout)\n"); break;
+        case 0x3D: DBGPrintf(" ( Connection Terminated due to MIC Failure)\n"); break;
+        case 0x3E: DBGPrintf(" ( Connection Failed to be Established / Synchronization Timeout)\n"); break;
+        case 0x3F: DBGPrintf(" ( Previously used)\n"); break;
+        case 0x40: DBGPrintf(" ( Coarse Clock Adjustment Rejected but Will Try to Adjust Using Clock Dragging)\n"); break;
+        case 0x41: DBGPrintf(" ( Type0 Submap Not Defined)\n"); break;
+        case 0x42: DBGPrintf(" ( Unknown Advertising Identifier)\n"); break;
+        case 0x43: DBGPrintf(" ( Limit Reached)\n"); break;
+        case 0x44: DBGPrintf(" ( Operation Cancelled by Host)\n"); break;
+        case 0x45: DBGPrintf(" ( Packet Too Long)\n"); break;
+        default: DBGPrintf("\n");
+    }    
+}
+#endif
 
 /************************************************************/
 //  Interrupt-based Data Movement
@@ -344,7 +425,8 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
     uint32_t len = transfer->length - ((transfer->qtd.token >> 16) & 0x7FFF);
     print_hexbytes((uint8_t*)transfer->buffer, len);
 //  DBGPrintf("<<(00 : %d): ", len);
-    DBGPrintf(rx_packet_data_remaining_? "<<C(01):":"<<(01):");
+    DBGPrintf(rx_packet_data_remaining_? "<<C(01, %u):":"<<(01, %u):", (uint32_t)em_rx_tx);
+    em_rx_tx = 0;
     uint8_t *buffer = (uint8_t*)transfer->buffer;
     for (uint8_t i = 0; i < len; i++) DBGPrintf("%02X ", buffer[i]);
     DBGPrintf("\n");
@@ -397,8 +479,29 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
             break;
 			
 		//use simple pairing
+        case EV_READ_REMOTE_SUPPORTED_FEATURES_COMPLETE: //0x0B
+            USBHDBGSerial.printf(" Remote read features complete: status:%x ", rxbuf_[2]);
+            print_error_codes(rxbuf_[2]);
+            USBHDBGSerial.printf(" Requested to use SSP Pairing: %d\n", do_pair_ssp_);
+            if ( (rxbuf_[11]) & (0x01 << 3)) {
+                if (current_connection_) {
+                    current_connection_->supports_SSP_ = true;
+                    USBHDBGSerial.printf("%d\n", current_connection_->supports_SSP_);
+                }
+                //sendHCIRemoteNameRequest();
+            } else {
+                USBHDBGSerial.printf("No Support for SPP\n");
+                //USBHDBGSerial.printf("Try just say yes\n");
+                //current_connection_->supports_SSP_ = true;
+
+            }
+            sendHCIRoleDiscoveryRequest();
+            break;
+
         case EV_READ_REMOTE_EXTENDED_FEATURES_COMPLETE:  //0x23
-            USBHDBGSerial.printf(" Extended features read complete:  ");
+            USBHDBGSerial.printf(" Extended features read complete: status:%x ", rxbuf_[2]);
+            print_error_codes(rxbuf_[2]);
+
 			USBHDBGSerial.printf(" Requested to use SSP Pairing: %d\n", do_pair_ssp_);
             if ( ((rxbuf_[7] >> 0) & 0x01) == 1) {
                 if (current_connection_) {
@@ -417,7 +520,7 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
 				sendHCISetConnectionEncryption();  // use simple pairing   hangs the link 
 				has_key = false;
 			}
-			handle_hci_encryption_change_complete();
+			//handle_hci_encryption_change_complete();
 			break;		
 		case EV_RETURN_LINK_KEYS:
             handle_hci_return_link_keys();
@@ -458,6 +561,12 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
             break;
         case EV_IO_CAPABILITY_REQUEST:
             handle_hci_io_capability_request();
+            break;
+        case EV_ROLE_CHANGED:
+            // 12 08 00 16 AC B3 26 3F C8 00
+            VDBGPrintf("    EV_ROLE_CHANGED: st:%u bdaddr: %02x:%02x:%02x:%02x:%02x:%02x role:%u(%s)\n",
+                rxbuf_[2], rxbuf_[3], rxbuf_[4], rxbuf_[5], rxbuf_[6], rxbuf_[7], rxbuf_[8], 
+                rxbuf_[9], rxbuf_[9]?  "Peripheral" : "Central" );
             break;
         case EV_NUM_COMPLETE_PKT: //13 05 01 47 00 01 00 
             VDBGPrintf("    NUM_COMPLETE_PKT: ch:%u fh:%04x comp:%u\n",
@@ -633,82 +742,6 @@ void print_supported_features(uint8_t *cmd_data) {
 }
 #endif
 
-#ifdef DEBUG_BT_VERBOSE
-void print_error_codes(uint8_t error_code) {
-    switch (error_code) {
-        case 0x01: VDBGPrintf(" ( Unknown HCI Command)\n"); break;
-        case 0x02: VDBGPrintf(" ( Unknown Connection Identifier)\n"); break;
-        case 0x03: VDBGPrintf(" ( Hardware Failure)\n"); break;
-        case 0x04: VDBGPrintf(" ( Page Timeout)\n"); break;
-        case 0x05: VDBGPrintf(" ( Authentication Failure)\n"); break;
-        case 0x06: VDBGPrintf(" ( PIN or Key Missing)\n"); break;
-        case 0x07: VDBGPrintf(" ( Memory Capacity Exceeded)\n"); break;
-        case 0x08: VDBGPrintf(" ( Connection Timeout)\n"); break;
-        case 0x09: VDBGPrintf(" ( Connection Limit Exceeded)\n"); break;
-        case 0x0A: VDBGPrintf(" ( Synchronous Connection Limit To A Device Exceeded)\n"); break;
-        case 0x0B: VDBGPrintf(" ( Connection Already Exists)\n"); break;
-        case 0x0C: VDBGPrintf(" ( Command Disallowed)\n"); break;
-        case 0x0D: VDBGPrintf(" ( Connection Rejected due to Limited Resources)\n"); break;
-        case 0x0E: VDBGPrintf(" ( Connection Rejected Due To Security Reasons)\n"); break;
-        case 0x0F: VDBGPrintf(" ( Connection Rejected due to Unacceptable BD_ADDR)\n"); break;
-        case 0x10: VDBGPrintf(" ( Connection Accept Timeout Exceeded)\n"); break;
-        case 0x11: VDBGPrintf(" ( Unsupported Feature or Parameter Value)\n"); break;
-        case 0x12: VDBGPrintf(" ( Invalid HCI Command Parameters)\n"); break;
-        case 0x13: VDBGPrintf(" ( Remote User Terminated Connection)\n"); break;
-        case 0x14: VDBGPrintf(" ( Remote Device Terminated Connection due to Low Resources)\n"); break;
-        case 0x15: VDBGPrintf(" ( Remote Device Terminated Connection due to Power Off)\n"); break;
-        case 0x16: VDBGPrintf(" ( Connection Terminated By Local Host)\n"); break;
-        case 0x17: VDBGPrintf(" ( Repeated Attempts)\n"); break;
-        case 0x18: VDBGPrintf(" ( Pairing Not Allowed)\n"); break;
-        case 0x19: VDBGPrintf(" ( Unknown LMP PDU)\n"); break;
-        case 0x1A: VDBGPrintf(" ( Unsupported Remote Feature)\n"); break;
-        case 0x1B: VDBGPrintf(" ( SCO Offset Rejected)\n"); break;
-        case 0x1C: VDBGPrintf(" ( SCO Interval Rejected)\n"); break;
-        case 0x1D: VDBGPrintf(" ( SCO Air Mode Rejected)\n"); break;
-        case 0x1E: VDBGPrintf(" ( Invalid LMP Parameters / Invalid LL Parameters)\n"); break;
-        case 0x1F: VDBGPrintf(" ( Unspecified Error)\n"); break;
-        case 0x20: VDBGPrintf(" ( Unsupported LMP Parameter Value / Unsupported LL Parameter Value)\n"); break;
-        case 0x21: VDBGPrintf(" ( Role Change Not Allowed)\n"); break;
-        case 0x22: VDBGPrintf(" ( LMP Response Timeout / LL Response Timeout)\n"); break;
-        case 0x23: VDBGPrintf(" ( LMP Error Transaction Collision / LL Procedure Collision)\n"); break;
-        case 0x24: VDBGPrintf(" ( LMP PDU Not Allowed)\n"); break;
-        case 0x25: VDBGPrintf(" ( Encryption Mode Not Acceptable)\n"); break;
-        case 0x26: VDBGPrintf(" ( Link Key cannot be Changed)\n"); break;
-        case 0x27: VDBGPrintf(" ( Requested QoS Not Supported)\n"); break;
-        case 0x28: VDBGPrintf(" ( Instant Passed)\n"); break;
-        case 0x29: VDBGPrintf(" ( Pairing With Unit Key Not Supported)\n"); break;
-        case 0x2A: VDBGPrintf(" ( Different Transaction Collision)\n"); break;
-        case 0x2B: VDBGPrintf(" ( Reserved for future use)\n"); break;
-        case 0x2C: VDBGPrintf(" ( QoS Unacceptable Parameter)\n"); break;
-        case 0x2D: VDBGPrintf(" ( QoS Rejected)\n"); break;
-        case 0x2E: VDBGPrintf(" ( Channel Classification Not Supported)\n"); break;
-        case 0x2F: VDBGPrintf(" ( Insufficient Security)\n"); break;
-        case 0x30: VDBGPrintf(" ( Parameter Out Of Mandatory Range)\n"); break;
-        case 0x31: VDBGPrintf(" ( Reserved for future use)\n"); break;
-        case 0x32: VDBGPrintf(" ( Role Switch Pending)\n"); break;
-        case 0x33: VDBGPrintf(" ( Reserved for future use)\n"); break;
-        case 0x34: VDBGPrintf(" ( Reserved Slot Violation)\n"); break;
-        case 0x35: VDBGPrintf(" ( Role Switch Failed)\n"); break;
-        case 0x36: VDBGPrintf(" ( Extended Inquiry Response Too Large)\n"); break;
-        case 0x37: VDBGPrintf(" ( Secure Simple Pairing Not Supported By Host)\n"); break;
-        case 0x38: VDBGPrintf(" ( Host Busy - Pairing)\n"); break;
-        case 0x39: VDBGPrintf(" ( Connection Rejected due to No Suitable Channel Found)\n"); break;
-        case 0x3A: VDBGPrintf(" ( Controller Busy)\n"); break;
-        case 0x3B: VDBGPrintf(" ( Unacceptable Connection Parameters)\n"); break;
-        case 0x3C: VDBGPrintf(" ( Advertising Timeout)\n"); break;
-        case 0x3D: VDBGPrintf(" ( Connection Terminated due to MIC Failure)\n"); break;
-        case 0x3E: VDBGPrintf(" ( Connection Failed to be Established / Synchronization Timeout)\n"); break;
-        case 0x3F: VDBGPrintf(" ( Previously used)\n"); break;
-        case 0x40: VDBGPrintf(" ( Coarse Clock Adjustment Rejected but Will Try to Adjust Using Clock Dragging)\n"); break;
-        case 0x41: VDBGPrintf(" ( Type0 Submap Not Defined)\n"); break;
-        case 0x42: VDBGPrintf(" ( Unknown Advertising Identifier)\n"); break;
-        case 0x43: VDBGPrintf(" ( Limit Reached)\n"); break;
-        case 0x44: VDBGPrintf(" ( Operation Cancelled by Host)\n"); break;
-        case 0x45: VDBGPrintf(" ( Packet Too Long)\n"); break;
-        default: VDBGPrintf("\n");
-    }    
-}
-#endif
 
 //===================================================================
 // Called when an HCI command completes.
@@ -982,88 +1015,69 @@ void BluetoothController::handle_hci_command_status()
     // <event type><param count><status><num packets allowed to be sent><CMD><CMD>
     uint16_t hci_command = rxbuf_[4] + (rxbuf_[5] << 8);
     #ifdef DEBUG_BT_VERBOSE
-        DBGPrintf("    Command %x(", hci_command);
-        switch (hci_command) {
-            case 0x0401: DBGPrintf("HCI_INQUIRY"); break;
-            case 0x0402: DBGPrintf("HCI_INQUIRY_CANCEL"); break;
-            case 0x0405: DBGPrintf("HCI_CREATE_CONNECTION"); break;
-            case 0x0409: DBGPrintf("HCI_OP_ACCEPT_CONN_REQ"); break;
-            case 0x040A: DBGPrintf("HCI_OP_REJECT_CONN_REQ"); break;
-            case 0x040C: DBGPrintf("HCI_LINK_KEY_NEG_REPLY"); break;
-            case 0x040D: DBGPrintf("HCI_PIN_CODE_REPLY"); break;
-            case 0x0411: DBGPrintf("HCI_AUTH_REQUESTED"); break;
-            case 0x0419: DBGPrintf("HCI_OP_REMOTE_NAME_REQ"); break;
-            case 0x041a: DBGPrintf("HCI_OP_REMOTE_NAME_REQ_CANCEL"); break;
-            case 0x041b: DBGPrintf("HCI_OP_READ_REMOTE_FEATURES"); break;
-            case 0x041c: DBGPrintf("HCI_OP_READ_REMOTE_EXTENDED_FEATURE"); break;
-            case 0x041D: DBGPrintf("HCI_OP_READ_REMOTE_VERSION_INFORMATION"); break;
-            case 0x0809: DBGPrintf("HCI_OP_ROLE_DISCOVERY"); break;
-            case 0x080f: DBGPrintf("HCI_Write_Default_Link_Policy_Settings"); break;
-            case 0x0c01: DBGPrintf("HCI_Set_Event_Mask"); break;
-            case 0x0c03: DBGPrintf("HCI_RESET"); break;
-            case 0x0c05: DBGPrintf("HCI_SET_EVENT_FILTER"); break;
-            case 0x0c14: DBGPrintf("HCI_Read_Local_Name"); break;
-            case 0x0c0d: DBGPrintf("HCI_READ_STORED_LINK_KEY"); break;
-            case 0x0c12: DBGPrintf("HCI_DELETE_STORED_LINK_KEY"); break;
-            case 0x0c13: DBGPrintf("HCI_WRITE_LOCAL_NAME"); break;
-            case 0x0c16: DBGPrintf("Write_Connection_Accept_Timeout"); break;
-            case 0x0c1a: DBGPrintf("HCI_WRITE_SCAN_ENABLE"); break;
-            case 0x0c1b: DBGPrintf("HCI_Read_Page_Scan_Activity"); break;
-            case 0x0c23: DBGPrintf("HCI_READ_CLASS_OF_DEVICE"); break;
-            case 0x0C24: DBGPrintf("HCI_WRITE_CLASS_OF_DEV"); break;
-            case 0x0c25: DBGPrintf("HCI_Read_Voice_Setting"); break;
-            case 0x0c38: DBGPrintf("HCI_Read_Number_Of_Supported_IAC"); break;
-            case 0x0c39: DBGPrintf("HCI_Read_Current_IAC_LAP"); break;
-            case 0x0c45: DBGPrintf("HCI_WRITE_INQUIRY_MODE"); break;
-            case 0x0c46: DBGPrintf("HCI_Read_Page_Scan_Type"); break;
-            case 0x0c52: DBGPrintf("HCI_WRITE_EXTENDED_INQUIRY_RESPONSE"); break;
-            case 0x0c56: DBGPrintf("HCI_WRITE_SIMPLE_PAIRING_MODE"); break;
-            case 0x0c58: DBGPrintf("HCI_Read_Inquiry_Response_Transmit_Power_Level"); break;
-            case 0x0c6d: DBGPrintf("HCI_WRITE_LE_HOST_SUPPORTED"); break;
-            case 0x1003: DBGPrintf("HCI_Read_Local_Supported_Features"); break;
-            case 0x1004: DBGPrintf("HCI_Read_Local_Extended_Features"); break;
-            case 0x1005: DBGPrintf("HCI_Read_Buffer_Size"); break;
-            case 0x1009: DBGPrintf("HCI_Read_BD_ADDR"); break;
-            case 0x1001: DBGPrintf("HCI_Read_Local_Version_Information"); break;
-            case 0x1002: DBGPrintf("HCI_Read_Local_Supported_Commands"); break;
-            case 0x2001: DBGPrintf("HCI_LE_SET_EVENT_MASK"); break;
-            case 0x2002: DBGPrintf("HCI_LE_Read_Buffer_Size"); break;
-            case 0x2003: DBGPrintf("HCI_LE_Read_Local_supported_Features"); break;
-            case 0x2007: DBGPrintf("HCI_LE_READ_ADV_TX_POWER"); break;
-            case 0x2008: DBGPrintf("HCI_LE_SET_ADV_DATA"); break;
-            case 0x2009: DBGPrintf("HCI_LE_SET_SCAN_RSP_DATA"); break;
-            case 0x200f: DBGPrintf("HCI_LE_READ_WHITE_LIST_SIZE"); break;
-            case 0x2010: DBGPrintf("HCI_LE_CLEAR_WHITE_LIST"); break;
-            case 0x201c: DBGPrintf("HCI_LE_Supported_States"); break;
-        }
-        DBGPrintf(") Status %x", rxbuf_[2]);
-    #endif        
+    DBGPrintf("    Command %x(", hci_command);
+    switch (hci_command) {
+        case 0x0401: DBGPrintf("HCI_INQUIRY"); break;
+        case 0x0402: DBGPrintf("HCI_INQUIRY_CANCEL"); break;
+        case 0x0405: DBGPrintf("HCI_CREATE_CONNECTION"); break;
+        case 0x0409: DBGPrintf("HCI_OP_ACCEPT_CONN_REQ"); break;
+        case 0x040A: DBGPrintf("HCI_OP_REJECT_CONN_REQ"); break;
+        case 0x040C: DBGPrintf("HCI_LINK_KEY_NEG_REPLY"); break;
+        case 0x040D: DBGPrintf("HCI_PIN_CODE_REPLY"); break;
+        case 0x0411: DBGPrintf("HCI_AUTH_REQUESTED"); break;
+        case 0x0419: DBGPrintf("HCI_OP_REMOTE_NAME_REQ"); break;
+        case 0x041a: DBGPrintf("HCI_OP_REMOTE_NAME_REQ_CANCEL"); break;
+        case 0x041b: DBGPrintf("HCI_OP_READ_REMOTE_FEATURES"); break;
+        case 0x041c: DBGPrintf("HCI_OP_READ_REMOTE_EXTENDED_FEATURE"); break;
+        case 0x041D: DBGPrintf("HCI_OP_READ_REMOTE_VERSION_INFORMATION"); break;
+        case 0x0809: DBGPrintf("HCI_OP_ROLE_DISCOVERY"); break;
+        case 0x080f: DBGPrintf("HCI_Write_Default_Link_Policy_Settings"); break;
+        case 0x0c01: DBGPrintf("HCI_Set_Event_Mask"); break;
+        case 0x0c03: DBGPrintf("HCI_RESET"); break;
+        case 0x0c05: DBGPrintf("HCI_SET_EVENT_FILTER"); break;
+        case 0x0c14: DBGPrintf("HCI_Read_Local_Name"); break;
+        case 0x0c0d: DBGPrintf("HCI_READ_STORED_LINK_KEY"); break;
+        case 0x0c12: DBGPrintf("HCI_DELETE_STORED_LINK_KEY"); break;
+        case 0x0c13: DBGPrintf("HCI_WRITE_LOCAL_NAME"); break;
+        case 0x0c16: DBGPrintf("Write_Connection_Accept_Timeout"); break;
+        case 0x0c1a: DBGPrintf("HCI_WRITE_SCAN_ENABLE"); break;
+        case 0x0c1b: DBGPrintf("HCI_Read_Page_Scan_Activity"); break;
+        case 0x0c23: DBGPrintf("HCI_READ_CLASS_OF_DEVICE"); break;
+        case 0x0C24: DBGPrintf("HCI_WRITE_CLASS_OF_DEV"); break;
+        case 0x0c25: DBGPrintf("HCI_Read_Voice_Setting"); break;
+        case 0x0c38: DBGPrintf("HCI_Read_Number_Of_Supported_IAC"); break;
+        case 0x0c39: DBGPrintf("HCI_Read_Current_IAC_LAP"); break;
+        case 0x0c45: DBGPrintf("HCI_WRITE_INQUIRY_MODE"); break;
+        case 0x0c46: DBGPrintf("HCI_Read_Page_Scan_Type"); break;
+        case 0x0c52: DBGPrintf("HCI_WRITE_EXTENDED_INQUIRY_RESPONSE"); break;
+        case 0x0c56: DBGPrintf("HCI_WRITE_SIMPLE_PAIRING_MODE"); break;
+        case 0x0c58: DBGPrintf("HCI_Read_Inquiry_Response_Transmit_Power_Level"); break;
+        case 0x0c6d: DBGPrintf("HCI_WRITE_LE_HOST_SUPPORTED"); break;
+        case 0x1003: DBGPrintf("HCI_Read_Local_Supported_Features"); break;
+        case 0x1004: DBGPrintf("HCI_Read_Local_Extended_Features"); break;
+        case 0x1005: DBGPrintf("HCI_Read_Buffer_Size"); break;
+        case 0x1009: DBGPrintf("HCI_Read_BD_ADDR"); break;
+        case 0x1001: DBGPrintf("HCI_Read_Local_Version_Information"); break;
+        case 0x1002: DBGPrintf("HCI_Read_Local_Supported_Commands"); break;
+        case 0x2001: DBGPrintf("HCI_LE_SET_EVENT_MASK"); break;
+        case 0x2002: DBGPrintf("HCI_LE_Read_Buffer_Size"); break;
+        case 0x2003: DBGPrintf("HCI_LE_Read_Local_supported_Features"); break;
+        case 0x2007: DBGPrintf("HCI_LE_READ_ADV_TX_POWER"); break;
+        case 0x2008: DBGPrintf("HCI_LE_SET_ADV_DATA"); break;
+        case 0x2009: DBGPrintf("HCI_LE_SET_SCAN_RSP_DATA"); break;
+        case 0x200f: DBGPrintf("HCI_LE_READ_WHITE_LIST_SIZE"); break;
+        case 0x2010: DBGPrintf("HCI_LE_CLEAR_WHITE_LIST"); break;
+        case 0x201c: DBGPrintf("HCI_LE_Supported_States"); break;
+    }
+    DBGPrintf(") Status %x", rxbuf_[2]);
+    #endif
+
     if (rxbuf_[2]) {
-#ifdef DEBUG_BT
-    #ifdef DEBUG_BT_VERBOSE
+        #ifdef DEBUG_BT_VERBOSE
         DBGPrintf(" - ");
-    #else        
-        DBGPrintf("    Command %x Status %x - ", hci_command, rxbuf_[2]);
-    #endif    
-        switch (rxbuf_[2]) {
-        case 0x01: DBGPrintf("Unknown HCI Command\n"); break;
-        case 0x02: DBGPrintf("Unknown Connection Identifier\n"); break;
-        case 0x03: DBGPrintf("Hardware Failure\n"); break;
-        case 0x04: DBGPrintf("Page Timeout\n"); break;
-        case 0x05: DBGPrintf("Authentication Failure\n"); break;
-        case 0x06: DBGPrintf("PIN or Key Missing\n"); break;
-        case 0x07: DBGPrintf("Memory Capacity Exceeded\n"); break;
-        case 0x08: DBGPrintf("Connection Timeout\n"); break;
-        case 0x09: DBGPrintf("Connection Limit Exceeded\n"); break;
-        case 0x0A: DBGPrintf("Synchronous Connection Limit To A Device Exceeded\n"); break;
-        case 0x0B: DBGPrintf("Connection Already Exists\n"); break;
-        case 0x0C: DBGPrintf("Command Disallowed\n"); break;
-        case 0x0D: DBGPrintf("Connection Rejected due to Limited Resources\n"); break;
-        case 0x0E: DBGPrintf("Connection Rejected Due To Security Reasons\n"); break;
-        case 0x0F: DBGPrintf("Connection Rejected due to Unacceptable BD_ADDR\n"); break;
-        default: DBGPrintf("???\n"); break;
-        }
-#endif
+        print_error_codes(rxbuf_[2]);
+        #endif
+
         // lets try recovering from some errors...
         switch (hci_command) {
         case HCI_OP_ACCEPT_CONN_REQ:
@@ -1076,9 +1090,7 @@ void BluetoothController::handle_hci_command_status()
         }
 
     } else {
-#ifdef DEBUG_BT_VERBOSE
         VDBGPrintf("\n");
-#endif
     }
 }
 
@@ -1327,7 +1339,7 @@ void BluetoothController::handle_hci_connection_complete() {
         //do_pair_device_ = false;
     } else {
         //sendHCIReadRemoteExtendedFeatures();
-        sendHCIReadRemoteExtendedFeatures();
+        sendHCIReadRemoteSupportedFeatures();
         pending_control_ = 0;
 #if 0 // see if we can automatically do this by looking at roles
     } else if (current_connection_->device_driver_ && (current_connection_->device_driver_->special_process_required & BTHIDInput::SP_NEED_CONNECT)) {
@@ -1505,10 +1517,8 @@ void BluetoothController::handle_hci_disconnect_complete()
     //5 4 0 48 0 13
     DBGPrintf("    Event: HCI Disconnect complete(%d): handle: %x, reason:%x", rxbuf_[2],
               rxbuf_[3] + (rxbuf_[4] << 8), rxbuf_[5]);
-    #ifdef DEBUG_BT_VERBOSE
+    #ifdef DEBUG_BT
     print_error_codes(rxbuf_[5]);
-    #else
-    DBGPrintf("\n")
     #endif 
 
     if (current_connection_->device_driver_) {
@@ -1700,9 +1710,9 @@ void BluetoothController::rx2_data(const Transfer_t *transfer)
         hci_length = rx2buf_[2] + ((uint16_t)rx2buf_[3] << 8);
 
         rx2_packet_data_remaining_ = 0; // I am asuming only two for all of this
-        //DBGPrintf("<<(2 comb):");
-        //for (uint8_t i = 0; i < (hci_length + 4); i++) DBGPrintf("%02X ", rx2buf_[i]);
-        //DBGPrintf("\n");
+        DBGPrintf("<<(2 comb):");
+        for (uint8_t i = 0; i < (hci_length + 4); i++) DBGPrintf("%02X ", rx2buf_[i]);
+        DBGPrintf("\n");
         rx2_packet_data_remaining_ = 0;
         rx2_continue_packet_expected_ = 0; // don't expect another one. 
     } else {
@@ -1768,7 +1778,8 @@ void BluetoothController::sendHCICommand(uint16_t hciCommand, uint16_t cParams, 
         memcpy(&txbuf_[3], data, cParams);  // copy in the commands parameters.
     }
     uint8_t nbytes = cParams + 3;
-    DBGPrintf(">>(00):");
+    DBGPrintf(">>(00, %u):", (uint32_t)em_rx_tx);
+    em_rx_tx = 0;
     for (uint8_t i = 0; i < nbytes; i++) DBGPrintf("%02X ", txbuf_[i]);
     DBGPrintf("\n");
     mk_setup(setup, 0x20, 0x0, 0, 0, nbytes);
@@ -2052,10 +2063,8 @@ void BluetoothController::sendHCISetConnectionEncryption() {
 
 
 void BluetoothController::handle_hci_encryption_change_complete() {
-    DBGPrintf("    Event: Encryption Change %x:%x:%x:%x:%x:%x:%x\n",
-              rxbuf_[2], rxbuf_[3], rxbuf_[4], rxbuf_[5], rxbuf_[6], rxbuf_[7], rxbuf_[24]);
-    for (uint8_t i = 8; i < 24; i++) DBGPrintf("%02x ", rxbuf_[i]);
-	
+    DBGPrintf("    Event: Encryption Change status:%x handle:%x mode:%x\n",
+              rxbuf_[2], rxbuf_[3] + (rxbuf_[4] << 8), rxbuf_[5]);
 	DBGPrintf("\nRead Encryption Key Size!\n");
 	uint8_t hcibuf[2];
 	hcibuf[0] = rxbuf_[3];
@@ -2064,10 +2073,9 @@ void BluetoothController::handle_hci_encryption_change_complete() {
 }
 
 void inline BluetoothController::sendHCIReadRemoteSupportedFeatures() {
-    uint8_t connection_data[3];
+    uint8_t connection_data[2];
     connection_data[0] = current_connection_->device_connection_handle_ & 0xff;
     connection_data[1] = (current_connection_->device_connection_handle_ >> 8) & 0xff;
-    connection_data[2] = 1;
     sendHCICommand(HCI_OP_READ_REMOTE_FEATURES, sizeof(connection_data), connection_data);
 }
 

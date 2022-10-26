@@ -75,10 +75,11 @@ void BluetoothConnection::initializeConnection(BluetoothController *btController
     interrupt_dcid_ = 0x71;
     sdp_dcid_ = 0x40;
     connection_complete_ = 0;
-    if (!connection_started_) {
-        connection_started_ = true;
-        btController_->setTimer(nullptr, 0); // clear out timer
-    }
+    connection_started_ = false;
+    //if (!connection_started_) {
+    //    connection_started_ = true;
+    //    btController_->setTimer(nullptr, 0); // clear out timer
+    //}
     use_hid_protocol_ = false;
     sdp_connected_ = false;
     supports_SSP_ = false;
@@ -541,6 +542,7 @@ void BluetoothConnection::timer_event()
     if (!connection_started_) {
         DBGPrintf("\t** Timed out now try issue connection requsts **\n ");
         connection_started_ = true;
+        connection_rxid_++;
         sendl2cap_ConnectionRequest(device_connection_handle_, connection_rxid_, control_dcid_, HID_CTRL_PSM);
     }
 }    
@@ -878,7 +880,7 @@ bool BluetoothConnection::completeSDPRequest(bool success)
     sdp_element_t sdpe;
     while (cb_left > 0) {
         int cb = extract_next_SDP_Token(pb, cb_left, sdpe);
-        if (cb < 0 ) break;
+        if (cb <= 0 ) break;
         // Should do a lot more validation, but ...
         if ((sdpe.element_type == 4) && (sdpe.dtype == DPB)) {
             descsize_ = sdpe.element_size;
@@ -906,66 +908,78 @@ int BluetoothConnection::extract_next_SDP_Token(uint8_t *pbElement, int cb_left,
     sdpe.element_size = element & 7;
     sdpe.data.luw = 0; // start off 0
 
+    int size_of_element;
+    switch (sdpe.element_size) {
+        case 0: size_of_element = 2; break;
+        case 1: size_of_element = 3; break;
+        case 2: size_of_element = 5; break;
+        case 3: size_of_element = 9; break;
+        case 4: size_of_element = 17; break;
+        case 5: size_of_element = pbElement[1] + 2; break;
+        case 6: size_of_element = (pbElement[1] << 8) + pbElement[2] + 3; break;
+        case 7: size_of_element = (uint32_t)(pbElement[1] << 24) + (uint32_t)(pbElement[2] << 16) + (pbElement[3] << 8) + pbElement[4] + 5; break;
+    }
+
     switch (element) {
     case 0: // nil
         sdpe.dtype = DNIL;
-        return 1; // one byte used.
+        break;
 
     case 0x08: // unsigned one byte
     case 0x18: // UUID one byte
     case 0x28: // bool one byte
         sdpe.dtype = DU32;
         sdpe.data.uw = pbElement[1];
-        return 2;
+        break;
 
     case 0x09: // unsigned 2  byte
     case 0x19: // uuid 2  byte
         sdpe.dtype = DU32;
         sdpe.data.uw = (pbElement[1] << 8) + pbElement[2];
-        return 3;
+        break;
     case 0x0A: // unsigned 4  byte
     case 0x1A: // UUID 4  byte
         sdpe.dtype = DU32;
         sdpe.data.uw =  (uint32_t)(pbElement[1] << 24) + (uint32_t)(pbElement[2] << 16) + (pbElement[3] << 8) + pbElement[4];
-        return 5;
+        break;
     case 0x0B: // unsigned 8  byte
         sdpe.dtype = DU64;
         sdpe.data.luw =  ((uint64_t)pbElement[1] << 52) + ((uint64_t)pbElement[2] << 48) + ((uint64_t)pbElement[3] << 40) + ((uint64_t)pbElement[4] << 32) +
                          (uint32_t)(pbElement[5] << 24) + (uint32_t)(pbElement[6] << 16) + (pbElement[7] << 8) + pbElement[8];
-        return 9;
+        break;
 
     // type = 2 signed
     case 0x10: // unsigned one byte
         sdpe.dtype = DS32;
         sdpe.data.sw = (int8_t)pbElement[1];
-        return 2;
+        break;
     case 0x11: // unsigned 2  byte
         sdpe.dtype = DS32;
         sdpe.data.sw = (int16_t)((pbElement[1] << 8) + pbElement[2]);
-        return 3;
+        break;
 
     case 0x12: // unsigned 4  byte
         sdpe.dtype = DS32;
         sdpe.data.sw =  (int32_t)((uint32_t)(pbElement[1] << 24) + (uint32_t)(pbElement[2] << 16) + (pbElement[3] << 8) + pbElement[4]);
-        return 5;
+        break;
     case 0x13: //
         sdpe.dtype = DS64;
         sdpe.data.lsw =  (int64_t)(((uint64_t)pbElement[1] << 52) + ((uint64_t)pbElement[2] << 48) + ((uint64_t)pbElement[3] << 40) + ((uint64_t)pbElement[4] << 32) +
                                    (uint32_t)(pbElement[5] << 24) + (uint32_t)(pbElement[6] << 16) + (pbElement[7] << 8) + pbElement[8]);
-        return 9;
+        break;
 
     // string one byte size.
     case 0x25:
         sdpe.dtype = DPB;
         sdpe.element_size = pbElement[1];
         sdpe.data.pb = &pbElement[2];
-        return sdpe.element_size + 2;
+        break;
 
     case 0x26:
         sdpe.dtype = DPB;
         sdpe.element_size = (pbElement[1] << 8) + pbElement[2];
         sdpe.data.pb = &pbElement[3];
-        return sdpe.element_size + 3;
+        break;
 
     // type = 7 Data element sequence
     case 0x35: //
@@ -973,25 +987,29 @@ int BluetoothConnection::extract_next_SDP_Token(uint8_t *pbElement, int cb_left,
         sdpe.dtype = DLVL;
         sdpe.element_size = pbElement[1];
         sdpe.data.pb = &pbElement[2];
-        return 2;
+        size_of_element = 2; // we don't advance through hole thing only header
+        break;
     case 0x36: //
     case 0x3E: //
         sdpe.dtype = DLVL;
         sdpe.element_size = (pbElement[1] << 8) + pbElement[2];
         sdpe.data.pb = &pbElement[3];
-        return 3;
+        size_of_element = 3; // we don't advance through hole thing only header
+        break;
     case 0x37: //
     case 0x3F: //
         sdpe.dtype = DLVL;
         sdpe.element_size = (uint32_t)(pbElement[1] << 24) + (uint32_t)(pbElement[2] << 16) + (pbElement[3] << 8) + pbElement[4];
-        sdpe.data.pb = &pbElement[3];
-        return 5;
+        sdpe.data.pb = &pbElement[5];
+        size_of_element = 5; // we don't advance through hole thing only header
+        break;
     default:
-        DBGPrintf("### DECODE failed %x ###\n", element);
-        return -1;
-
+        sdpe.dtype = DUNKOWN;
+        DBGPrintf("### DECODE failed %x type:%u size:%u cb:%u ###\n", element, sdpe.element_type, sdpe.element_size, size_of_element);
+        break;
     }
-
+    DBGPrintf("extract_next_SDP_Token %p %x %u %u %u\n", pbElement , element, sdpe.element_type, sdpe.element_size, size_of_element);
+    return size_of_element;
 }
 
 

@@ -757,6 +757,7 @@ void tft_JoystickData() {
             R1_cur = user_axis[5];
             something_changed = true;
         }
+        break;
     case JoystickController::XBOX360:
     case JoystickController::PS4:
         //Second Axis
