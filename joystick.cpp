@@ -925,6 +925,7 @@ void JoystickController::disconnect()
     // TODO: free resources
 }
 
+
 hidclaim_t JoystickController::claim_bluetooth(BluetoothConnection *btconnection, uint32_t bluetooth_class, uint8_t *remoteName, int type)
 {
     USBHDBGSerial.printf("JoystickController::claim_bluetooth - Class %x %s\n", bluetooth_class, remoteName);
@@ -938,6 +939,7 @@ hidclaim_t JoystickController::claim_bluetooth(BluetoothConnection *btconnection
             bool claim_interface = (type == 1) || (remoteName == nullptr);
             if (name_maps_to_joystick_type) {
                 switch (joystickType_) {
+                    case SWITCH:
                     default:
                         // others will experiment with trying for HID.
                         break;
@@ -946,7 +948,6 @@ hidclaim_t JoystickController::claim_bluetooth(BluetoothConnection *btconnection
                     case PS3_MOTION:
                         special_process_required = SP_PS3_IDS;      // PS3 maybe needs different IDS.
                         // fall through
-                    case SWITCH:
                     case PS4:
                     case XBOXONE:
                         claim_interface = true;
@@ -1216,8 +1217,102 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         //DBGPrintf("Axis Mask (axis_mask_, axis_changed_mask_; %d, %d\n", axis_mask_,axis_changed_mask_);
         joystickEvent = true;
         connected_ = true;
+    #if 0    
+    } else if (data[0] == 0x3f) {
+        // Assume switch:
+        //<<(02 15 21):48 20 11 00 0D 00 71 00 A1 
+        // 16 bits buttons
+        // 4 bits hat
+        // 4 bits <constant>
+        // 16 bits X
+        // 16 bits Y
+        // 16 bits rx
+        // 16 bits ry
+        typedef struct __attribute__ ((packed)) {
+            uint8_t report_type; // 1
+            uint16_t buttons;
+            uint8_t hat;
+            int16_t axis[4];
+            // From online references button order:
+            //     sync, dummy, start, back, a, b, x, y
+            //     dpad up, down left, right
+            //     lb, rb, left stick, right stick
+            // Axis:
+            //     lt, rt, lx, ly, rx, ry
+            //
+        } switchbt_t;
+
+        static const uint8_t xbox_bt_axis_order_mapping[] = { 0, 1, 2, 3, 4, 5};
+        axis_mask_ = 0x3f;
+        axis_changed_mask_ = 0; // assume none for now
+        
+        switchbt_t *sw1d = (switchbt_t *)data;
+        //if ((sw1d->type == 0x20) && (length >= sizeof (xbox1data20bt_t))) {
+            // We have a data transfer.  Lets see what is new...
+            if (sw1d->buttons != buttons) {
+                buttons = sw1d->buttons;
+                anychange = true;
+                joystickEvent = true;
+                println("  Button Change: ", buttons, HEX);
+            }
+            for (uint8_t i = 0; i < sizeof (xbox_axis_order_mapping); i++) {
+                // The first two values were unsigned.
+                int axis_value = (i < 4) ? (int)(uint16_t)sw1d->axis[i] : sw1d->axis[i];
+
+                //DBGPrintf(" axis value [ %d ] = %d \n", i, axis_value);
+                
+                if (axis_value != axis[xbox_bt_axis_order_mapping[i]]) {
+                    axis[xbox_bt_axis_order_mapping[i]] = axis_value;
+                    axis_changed_mask_ |= (1 << xbox_bt_axis_order_mapping[i]);
+                    anychange = true;
+                }
+            }
+
+            joystickEvent = true;
+            //}
+
+        //3F 00 00 08 B0 7D 7F 86 30 7E CF 8E 
+#endif        
     }
+
     return false;
+}
+hidclaim_t JoystickController::bt_claim_collection(BluetoothConnection *btconnection, uint32_t bluetooth_class, uint32_t topusage)
+{
+    USBHDBGSerial.printf("JoystickController::bt_claim_collection(%p) Connection:%p class:%x Top:%x\n", this, btconnection, bluetooth_class, topusage);
+
+
+    if (mydevice != NULL) return CLAIM_NO;  // claimed by some other... 
+    if (btconnect && (btconnect != btconnection)) return CLAIM_NO;
+    // We will claim if BOOT Keyboard.
+
+    if (topusage != 0x10004 && topusage != 0x10005 && topusage != 0x10008) return CLAIM_NO;
+    // only claim from one physical device
+
+    USBHDBGSerial.printf("\tJoystickController claim collection\n");
+    btconnect = btconnection;
+    btdevice = (Device_t*)btconnect->btController_; // remember this way 
+    return CLAIM_REPORT;
+}
+
+void JoystickController::bt_hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax)
+{
+    hid_input_begin(topusage, type, lgmin, lgmax);  
+}
+
+void JoystickController::bt_hid_input_data(uint32_t usage, int32_t value)
+{
+    hid_input_data(usage, value);
+}
+
+void JoystickController::bt_hid_input_end()
+{
+    hid_input_end();
+}
+
+void JoystickController::bt_disconnect_collection(Device_t *dev)
+{
+    disconnect_collection(dev);
 }
 
 bool JoystickController::mapNameToJoystickType(const uint8_t *remoteName)
@@ -1295,6 +1390,19 @@ void JoystickController::connectionComplete()
     break;
     case PS3_MOTION:
         setLEDs(0, 0xff, 0);    // Maybe try setting to green?
+        break;
+    case SWITCH:
+    {
+        // See if we can set a specific report
+        uint8_t packet[3];
+        packet[0] = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
+        packet[1] = 0x02; // Report ID
+        packet[2] = 0x3f; // try full 0x30?; // Report ID
+        delay(1);
+        btdriver_->sendL2CapCommand(packet, sizeof(packet), BluetoothController::CONTROL_SCID /*0x40*/);
+
+    }
+
     default:
         break;
     }

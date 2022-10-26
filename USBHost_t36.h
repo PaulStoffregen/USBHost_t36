@@ -1040,6 +1040,14 @@ protected:
     virtual bool remoteNameComplete(const uint8_t *remoteName);
     virtual void connectionComplete(void);
 
+    virtual hidclaim_t bt_claim_collection(BluetoothConnection *btconnection, uint32_t bluetooth_class, uint32_t topusage);
+    virtual void bt_hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
+    virtual void bt_hid_input_data(uint32_t usage, int32_t value);
+    virtual void bt_hid_input_end();
+    virtual void bt_disconnect_collection(Device_t *dev);
+
+
+
     joytype_t joystickType_ = UNKNOWN;
 private:
     static bool queue_Data_Transfer_Debug(Pipe_t *pipe, void *buffer,

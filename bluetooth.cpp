@@ -1760,7 +1760,8 @@ void BluetoothController::rx2_data(const Transfer_t *transfer)
         // Need to retrieve the last few bytes of data.
         //
         //DBGPrintf("?? RX2_Read continue on 2nd packet ?? len:%u, hci_len=%u l2cap_len=%u expect=%u\n", len, hci_length, l2cap_length, rx2_packet_data_remaining_);
-        queue_Data_Transfer_Debug(rx2pipe_, rx2buf2_, rx2_size_, this, __LINE__);
+        //queue_Data_Transfer_Debug(rx2pipe_, rx2buf2_, rx2_size_, this, __LINE__);
+        queue_Data_Transfer_Debug(rx2pipe_, (uint8_t*)transfer->buffer + rx2_size_, rx2_size_, this, __LINE__);
         rx2_continue_packet_expected_ = 0;
         return;     // Don't process the message yet as we still have data to receive. 
     }
