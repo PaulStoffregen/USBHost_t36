@@ -1394,13 +1394,14 @@ void JoystickController::connectionComplete()
     case SWITCH:
     {
         // See if we can set a specific report
+#if 0
         uint8_t packet[3];
         packet[0] = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
         packet[1] = 0x02; // Report ID
         packet[2] = 0x3f; // try full 0x30?; // Report ID
         delay(1);
         btdriver_->sendL2CapCommand(packet, sizeof(packet), BluetoothController::CONTROL_SCID /*0x40*/);
-
+#endif
     }
 
     default:

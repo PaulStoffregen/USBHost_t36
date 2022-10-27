@@ -557,7 +557,7 @@ class BluetoothConnection;
 
 class BTHIDInput {
 public:
-    virtual operator bool() { return (btdevice != nullptr); } // experiment to see if overriding makes sense here
+    operator bool() { return (btdevice != nullptr); } // experiment to see if overriding makes sense here
     uint16_t idVendor() { return (btdevice != nullptr) ? btdevice->idVendor : 0; }
     uint16_t idProduct() { return (btdevice != nullptr) ? btdevice->idProduct : 0; }
     const uint8_t *manufacturer()
@@ -2244,7 +2244,7 @@ private:
     uint8_t         rx_packet_data_remaining_ = 0; // how much data remaining
     uint8_t         txbuf_[256];    // buffer to use to send commands to bluetooth
     uint8_t         rx2buf_[64];    // receive buffer from Bulk end point
-    uint8_t         rx2buf2_[64];   // receive buffer from Bulk end point
+    uint8_t         rx2buf2_[256];   // receive buffer from Bulk end point
     uint8_t         rx2_packet_data_remaining_ = 0; // how much data remaining
     uint8_t         rx2_continue_packet_expected_ = 0; // Are we expecting a continue packet. 
     uint8_t         hciVersion;     // what version of HCI do we have?

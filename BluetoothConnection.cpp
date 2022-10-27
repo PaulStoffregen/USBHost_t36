@@ -878,11 +878,15 @@ bool BluetoothConnection::completeSDPRequest(bool success)
     uint8_t *pb = sdp_buffer_; // start at second byte;
 
     sdp_element_t sdpe;
+    bool found_report_attribute = false; 
     while (cb_left > 0) {
         int cb = extract_next_SDP_Token(pb, cb_left, sdpe);
         if (cb <= 0 ) break;
         // Should do a lot more validation, but ...
-        if ((sdpe.element_type == 4) && (sdpe.dtype == DPB)) {
+        // At least check that we see a value with our attribute number
+        if ((sdpe.dtype == DU32) && (sdpe.data.uw == 0x206)) found_report_attribute = true;
+
+        if (found_report_attribute && (sdpe.element_type == 4) && (sdpe.dtype == DPB)) {
             descsize_ = sdpe.element_size;
             memcpy(descriptor_, sdpe.data.pb, descsize_);
             dumpHIDReportDescriptor();
@@ -920,9 +924,12 @@ int BluetoothConnection::extract_next_SDP_Token(uint8_t *pbElement, int cb_left,
         case 7: size_of_element = (uint32_t)(pbElement[1] << 24) + (uint32_t)(pbElement[2] << 16) + (pbElement[3] << 8) + pbElement[4] + 5; break;
     }
 
+    DBGPrintf("extract_next_SDP_Token %p %x %u %u ", pbElement , element, sdpe.element_type, sdpe.element_size);
+
     switch (element) {
     case 0: // nil
         sdpe.dtype = DNIL;
+        VDBGPrintf("(NIL)");
         break;
 
     case 0x08: // unsigned one byte
@@ -930,28 +937,33 @@ int BluetoothConnection::extract_next_SDP_Token(uint8_t *pbElement, int cb_left,
     case 0x28: // bool one byte
         sdpe.dtype = DU32;
         sdpe.data.uw = pbElement[1];
+        VDBGPrintf("(DU32 %u)", sdpe.data.uw);
         break;
 
     case 0x09: // unsigned 2  byte
     case 0x19: // uuid 2  byte
         sdpe.dtype = DU32;
         sdpe.data.uw = (pbElement[1] << 8) + pbElement[2];
+        VDBGPrintf("(DU32 %u)", sdpe.data.uw);
         break;
     case 0x0A: // unsigned 4  byte
     case 0x1A: // UUID 4  byte
         sdpe.dtype = DU32;
         sdpe.data.uw =  (uint32_t)(pbElement[1] << 24) + (uint32_t)(pbElement[2] << 16) + (pbElement[3] << 8) + pbElement[4];
+        VDBGPrintf("(DU32 %u)", sdpe.data.uw);
         break;
     case 0x0B: // unsigned 8  byte
         sdpe.dtype = DU64;
         sdpe.data.luw =  ((uint64_t)pbElement[1] << 52) + ((uint64_t)pbElement[2] << 48) + ((uint64_t)pbElement[3] << 40) + ((uint64_t)pbElement[4] << 32) +
                          (uint32_t)(pbElement[5] << 24) + (uint32_t)(pbElement[6] << 16) + (pbElement[7] << 8) + pbElement[8];
+        VDBGPrintf("(DU64 %llu)", sdpe.data.luw);
         break;
 
     // type = 2 signed
     case 0x10: // unsigned one byte
         sdpe.dtype = DS32;
         sdpe.data.sw = (int8_t)pbElement[1];
+        VDBGPrintf("(DS32 %u)", sdpe.data.uw);
         break;
     case 0x11: // unsigned 2  byte
         sdpe.dtype = DS32;
@@ -961,11 +973,13 @@ int BluetoothConnection::extract_next_SDP_Token(uint8_t *pbElement, int cb_left,
     case 0x12: // unsigned 4  byte
         sdpe.dtype = DS32;
         sdpe.data.sw =  (int32_t)((uint32_t)(pbElement[1] << 24) + (uint32_t)(pbElement[2] << 16) + (pbElement[3] << 8) + pbElement[4]);
+        VDBGPrintf("(DS32 %u)", sdpe.data.uw);
         break;
     case 0x13: //
         sdpe.dtype = DS64;
         sdpe.data.lsw =  (int64_t)(((uint64_t)pbElement[1] << 52) + ((uint64_t)pbElement[2] << 48) + ((uint64_t)pbElement[3] << 40) + ((uint64_t)pbElement[4] << 32) +
                                    (uint32_t)(pbElement[5] << 24) + (uint32_t)(pbElement[6] << 16) + (pbElement[7] << 8) + pbElement[8]);
+        VDBGPrintf("(DS32 %u)", sdpe.data.uw);
         break;
 
     // string one byte size.
@@ -973,12 +987,14 @@ int BluetoothConnection::extract_next_SDP_Token(uint8_t *pbElement, int cb_left,
         sdpe.dtype = DPB;
         sdpe.element_size = pbElement[1];
         sdpe.data.pb = &pbElement[2];
+        VDBGPrintf("(DPB %02x %02x %02x)", sdpe.data.pb[0], sdpe.data.pb[1], sdpe.data.pb[2]);
         break;
 
     case 0x26:
         sdpe.dtype = DPB;
         sdpe.element_size = (pbElement[1] << 8) + pbElement[2];
         sdpe.data.pb = &pbElement[3];
+        VDBGPrintf("(DPB %02x %02x %02x)", sdpe.data.pb[0], sdpe.data.pb[1], sdpe.data.pb[2]);
         break;
 
     // type = 7 Data element sequence
@@ -988,6 +1004,7 @@ int BluetoothConnection::extract_next_SDP_Token(uint8_t *pbElement, int cb_left,
         sdpe.element_size = pbElement[1];
         sdpe.data.pb = &pbElement[2];
         size_of_element = 2; // we don't advance through hole thing only header
+        VDBGPrintf("(DLVL)");
         break;
     case 0x36: //
     case 0x3E: //
@@ -995,6 +1012,7 @@ int BluetoothConnection::extract_next_SDP_Token(uint8_t *pbElement, int cb_left,
         sdpe.element_size = (pbElement[1] << 8) + pbElement[2];
         sdpe.data.pb = &pbElement[3];
         size_of_element = 3; // we don't advance through hole thing only header
+        VDBGPrintf("(DLVL)");
         break;
     case 0x37: //
     case 0x3F: //
@@ -1002,13 +1020,14 @@ int BluetoothConnection::extract_next_SDP_Token(uint8_t *pbElement, int cb_left,
         sdpe.element_size = (uint32_t)(pbElement[1] << 24) + (uint32_t)(pbElement[2] << 16) + (pbElement[3] << 8) + pbElement[4];
         sdpe.data.pb = &pbElement[5];
         size_of_element = 5; // we don't advance through hole thing only header
+        VDBGPrintf("(DLVL)");
         break;
     default:
         sdpe.dtype = DUNKOWN;
         DBGPrintf("### DECODE failed %x type:%u size:%u cb:%u ###\n", element, sdpe.element_type, sdpe.element_size, size_of_element);
         break;
     }
-    DBGPrintf("extract_next_SDP_Token %p %x %u %u %u\n", pbElement , element, sdpe.element_type, sdpe.element_size, size_of_element);
+    DBGPrintf(" %u %u\n", sdpe.dtype, size_of_element);
     return size_of_element;
 }
 
