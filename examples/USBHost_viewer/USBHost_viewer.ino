@@ -454,11 +454,11 @@ void UpdateActiveDeviceInfo() {
     for (uint8_t i = 0; i < CNT_BTHIDDEVICES; i++) {
         if (*bthiddrivers[i] != bthid_driver_active[i]) {
             if (bthid_driver_active[i]) {
-                Serial.printf("*** BTHID Device %s - disconnected ***\n", hid_driver_names[i]);
+                Serial.printf("*** BTHID Device %s - disconnected ***\n", bthid_driver_names[i]);
                 bthid_driver_active[i] = false;
             } else {
                 new_device_detected = true;
-                Serial.printf("*** BTHID Device %s %x:%x - connected ***\n", hid_driver_names[i], hiddrivers[i]->idVendor(), hiddrivers[i]->idProduct());
+                Serial.printf("*** BTHID Device %s %x:%x - connected ***\n", bthid_driver_names[i], bthiddrivers[i]->idVendor(), bthiddrivers[i]->idProduct());
                 bthid_driver_active[i] = true;
                 tft.fillScreen(BLACK);  // clear the screen.
                 tft.setCursor(0, 0);
