@@ -76,6 +76,7 @@ void BluetoothConnection::initializeConnection(BluetoothController *btController
     sdp_dcid_ = 0x40;
     connection_complete_ = 0;
     connection_started_ = false;
+    connection_started_by_timer_ = false;
     //if (!connection_started_) {
     //    connection_started_ = true;
     //    btController_->setTimer(nullptr, 0); // clear out timer
@@ -398,6 +399,10 @@ void BluetoothConnection::process_l2cap_config_response(uint8_t *data) {
             DBGPrintf("   Needs connect to device INT(PS4?)\n");
             // The PS4 requires a connection request to it.
             pending_control_tx_ = STATE_TX_SEND_CONNECT_INT;
+        } else if (connection_started_by_timer_) {            
+            DBGPrintf("   Connection started by timeout continue to interrupt\n");
+            // The PS4 requires a connection request to it.
+            pending_control_tx_ = STATE_TX_SEND_CONNECT_INT;
         } else {
             btController_->pending_control_ = 0;
         }
@@ -542,6 +547,7 @@ void BluetoothConnection::timer_event()
     if (!connection_started_) {
         DBGPrintf("\t** Timed out now try issue connection requsts **\n ");
         connection_started_ = true;
+        connection_started_by_timer_ = true;
         connection_rxid_++;
         sendl2cap_ConnectionRequest(device_connection_handle_, connection_rxid_, control_dcid_, HID_CTRL_PSM);
     }

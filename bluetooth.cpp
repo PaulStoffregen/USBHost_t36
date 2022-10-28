@@ -495,7 +495,16 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
                 //current_connection_->supports_SSP_ = true;
 
             }
+#if 1
+            // Try bypass role discovery did not help much anyway
+            // Note We may need to check for PS4 or the like and
+            // start connection. Let me try by setting timer like
+            // Set a timeout
+            setTimer(current_connection_, BluetoothConnection::CONNECTION_TIMEOUT_US);
+
+#else            
             sendHCIRoleDiscoveryRequest();
+#endif            
             break;
 
         case EV_READ_REMOTE_EXTENDED_FEATURES_COMPLETE:  //0x23

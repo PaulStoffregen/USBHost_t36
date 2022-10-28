@@ -1981,6 +1981,7 @@ public:
     bool            inquire_mode_ = false; // inquire mode?  or incomming connect
     bool            sdp_connected_ = false;
     bool            supports_SSP_ = false; 
+    bool            connection_started_by_timer_ = false; 
     uint16_t        pending_control_tx_ = 0;
 
     enum {DUNKOWN=0xff, DNIL = 0, DU32, DS32, DU64, DS64, DPB, DLVL};
