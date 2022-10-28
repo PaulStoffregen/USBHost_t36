@@ -63,6 +63,22 @@ JoystickController::product_vendor_mapping_t JoystickController::pid_vid_mapping
 };
 
 
+//-----------------------------------------------------------------------------
+// Switch controller Bluetooth config structure.
+//-----------------------------------------------------------------------------
+static uint8_t switch_packet_num = 0;
+struct SWProBTSendConfigData {
+        uint8_t hid_hdr;
+        uint8_t id; 
+        uint8_t gpnum; //GlobalPacketNumber
+        uint8_t rumbleDataL[4];
+        uint8_t rumbleDataR[4];
+        uint8_t subCommand;
+        uint8_t subCommandData[38];
+} __attribute__((packed));
+
+
+
 
 //-----------------------------------------------------------------------------
 void JoystickController::init()
@@ -131,6 +147,9 @@ const uint8_t *JoystickController::serialNumber()
 
 
 static uint8_t rumble_counter = 0;
+
+
+
 
 bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeout)
 {
@@ -202,6 +221,37 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
         }
         return true;
     case SWITCH:
+        if (btdriver_) {
+            struct SWProBTSendConfigData *packet =  (struct SWProBTSendConfigData *)txbuf_ ;
+            memset((void*)packet, 0, sizeof(struct SWProBTSendConfigData));
+            packet->hid_hdr = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
+            packet->id = 0x10; 
+            packet->gpnum = switch_packet_num;
+            switch_packet_num = (switch_packet_num + 1) & 0x0f;
+            // 2-9 rumble data;
+            DBGPrintf("Set Rumble data\n");
+            // 2-9 rumble data;
+            packet->rumbleDataL[0] = 0x80;
+            packet->rumbleDataL[1] = 0x00;
+            packet->rumbleDataL[2] = 0x40;
+            packet->rumbleDataL[3] = 0x40;
+            packet->rumbleDataR[0] = 0x80;
+            packet->rumbleDataR[1] = 0x00;
+            packet->rumbleDataR[2] = 0x40;
+            packet->rumbleDataR[3] = 0x40;
+            if (lValue != 0) {
+                packet->rumbleDataR[0] = 0x08;
+                packet->rumbleDataR[1] = lValue;
+            } else if (rValue != 0) {
+                packet->rumbleDataR[0] = 0x10;
+                packet->rumbleDataR[1] = rValue;
+            }
+
+            packet->subCommand = 0x0; // Report ID 
+            btdriver_->sendL2CapCommand((uint8_t *)packet, sizeof(struct SWProBTSendConfigData), BluetoothController::CONTROL_SCID /*0x40*/);
+            return true;
+        }
+
         memset(txbuf_, 0, 10);  // make sure it is cleared out
         txbuf_[0] = 0x80;
         txbuf_[1] = 0x92;
@@ -276,6 +326,30 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
             }
             return true;
         case SWITCH:
+            if (btdriver_) {
+                DBGPrintf("Init LEDs\n");
+                struct SWProBTSendConfigData *packet =  (struct SWProBTSendConfigData *)txbuf_ ;
+                memset((void*)packet, 0, sizeof(struct SWProBTSendConfigData));
+                packet->hid_hdr = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
+                packet->id = 1; 
+                packet->gpnum = switch_packet_num;
+                switch_packet_num = (switch_packet_num + 1) & 0x0f;
+                // 2-9 rumble data;
+                packet->rumbleDataL[0] = 0x00;
+                packet->rumbleDataL[1] = 0x01;
+                packet->rumbleDataL[2] = 0x40;
+                packet->rumbleDataL[3] = 0x00;
+                packet->rumbleDataR[0] = 0x00;
+                packet->rumbleDataR[1] = 0x01;
+                packet->rumbleDataR[2] = 0x40;
+                packet->rumbleDataR[3] = 0x00;
+
+                packet->subCommand = 0x30; // Report ID 
+                packet->subCommandData[0] = lr; // try full 0x30?; // Report ID
+                btdriver_->sendL2CapCommand((uint8_t *)packet, sizeof(struct SWProBTSendConfigData), BluetoothController::CONTROL_SCID /*0x40*/);
+                return true;
+            }
+
             memset(txbuf_, 0, 10);  // make sure it is cleared out
             txbuf_[0] = 0x80;
             txbuf_[1] = 0x92;
@@ -1277,7 +1351,21 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 
         joystickEvent = true;
        
-    } else if (data[0] == 0x21)  USBHDBGSerial.printf("Joystick Acknowledge Command Rcvd! \n");
+    } else if (data[0] == 0x21)  {
+        USBHDBGSerial.printf("Joystick Acknowledge Command Rcvd! pending: %u\n", connectedComplete_pending_);
+        switch (connectedComplete_pending_) {
+        case 2:
+            DBGPrintf("Try to set Rumble\n");
+            setRumble(0, 0, 0);
+            connectedComplete_pending_ = 0;
+            break;
+        case 1:
+            DBGPrintf("Try to set LEDS\n");
+            setLEDs(0xf, 0, 0);
+            connectedComplete_pending_ = 2;
+            break;
+        }
+    }
 #endif 
 
     return false;
@@ -1369,9 +1457,10 @@ bool JoystickController::remoteNameComplete(const uint8_t *remoteName)
     return true;
 }
 
-static uint8_t switch_packet_num = 0;
 void JoystickController::connectionComplete()
 {
+    connectedComplete_pending_ = 0;
+
     DBGPrintf("  JoystickController::connectionComplete %x joystick type %d\n", (uint32_t)this, joystickType_);
     switch (joystickType_) {
     case PS4:
@@ -1413,52 +1502,29 @@ void JoystickController::connectionComplete()
         //    u8 subcmd_id;
         //    u8 data[]; /* length depends on the subcommand */
         //    } __packed;
-        struct SWProBTSendConfigData {
-                uint8_t hid_hdr;
-                uint8_t id; 
-                uint8_t gpnum; //GlobalPacketNumber
-                uint8_t rumbleDataL[4];
-                uint8_t rumbleDataR[4];
-                uint8_t subCommand;
-                uint8_t subCommandData[38];
-        } __attribute__((packed));
+
         DBGPrintf("Set Switch report\n");
+        struct SWProBTSendConfigData *packet =  (struct SWProBTSendConfigData *)txbuf_ ;
+        memset((void*)packet, 0, sizeof(struct SWProBTSendConfigData));
+        packet->hid_hdr = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
+        packet->id = 1; 
+        packet->gpnum = switch_packet_num;
+        switch_packet_num = (switch_packet_num + 1) & 0x0f;
+        // 2-9 rumble data;
+        packet->rumbleDataL[0] = 0x80;
+        packet->rumbleDataL[1] = 0x00;
+        packet->rumbleDataL[2] = 0x40;
+        packet->rumbleDataL[3] = 0x40;
+        packet->rumbleDataR[0] = 0x80;
+        packet->rumbleDataR[1] = 0x00;
+        packet->rumbleDataR[2] = 0x40;
+        packet->rumbleDataR[3] = 0x40;
 
-        struct SWProBTSendConfigData packet;
-        memset((void*)&packet, 0, sizeof(packet));
-        packet.hid_hdr = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
-        packet.id = 1; 
-        packet.gpnum = switch_packet_num;
-        switch_packet_num = (switch_packet_num + 1) & 0x0f;
-        // 2-9 rumble data;
-        packet.subCommand = 0x3; // Report ID 
-        packet.subCommandData[0] = 0x3f; // try full 0x30?; // Report ID
-        btdriver_->sendL2CapCommand((uint8_t *)&packet, sizeof(packet), BluetoothController::CONTROL_SCID /*0x40*/);
-		
-        DBGPrintf("Set Rumble On\n");
+        packet->subCommand = 0x3; // Report ID 
+        packet->subCommandData[0] = 0x3f; // try full 0x30?; // Report ID
+        btdriver_->sendL2CapCommand((uint8_t *)packet, sizeof(struct SWProBTSendConfigData), BluetoothController::CONTROL_SCID /*0x40*/);
+        connectedComplete_pending_ = 1;
 
-        //struct SWProBTSendConfigData packet;
-        memset((void*)&packet, 0, sizeof(packet));
-        packet.hid_hdr = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
-        packet.id = 1; 
-        packet.gpnum = switch_packet_num;
-        switch_packet_num = (switch_packet_num + 1) & 0x0f;
-        // 2-9 rumble data;
-        packet.subCommand = 0x48; // Report ID 
-        packet.subCommandData[0] = 0x01; // try full 0x30?; // Report ID
-        btdriver_->sendL2CapCommand((uint8_t *)&packet, sizeof(packet), BluetoothController::CONTROL_SCID /*0x40*/);
-		
-		DBGPrintf("Init LEDs\n");
-        memset((void*)&packet, 0, sizeof(packet));
-        packet.hid_hdr = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
-        packet.id = 1; 
-        packet.gpnum = switch_packet_num;
-        switch_packet_num = (switch_packet_num + 1) & 0x0f;
-        // 2-9 rumble data;
-        packet.subCommand = 0x30; // Report ID 
-        packet.subCommandData[0] = 0x0f; // try full 0x30?; // Report ID
-        btdriver_->sendL2CapCommand((uint8_t *)&packet, sizeof(packet), BluetoothController::CONTROL_SCID /*0x40*/);
-		
 		DBGPrintf("Config Complete!\n");
 		
 		

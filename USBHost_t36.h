@@ -1083,7 +1083,7 @@ private:
     uint8_t rumble_timeout_ = 0;
     uint8_t leds_[3] = {0, 0, 0};
     uint8_t connected_ = 0; // what type of device if any is connected xbox 360...
-
+    uint8_t connectedComplete_pending_ = 0;
 
     // Used by HID code
     uint8_t collections_claimed = 0;
