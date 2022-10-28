@@ -736,8 +736,10 @@ void tft_JoystickData() {
         something_changed = true;
     }
 
-    //Rumble Axis
+    // Second Axis as well as maybe L1/R1 axis 
     switch (joystick.joystickType()) {
+    case JoystickController::SWITCH:
+        // like XBOXONE, but so far no triggers.
     case JoystickController::XBOXONE:
         //Second Axis
         if (user_axis[2] != x2_cur) {  //xR

@@ -939,7 +939,7 @@ hidclaim_t JoystickController::claim_bluetooth(BluetoothConnection *btconnection
             bool claim_interface = (type == 1) || (remoteName == nullptr);
             if (name_maps_to_joystick_type) {
                 switch (joystickType_) {
-                    case SWITCH:
+                    //case SWITCH:
                     default:
                         // others will experiment with trying for HID.
                         break;
@@ -950,6 +950,7 @@ hidclaim_t JoystickController::claim_bluetooth(BluetoothConnection *btconnection
                         // fall through
                     case PS4:
                     case XBOXONE:
+                    case SWITCH:
                         claim_interface = true;
                         break;
                 }
@@ -1217,7 +1218,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         //DBGPrintf("Axis Mask (axis_mask_, axis_changed_mask_; %d, %d\n", axis_mask_,axis_changed_mask_);
         joystickEvent = true;
         connected_ = true;
-    #if 0    
+    #if 1    
     } else if (data[0] == 0x3f) {
         // Assume switch:
         //<<(02 15 21):48 20 11 00 0D 00 71 00 A1 
@@ -1242,36 +1243,38 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
             //
         } switchbt_t;
 
-        static const uint8_t xbox_bt_axis_order_mapping[] = { 0, 1, 2, 3, 4, 5};
-        axis_mask_ = 0x3f;
+        static const uint8_t switch_bt_axis_order_mapping[] = { 0, 1, 2, 3};
+        axis_mask_ = 0x1ff;
         axis_changed_mask_ = 0; // assume none for now
         
         switchbt_t *sw1d = (switchbt_t *)data;
-        //if ((sw1d->type == 0x20) && (length >= sizeof (xbox1data20bt_t))) {
-            // We have a data transfer.  Lets see what is new...
-            if (sw1d->buttons != buttons) {
-                buttons = sw1d->buttons;
-                anychange = true;
-                joystickEvent = true;
-                println("  Button Change: ", buttons, HEX);
-            }
-            for (uint8_t i = 0; i < sizeof (xbox_axis_order_mapping); i++) {
-                // The first two values were unsigned.
-                int axis_value = (i < 4) ? (int)(uint16_t)sw1d->axis[i] : sw1d->axis[i];
-
-                //DBGPrintf(" axis value [ %d ] = %d \n", i, axis_value);
-                
-                if (axis_value != axis[xbox_bt_axis_order_mapping[i]]) {
-                    axis[xbox_bt_axis_order_mapping[i]] = axis_value;
-                    axis_changed_mask_ |= (1 << xbox_bt_axis_order_mapping[i]);
-                    anychange = true;
-                }
-            }
-
+        // We have a data transfer.  Lets see what is new...
+        if (sw1d->buttons != buttons) {
+            buttons = sw1d->buttons;
+            anychange = true;
             joystickEvent = true;
-            //}
+            println("  Button Change: ", buttons, HEX);
+        }
+        // We will put the HAT into axis 9 for now..
+        if (sw1d->hat != axis[9]) {
+            axis[9] = sw1d->hat;
+            axis_changed_mask_ |= (1 << 9);
+            anychange = true;            
+        }
+        for (uint8_t i = 0; i < sizeof (switch_bt_axis_order_mapping); i++) {
+            // The first two values were unsigned.
+            int axis_value = (uint16_t)sw1d->axis[i];
 
-        //3F 00 00 08 B0 7D 7F 86 30 7E CF 8E 
+            //DBGPrintf(" axis value [ %d ] = %d \n", i, axis_value);
+            
+            if (axis_value != axis[switch_bt_axis_order_mapping[i]]) {
+                axis[switch_bt_axis_order_mapping[i]] = axis_value;
+                axis_changed_mask_ |= (1 << switch_bt_axis_order_mapping[i]);
+                anychange = true;
+            }
+        }
+
+        joystickEvent = true;
 #endif        
     }
 
@@ -1292,6 +1295,9 @@ hidclaim_t JoystickController::bt_claim_collection(BluetoothConnection *btconnec
     USBHDBGSerial.printf("\tJoystickController claim collection\n");
     btconnect = btconnection;
     btdevice = (Device_t*)btconnect->btController_; // remember this way 
+
+    // experiment?  See if we can now tell system to maybe set which report we want
+    connectionComplete();
     return CLAIM_REPORT;
 }
 
@@ -1359,6 +1365,7 @@ bool JoystickController::remoteNameComplete(const uint8_t *remoteName)
     return true;
 }
 
+static uint8_t switch_packet_num = 0;
 void JoystickController::connectionComplete()
 {
     DBGPrintf("  JoystickController::connectionComplete %x joystick type %d\n", (uint32_t)this, joystickType_);
@@ -1394,13 +1401,36 @@ void JoystickController::connectionComplete()
     case SWITCH:
     {
         // See if we can set a specific report
-#if 0
-        uint8_t packet[3];
-        packet[0] = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
-        packet[1] = 0x02; // Report ID
-        packet[2] = 0x3f; // try full 0x30?; // Report ID
-        delay(1);
-        btdriver_->sendL2CapCommand(packet, sizeof(packet), BluetoothController::CONTROL_SCID /*0x40*/);
+#if 1
+        //struct joycon_subcmd_request {
+        //    u8 output_id; /* must be 0x01 for subcommand, 0x10 for rumble only */
+        //    u8 packet_num; /* incremented every send */
+        //    u8 rumble_data[8];
+        //    u8 subcmd_id;
+        //    u8 data[]; /* length depends on the subcommand */
+        //    } __packed;
+        struct SWProBTSendConfigData {
+                uint8_t hid_hdr;
+                uint8_t id; 
+                uint8_t gpnum; //GlobalPacketNumber
+                uint8_t rumbleDataL[4];
+                uint8_t rumbleDataR[4];
+                uint8_t subCommand;
+                uint8_t subCommandData[38];
+        } __attribute__((packed));
+        DBGPrintf("Set Switch report\n");
+
+        switch_packet_num = (switch_packet_num + 1) & 0x0f;
+
+        struct SWProBTSendConfigData packet;
+        memset((void*)&packet, 0, sizeof(packet));
+        packet.hid_hdr = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
+        packet.id = 1; 
+        packet.gpnum = switch_packet_num;
+        // 2-9 rumble data;
+        packet.subCommand = 0x1; // Report ID 
+        packet.subCommandData[0] = 0x3f; // try full 0x30?; // Report ID
+        btdriver_->sendL2CapCommand((uint8_t *)&packet, sizeof(packet), BluetoothController::CONTROL_SCID /*0x40*/);
 #endif
     }
 
