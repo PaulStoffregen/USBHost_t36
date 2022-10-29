@@ -225,29 +225,32 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
             struct SWProBTSendConfigData *packet =  (struct SWProBTSendConfigData *)txbuf_ ;
             memset((void*)packet, 0, sizeof(struct SWProBTSendConfigData));
             packet->hid_hdr = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
-            packet->id = 0x10; 
+            packet->id = 0x1; 
             packet->gpnum = switch_packet_num;
             switch_packet_num = (switch_packet_num + 1) & 0x0f;
             // 2-9 rumble data;
             DBGPrintf("Set Rumble data\n");
             // 2-9 rumble data;
-            packet->rumbleDataL[0] = 0x80;
-            packet->rumbleDataL[1] = 0x00;
-            packet->rumbleDataL[2] = 0x40;
-            packet->rumbleDataL[3] = 0x40;
-            packet->rumbleDataR[0] = 0x80;
-            packet->rumbleDataR[1] = 0x00;
-            packet->rumbleDataR[2] = 0x40;
-            packet->rumbleDataR[3] = 0x40;
-            if (lValue != 0) {
-                packet->rumbleDataR[0] = 0x08;
-                packet->rumbleDataR[1] = lValue;
-            } else if (rValue != 0) {
-                packet->rumbleDataR[0] = 0x10;
-                packet->rumbleDataR[1] = rValue;
+            if ((lValue != 0xff) || (rValue != 0xff) || (timeout != 0xff)) {
+                packet->rumbleDataL[0] = 0x80;
+                packet->rumbleDataL[1] = 0x00;
+                packet->rumbleDataL[2] = 0x40;
+                packet->rumbleDataL[3] = 0x40;
+                packet->rumbleDataR[0] = 0x80;
+                packet->rumbleDataR[1] = 0x00;
+                packet->rumbleDataR[2] = 0x40;
+                packet->rumbleDataR[3] = 0x40;
+                if (lValue != 0) {
+                    packet->rumbleDataR[0] = 0x08;
+                    packet->rumbleDataR[1] = lValue;
+                } else if (rValue != 0) {
+                    packet->rumbleDataR[0] = 0x10;
+                    packet->rumbleDataR[1] = rValue;
+                }
             }
 
-            packet->subCommand = 0x0; // Report ID 
+            packet->subCommand = 0x48; // Report ID 
+            packet->subCommandData[0] = 1; // try full 0x30?; // Report ID
             btdriver_->sendL2CapCommand((uint8_t *)packet, sizeof(struct SWProBTSendConfigData), BluetoothController::CONTROL_SCID /*0x40*/);
             return true;
         }
@@ -335,14 +338,14 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
                 packet->gpnum = switch_packet_num;
                 switch_packet_num = (switch_packet_num + 1) & 0x0f;
                 // 2-9 rumble data;
-                packet->rumbleDataL[0] = 0x00;
+                /*packet->rumbleDataL[0] = 0x00;
                 packet->rumbleDataL[1] = 0x01;
                 packet->rumbleDataL[2] = 0x40;
                 packet->rumbleDataL[3] = 0x00;
                 packet->rumbleDataR[0] = 0x00;
                 packet->rumbleDataR[1] = 0x01;
                 packet->rumbleDataR[2] = 0x40;
-                packet->rumbleDataR[3] = 0x00;
+                packet->rumbleDataR[3] = 0x00; */
 
                 packet->subCommand = 0x30; // Report ID 
                 packet->subCommandData[0] = lr; // try full 0x30?; // Report ID
@@ -1353,16 +1356,20 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
        
     } else if (data[0] == 0x21)  {
         USBHDBGSerial.printf("Joystick Acknowledge Command Rcvd! pending: %u\n", connectedComplete_pending_);
+        DBGPrintf("  Joystick Data: ");
+        for (uint16_t i = 0; i < length; i++) DBGPrintf("%02x ", data[i]);
+        DBGPrintf("\r\n");
+
         switch (connectedComplete_pending_) {
-        case 2:
-            DBGPrintf("Try to set Rumble\n");
-            setRumble(0, 0, 0);
-            connectedComplete_pending_ = 0;
-            break;
         case 1:
+            DBGPrintf("Try to set Rumble\n");
+            setRumble(0xff, 0xff, 0xff);
+            connectedComplete_pending_ = 2;
+            break;
+        case 2:
             DBGPrintf("Try to set LEDS\n");
             setLEDs(0xf, 0, 0);
-            connectedComplete_pending_ = 2;
+            connectedComplete_pending_ = 0;
             break;
         }
     }
@@ -1511,14 +1518,14 @@ void JoystickController::connectionComplete()
         packet->gpnum = switch_packet_num;
         switch_packet_num = (switch_packet_num + 1) & 0x0f;
         // 2-9 rumble data;
-        packet->rumbleDataL[0] = 0x80;
+        /*packet->rumbleDataL[0] = 0x80;
         packet->rumbleDataL[1] = 0x00;
         packet->rumbleDataL[2] = 0x40;
         packet->rumbleDataL[3] = 0x40;
         packet->rumbleDataR[0] = 0x80;
         packet->rumbleDataR[1] = 0x00;
         packet->rumbleDataR[2] = 0x40;
-        packet->rumbleDataR[3] = 0x40;
+        packet->rumbleDataR[3] = 0x40; */
 
         packet->subCommand = 0x3; // Report ID 
         packet->subCommandData[0] = 0x3f; // try full 0x30?; // Report ID
