@@ -1502,7 +1502,8 @@ bool USBFilesystem::begin(USBDrive *pDrive, bool setCwv, uint8_t part) {
 	}
 
 	if (mscfs.begin(pDrive, setCwv, firstSector, numSectors)) {
-		device->filesystem_assign_to_drive(this, true);
+		//device->filesystem_assign_to_drive(this, true);
+		device = pDrive; // remember it is this drive. 
 	}
 	return true;
 }
