@@ -34,6 +34,8 @@
 #define DBGPrintf(...)
 #endif
 
+bool ack_rvd = false;
+
 bool JoystickController::queue_Data_Transfer_Debug(Pipe_t *pipe, void *buffer, 
     uint32_t len, USBDriver *driver, uint32_t line) 
 {
@@ -77,6 +79,13 @@ struct SWProBTSendConfigData {
         uint8_t subCommandData[38];
 } __attribute__((packed));
 
+struct SWProBTSendConfigData1 {
+        uint8_t hid_hdr;
+        uint8_t id; 
+        uint8_t gpnum; //GlobalPacketNumber
+        uint8_t subCommand;
+        uint8_t subCommandData[38];
+} __attribute__((packed));
 
 
 
@@ -251,7 +260,7 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
 
             packet->subCommand = 0x48; // Report ID 
             packet->subCommandData[0] = 1; // try full 0x30?; // Report ID
-            btdriver_->sendL2CapCommand((uint8_t *)packet, sizeof(struct SWProBTSendConfigData), BluetoothController::CONTROL_SCID /*0x40*/);
+            btdriver_->sendL2CapCommand((uint8_t *)packet, sizeof(struct SWProBTSendConfigData), BluetoothController::INTERRUPT_SCID /*0x40*/);
             return true;
         }
 
@@ -349,7 +358,7 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
 
                 packet->subCommand = 0x30; // Report ID 
                 packet->subCommandData[0] = lr; // try full 0x30?; // Report ID
-                btdriver_->sendL2CapCommand((uint8_t *)packet, sizeof(struct SWProBTSendConfigData), BluetoothController::CONTROL_SCID /*0x40*/);
+                btdriver_->sendL2CapCommand((uint8_t *)packet, sizeof(struct SWProBTSendConfigData), BluetoothController::INTERRUPT_SCID /*0x40*/);
                 return true;
             }
 
@@ -512,7 +521,7 @@ hidclaim_t JoystickController::claim_collection(USBHIDParser *driver, Device_t *
 
     // Also don't allow us to claim if it is used as a standard usb object (XBox...)
     if (device != nullptr) return CLAIM_NO;
-
+	
     mydevice = dev;
     collections_claimed++;
     anychange = true; // always report values on first read
@@ -543,6 +552,8 @@ hidclaim_t JoystickController::claim_collection(USBHIDParser *driver, Device_t *
         additional_axis_usage_count_ = 5;
         axis_change_notify_mask_ = 0x3ff;   // Start off assume only the 10 bits...
     }
+	
+	
     //DBGPrintf("Claim Additional axis: %x %x %d\n", additional_axis_usage_page_, additional_axis_usage_start_, additional_axis_usage_count_);
     USBHDBGSerial.printf("\tJoystickController claim collection\n");
     return CLAIM_REPORT;
@@ -1359,19 +1370,110 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         DBGPrintf("  Joystick Data: ");
         for (uint16_t i = 0; i < length; i++) DBGPrintf("%02x ", data[i]);
         DBGPrintf("\r\n");
-
+		
+		uint8_t packet_[8];
+		
         switch (connectedComplete_pending_) {
-        case 1:
-            DBGPrintf("Try to set Rumble\n");
+			
+	    case 1:
+			DBGPrintf("\nSet Shipment Low Power State\n");
+			packet_[0] = 0x00;
+			sw_sendCmd(0x08, packet_, 1);
+			connectedComplete_pending_ = 2;
+			break;
+		case 2:
+			DBGPrintf("\nSet Report Mode\n");
+			packet_[0] = 0x3F;
+			sw_sendCmd(0x03, packet_, 1);
+			connectedComplete_pending_ = 3;
+			break;
+		case 3:
+			DBGPrintf("\n Read: Stick device parameters1\n");
+			packet_[0] = 0x80;
+			packet_[1] = 0x60;
+			packet_[2] = 0x00;
+			packet_[3] = 0x00;
+			packet_[4] = 0x18;  // read 24 bytes
+			sw_sendCmd(0x10, packet_, 5);	
+			connectedComplete_pending_ = 4;
+			break;
+		case 4:
+			DBGPrintf("\n Read: Stick device parameters2\n");
+			packet_[0] = 0x98;
+			packet_[1] = 0x60;
+			packet_[2] = 0x00;
+			packet_[3] = 0x00;
+			packet_[4] = 0x12;  // read 24 bytes
+			sw_sendCmd(0x10, packet_, 5);	
+			connectedComplete_pending_ = 5;
+			break;
+		case 5:
+			DBGPrintf("\n Read: User Analog Sticks calibration\n");
+			packet_[0] = 0x10;
+			packet_[1] = 0x80;
+			packet_[2] = 0x60;
+			packet_[3] = 0x00;
+			packet_[4] = 0x18;  // read 24 bytes
+			sw_sendCmd(0x10, packet_, 5);	
+			connectedComplete_pending_ = 6;
+			break;
+		case 6:
+			DBGPrintf("\n Read: Factory Analog stick calibration and Controller Colours\n");
+			packet_[0] = 0x3D;
+			packet_[1] = 0x60;
+			packet_[2] = 0x00;
+			packet_[3] = 0x00;
+			packet_[4] = 0x19;  // read 24 bytes
+			sw_sendCmd(0x10, packet_, 5);	
+			connectedComplete_pending_ = 7;
+			break;
+		case 7:
+			DBGPrintf("\nTry to Get IMU Calibration Data\n");
+			packet_[0] = 0x80;
+			packet_[1] = 0x60;
+			packet_[2] = 0x00;
+			packet_[3] = 0x00;
+			packet_[4] = (0x6037 - 0x6020 + 1);
+			sw_sendCmd(0x10, packet_, 5);	
+			connectedComplete_pending_ = 8;
+			break;
+		case 8:
+			DBGPrintf("\nTry to Enable IMU\n");
+			packet_[0] = 0x01;
+			sw_sendCmd(0x40, packet_, 1);   /* 0x40 IMU, note: 0x00 would disable */
+			connectedComplete_pending_ = 9;
+			break;
+		case 9:
+            DBGPrintf("\nTry to set Rumble\n");
             setRumble(0xff, 0xff, 0xff);
-            connectedComplete_pending_ = 2;
+            connectedComplete_pending_ = 10;
             break;
-        case 2:
-            DBGPrintf("Try to set LEDS\n");
+        case 10:
+            DBGPrintf("\nTry to set LEDS\n");
             setLEDs(0xf, 0, 0);
-            connectedComplete_pending_ = 0;
+            connectedComplete_pending_ = 11;
             break;
+		case 11:
+			DBGPrintf("\nTry to Enable Rumble\n");
+			packet_[0] = 0x01;
+			sw_sendCmd(0x48, packet_, 1);
+			connectedComplete_pending_ = 0;
+			break;
+		case 12:
+		{
+			DBGPrintf("\nVibration\n");
+			packet_[0] = 0x18; // try full 0x30?; // Report ID
+			packet_[1] = 0x03; // try full 0x30?; // Report ID
+			packet_[2] = 0x72; // try full 0x30?; // Report ID
+			packet_[3] = 0x00; // try full 0x30?; // Report ID
+			packet_[4] = 0x00; // try full 0x30?; // Report ID
+			packet_[5] = 0x00; // try full 0x30?; // Report ID
+			packet_[6] = 0x00; // try full 0x30?; // Report ID
+			sw_sendCmd_norumble(0x10, 0x03, packet_, 7);
+			connectedComplete_pending_ = 0;
         }
+			break;
+		}
     }
 #endif 
 
@@ -1502,34 +1604,10 @@ void JoystickController::connectionComplete()
     {
         // See if we can set a specific report
 #if 1
-        //struct joycon_subcmd_request {
-        //    u8 output_id; /* must be 0x01 for subcommand, 0x10 for rumble only */
-        //    u8 packet_num; /* incremented every send */
-        //    u8 rumble_data[8];
-        //    u8 subcmd_id;
-        //    u8 data[]; /* length depends on the subcommand */
-        //    } __packed;
-
-        DBGPrintf("Set Switch report\n");
-        struct SWProBTSendConfigData *packet =  (struct SWProBTSendConfigData *)txbuf_ ;
-        memset((void*)packet, 0, sizeof(struct SWProBTSendConfigData));
-        packet->hid_hdr = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
-        packet->id = 1; 
-        packet->gpnum = switch_packet_num;
-        switch_packet_num = (switch_packet_num + 1) & 0x0f;
-        // 2-9 rumble data;
-        /*packet->rumbleDataL[0] = 0x80;
-        packet->rumbleDataL[1] = 0x00;
-        packet->rumbleDataL[2] = 0x40;
-        packet->rumbleDataL[3] = 0x40;
-        packet->rumbleDataR[0] = 0x80;
-        packet->rumbleDataR[1] = 0x00;
-        packet->rumbleDataR[2] = 0x40;
-        packet->rumbleDataR[3] = 0x40; */
-
-        packet->subCommand = 0x3; // Report ID 
-        packet->subCommandData[0] = 0x3f; // try full 0x30?; // Report ID
-        btdriver_->sendL2CapCommand((uint8_t *)packet, sizeof(struct SWProBTSendConfigData), BluetoothController::CONTROL_SCID /*0x40*/);
+		uint8_t packet_[8];
+        DBGPrintf("Request Device Info......\n");
+		packet_[0] = 0x0;
+		sw_sendCmd(0x02, packet_, 1);
         connectedComplete_pending_ = 1;
 
 		DBGPrintf("Config Complete!\n");
@@ -1613,3 +1691,41 @@ bool JoystickController::PS4Pair(uint8_t* bdaddr) {
     return driver_->sendControlPacket(0x21, 0x09, 0x0313, 0, sizeof(ps4_pair_msg), txbuf_);
 }
 
+void JoystickController::sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size) {
+	struct SWProBTSendConfigData *packet =  (struct SWProBTSendConfigData *)txbuf_ ;
+	memset((void*)packet, 0, sizeof(struct SWProBTSendConfigData));
+	packet->hid_hdr = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
+	packet->id = 1; 
+	packet->gpnum = switch_packet_num;
+	switch_packet_num = (switch_packet_num + 1) & 0x0f;
+	// 2-9 rumble data;
+	/*packet->rumbleDataL[0] = 0x00;
+	packet->rumbleDataL[1] = 0x01;
+	packet->rumbleDataL[2] = 0x40;
+	packet->rumbleDataL[3] = 0x00;
+	packet->rumbleDataR[0] = 0x00;
+	packet->rumbleDataR[1] = 0x01;
+	packet->rumbleDataR[2] = 0x40;
+	packet->rumbleDataR[3] = 0x00; */
+
+	packet->subCommand = cmd; // Report ID
+	for(uint16_t i = 0; i < size; i++) {
+		packet->subCommandData[i] = data[i];
+	}
+	btdriver_->sendL2CapCommand((uint8_t *)packet, sizeof(struct SWProBTSendConfigData), BluetoothController::INTERRUPT_SCID /*0x40*/);
+}
+
+void JoystickController::sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint8_t *data, uint16_t size) {
+	struct SWProBTSendConfigData1 *packet1 =  (struct SWProBTSendConfigData1 *)txbuf_ ;
+	memset((void*)packet1, 0, sizeof(struct SWProBTSendConfigData1));
+	packet1->hid_hdr = 0xA1; // HID BT Get_report (0xA0) | Report Type (Output)
+	packet1->id = 0x10; 
+	packet1->gpnum = switch_packet_num;
+	switch_packet_num = (switch_packet_num + 1) & 0x0f;
+
+	packet1->subCommand = cmd; // Report ID
+	for(uint16_t i = 0; i < size; i++) {
+		packet1->subCommandData[i] = data[i];
+	}
+	btdriver_->sendL2CapCommand((uint8_t *)packet1, sizeof(struct SWProBTSendConfigData1), BluetoothController::INTERRUPT_SCID /*0x40*/);
+}

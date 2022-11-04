@@ -1064,7 +1064,9 @@ private:
     bool transmitPS3UserFeedbackMsg();
     bool transmitPS3MotionUserFeedbackMsg();
     bool mapNameToJoystickType(const uint8_t *remoteName);
-
+	void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size);
+	void sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint8_t *data, uint16_t size);
+	
     bool anychange = false;
     volatile bool joystickEvent = false;
     uint32_t buttons = 0;
@@ -1114,7 +1116,6 @@ private:
         bool        hidDevice;
     } product_vendor_mapping_t;
     static product_vendor_mapping_t pid_vid_mapping[];
-
 };
 
 
