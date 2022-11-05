@@ -708,8 +708,8 @@ public:
     void startTimer(uint32_t microseconds) {hidTimer.start(microseconds);}
     void stopTimer() {hidTimer.stop();}
     uint8_t interfaceNumber() { return bInterfaceNumber;}
-    //const uint8_t * getHIDReportDescriptor() {return descriptor_;}
-    //uint16_t getHIDReportDescriptorSize() { return descsize_;}
+    const uint8_t * getHIDReportDescriptor() {return descriptor;}
+    uint16_t getHIDReportDescriptorSize() { return descsize;}
 protected:
     enum { TOPUSAGE_LIST_LEN = 6 };
     enum { USAGE_LIST_LEN = 24 };
@@ -1064,7 +1064,7 @@ private:
     bool transmitPS3UserFeedbackMsg();
     bool transmitPS3MotionUserFeedbackMsg();
     bool mapNameToJoystickType(const uint8_t *remoteName);
-	void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size);
+    void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size);
 	void sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint8_t *data, uint16_t size);
 	
     bool anychange = false;
@@ -2025,16 +2025,16 @@ protected:
     void rx2_data(uint8_t *rx2buf); // called from rx2_data of BluetoothController
     void tx_data(uint8_t *data, uint16_t length);
 
-    void process_l2cap_connection_request(uint8_t *data);
-    void process_l2cap_connection_response(uint8_t *data);
-    void process_l2cap_config_request(uint8_t *data);
-    void process_l2cap_config_response(uint8_t *data);
-    void process_l2cap_command_reject(uint8_t *data);
-    void process_l2cap_disconnect_request(uint8_t *data);
+    void process_l2cap_connection_request(uint8_t *data, uint16_t length);
+    void process_l2cap_connection_response(uint8_t *data, uint16_t length);
+    void process_l2cap_config_request(uint8_t *data, uint16_t length);
+    void process_l2cap_config_response(uint8_t *data, uint16_t length);
+    void process_l2cap_command_reject(uint8_t *data, uint16_t length);
+    void process_l2cap_disconnect_request(uint8_t *data, uint16_t length);
     void sendl2cap_ConnectionResponse(uint16_t handle, uint8_t rxid, uint16_t dcid, uint16_t scid, uint8_t result);
     void sendl2cap_ConnectionRequest(uint16_t handle, uint8_t rxid, uint16_t scid, uint16_t psm);
     void sendl2cap_ConfigRequest(uint16_t handle, uint8_t rxid, uint16_t dcid);
-    void sendl2cap_ConfigResponse(uint16_t handle, uint8_t rxid, uint16_t scid);
+    void sendl2cap_ConfigResponse(uint16_t handle, uint8_t rxid, uint16_t scid, uint16_t mtu);
     void sendl2cap_DisconnectResponse(uint16_t handle, uint8_t rxid, uint16_t dcid, uint16_t scid);
 
     void process_sdp_service_search_request(uint8_t *data);

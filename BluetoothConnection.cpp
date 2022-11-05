@@ -144,7 +144,8 @@ BTHIDInput * BluetoothConnection::find_driver(const uint8_t *remoteName, int typ
 void BluetoothConnection::rx2_data(uint8_t *rx2buf) // called from rx2_data of BluetoothController
 {
     // need to detect if these are L2CAP or SDP or ...
-    uint16_t dcid =  rx2buf[6] + ((uint16_t)rx2buf[7] << 8);
+    uint16_t data_len = rx2buf[4] + ((uint16_t)rx2buf[5] << 8);
+    uint16_t dcid = rx2buf[6] + ((uint16_t)rx2buf[7] << 8);
     //DBGPrintf("@@@@@@ SDP MSG? %x %x %x @@@@@", dcid, sdp_dcid_, rx2buf[8]);
 
     if (dcid == sdp_dcid_) {
@@ -171,26 +172,26 @@ void BluetoothConnection::rx2_data(uint8_t *rx2buf) // called from rx2_data of B
     } else {
         switch (rx2buf[8]) {
         case L2CAP_CMD_CONNECTION_REQUEST:
-            process_l2cap_connection_request(&rx2buf[8]);
+            process_l2cap_connection_request(&rx2buf[8], data_len);
             break;
         case L2CAP_CMD_CONNECTION_RESPONSE:
-            process_l2cap_connection_response(&rx2buf[8]);
+            process_l2cap_connection_response(&rx2buf[8], data_len);
             break;
         case L2CAP_CMD_CONFIG_REQUEST:
-            process_l2cap_config_request(&rx2buf[8]);
+            process_l2cap_config_request(&rx2buf[8], data_len);
             break;
         case L2CAP_CMD_CONFIG_RESPONSE:
-            process_l2cap_config_response(&rx2buf[8]);
+            process_l2cap_config_response(&rx2buf[8], data_len);
             break;
 
         case HID_THDR_DATA_INPUT:
             handleHIDTHDRData(rx2buf);    // Pass the whole buffer...
             break;
         case L2CAP_CMD_COMMAND_REJECT:
-            process_l2cap_command_reject(&rx2buf[8]);
+            process_l2cap_command_reject(&rx2buf[8], data_len);
             break;
         case L2CAP_CMD_DISCONNECT_REQUEST:
-            process_l2cap_disconnect_request(&rx2buf[8]);
+            process_l2cap_disconnect_request(&rx2buf[8], data_len);
             break;
         }
     }
@@ -263,7 +264,7 @@ void BluetoothConnection::connectToSDP() {
 }
 
 
-void  BluetoothConnection::process_l2cap_connection_request(uint8_t *data) {
+void  BluetoothConnection::process_l2cap_connection_request(uint8_t *data, uint16_t length) {
     //       ID   LEN  LEN PSM  PSM  SCID SCID
     // 0x02 0x02 0x04 0x00 0x11 0x00 0x43 0x00
 
@@ -295,7 +296,7 @@ void  BluetoothConnection::process_l2cap_connection_request(uint8_t *data) {
 }
 
 // Process the l2cap_connection_response...
-void BluetoothConnection::process_l2cap_connection_response(uint8_t *data) {
+void BluetoothConnection::process_l2cap_connection_response(uint8_t *data, uint16_t length) {
 
     uint16_t scid = data[4] + ((uint16_t)data[5] << 8);
     uint16_t dcid = data[6] + ((uint16_t)data[7] << 8);
@@ -338,24 +339,35 @@ void BluetoothConnection::process_l2cap_connection_response(uint8_t *data) {
     }
 }
 
-void BluetoothConnection::process_l2cap_config_request(uint8_t *data) {
-    //48 20 10 0 c 0 1 0 *4 2 8 0 70 0 0 0 1 2 30 0
+void BluetoothConnection::process_l2cap_config_request(uint8_t *data, uint16_t length) {
+    //48 20 10 00 0c 00 01 00 * 04 02 08 00 70 00 00 00 01 02 30 00
+    //48 20 10 00 0C 00 01 00 * 04 03 08 00 70 00 00 00 01 02 48 00 
     uint16_t dcid = data[4] + ((uint16_t)data[5] << 8);
-    DBGPrintf("    recv L2CAP config Request: ID: %d, Dest:%x, Flags:%x,  Options: %x %x %x %x\n",
-              data[1], dcid, data[6] + ((uint16_t)data[7] << 8),
-              data[8], data[9], data[10], data[11]);
+    DBGPrintf("    recv L2CAP config Request: ID: %d, Dest:%x, Flags:%x,  Options:",
+              data[1], dcid, data[6] + ((uint16_t)data[7] << 8));
+    for (uint16_t i = 8; i < length; i++) DBGPrintf(" %02x", data[i]);
+    uint16_t mtu = 0x2A0;  // hard coded what we were returning....
+    for (uint16_t i = 8; i < length; i++) {
+        if ((data[i] == 1) && (data[i+1] == 2)) {
+            mtu = data[i+2] + (data[i+3] << 8);
+            DBGPrintf(" MTU:%u", mtu);
+        }
+        i += data[i+1] + 2;
+    }
+    DBGPrintf("\n");
+
     // Now see which dest was specified
     if (dcid == control_dcid_) {
         DBGPrintf("      Control Configuration request\n");
-        sendl2cap_ConfigResponse(device_connection_handle_, data[1], control_scid_);
+        sendl2cap_ConfigResponse(device_connection_handle_, data[1], control_scid_, mtu);
         connection_complete_ |= CCON_CONT;
     } else if (dcid == interrupt_dcid_) {
         DBGPrintf("      Interrupt Configuration request\n");
-        sendl2cap_ConfigResponse(device_connection_handle_, data[1], interrupt_scid_);
+        sendl2cap_ConfigResponse(device_connection_handle_, data[1], interrupt_scid_, mtu);
         connection_complete_ |= CCON_INT;
     } else if (dcid == sdp_dcid_) {
         DBGPrintf("      SDP Configuration request\n");
-        sendl2cap_ConfigResponse(device_connection_handle_, data[1], sdp_scid_);
+        sendl2cap_ConfigResponse(device_connection_handle_, data[1], sdp_scid_, mtu);
 
         connection_complete_ |= CCON_SDP;
         sdp_connected_ = true;
@@ -363,7 +375,7 @@ void BluetoothConnection::process_l2cap_config_request(uint8_t *data) {
     } else if (dcid == sdp_scid_) {
         DBGPrintf("      SDP Configuration request (But our SCID?)\n");
         // maybe we should change the ids around?
-        sendl2cap_ConfigResponse(device_connection_handle_, data[1], sdp_scid_);
+        sendl2cap_ConfigResponse(device_connection_handle_, data[1], sdp_scid_, mtu);
         // We see this with some PS4? 
 
         // Enable SCan to page mode
@@ -372,12 +384,35 @@ void BluetoothConnection::process_l2cap_config_request(uint8_t *data) {
     }
 }
 
-void BluetoothConnection::process_l2cap_config_response(uint8_t *data) {
+void BluetoothConnection::process_l2cap_config_response(uint8_t *data, uint16_t length) {
     // 48 20 12 0 e 0 1 0 5 0 a 0 70 0 0 0 0 0 1 2 30 0
     uint16_t scid = data[4] + ((uint16_t)data[5] << 8);
-    DBGPrintf("    recv L2CAP config Response: ID: %d, Source:%x, Flags:%x, Result:%x, Config: %x\n",
-              data[1], scid, data[6] + ((uint16_t)data[7] << 8),
-              data[8] + ((uint16_t)data[9] << 8), data[10] + ((uint16_t)data[11] << 8));
+    uint16_t result = data[8] + ((uint16_t)data[9] << 8);
+    DBGPrintf("    recv L2CAP config Response: ID: %d, Source:%x, Flags:%x, Result:%x",
+              data[1], scid, data[6] + ((uint16_t)data[7] << 8), result );
+
+    switch (result) {
+        case 0x0000: DBGPrintf("(Success)"); break;
+        case 0x0001: DBGPrintf("(Failure – unacceptable parameters)"); break;
+        case 0x0002: DBGPrintf("(Failure – rejected (no reason provided))"); break;
+        case 0x0003: DBGPrintf("(Failure – unknown options)"); break;
+        case 0x0004: DBGPrintf("(Pending)"); break;
+        case 0x0005: DBGPrintf("(Failure - flow spec rejected)"); break;
+    }
+
+    if (length > 10) {
+        DBGPrintf(", Config: ");
+        for (uint16_t i = 10; i < length; i++) DBGPrintf(" %02x", data[i]);
+        for (uint16_t i = 10; i < length; i++) {
+            if ((data[i] == 1) && (data[i+1] == 2)) {
+                uint16_t mtu = data[i+2] + (data[i+3] << 8);
+                DBGPrintf(" MTU:%u", mtu);
+            }
+            i += data[i+1] + 2;
+        }
+    }
+    DBGPrintf("\n");
+
     if (scid == control_dcid_) {
         // Set HID Boot mode
         // Don't do if PS3... Or if class told us not to
@@ -410,6 +445,9 @@ void BluetoothConnection::process_l2cap_config_response(uint8_t *data) {
         connection_complete_ |= CCON_CONT;
     } else if (scid == interrupt_dcid_) {
         // Lets try SDP connect if we are not already connected.
+        if (connection_started_by_timer_) {            
+            DBGPrintf("   Connection started by timeout experiment continue to SDP\n");
+        } else    
         if (!check_for_hid_descriptor_) connection_complete_ |= CCON_SDP;  // Don't force connect if no is asking for HID
         if ((connection_complete_ & CCON_SDP) == 0) connectToSDP(); // temp to see if we can do this later...
 
@@ -430,14 +468,14 @@ void BluetoothConnection::process_l2cap_config_response(uint8_t *data) {
     }
 }
 
-void BluetoothConnection::process_l2cap_command_reject(uint8_t *data) {
+void BluetoothConnection::process_l2cap_command_reject(uint8_t *data, uint16_t length) {
     // 48 20 b 0 7 0 70 0 *1 0 0 0 2 0 4
     DBGPrintf("    recv L2CAP command reject: ID: %d, length:%x, Reason:%x,  Data: %x %x \n",
               data[1], data[2] + ((uint16_t)data[3] << 8), data[4], data[5], data[6]);
 
 }
 
-void BluetoothConnection::process_l2cap_disconnect_request(uint8_t *data) {
+void BluetoothConnection::process_l2cap_disconnect_request(uint8_t *data, uint16_t length) {
     uint16_t dcid = data[4] + ((uint16_t)data[5] << 8);
     uint16_t scid = data[6] + ((uint16_t)data[7] << 8);
     DBGPrintf("    recv L2CAP disconnect request: ID: %d, Length:%x, Dest:%x, Source:%x\n",
@@ -609,11 +647,11 @@ void BluetoothConnection::sendl2cap_ConfigRequest(uint16_t handle, uint8_t rxid,
     btController_->sendL2CapCommand(handle, l2capbuf, sizeof(l2capbuf));
 }
 
-void BluetoothConnection::sendl2cap_ConfigResponse(uint16_t handle, uint8_t rxid, uint16_t scid) {
-    uint8_t l2capbuf[14];
+void BluetoothConnection::sendl2cap_ConfigResponse(uint16_t handle, uint8_t rxid, uint16_t scid, uint16_t mtu) {
+    uint8_t l2capbuf[10];
     l2capbuf[0] = L2CAP_CMD_CONFIG_RESPONSE; // Code
     l2capbuf[1] = rxid; // Identifier
-    l2capbuf[2] = 0x0A; // Length
+    l2capbuf[2] = 0x06; // try not sending mtu 0x0A; // Length
     l2capbuf[3] = 0x00;
     l2capbuf[4] = scid & 0xff; // Source CID
     l2capbuf[5] = (scid >> 8) & 0xff;
@@ -621,10 +659,10 @@ void BluetoothConnection::sendl2cap_ConfigResponse(uint16_t handle, uint8_t rxid
     l2capbuf[7] = 0x00;
     l2capbuf[8] = 0x00; // Result
     l2capbuf[9] = 0x00;
-    l2capbuf[10] = 0x01; // Config
-    l2capbuf[11] = 0x02;
-    l2capbuf[12] = 0xA0;
-    l2capbuf[13] = 0x02;
+    //l2capbuf[10] = 0x01; // Config
+    //l2capbuf[11] = 0x02;
+    //l2capbuf[12] = mtu & 0xff; //0xA0;
+    //l2capbuf[13] = mtu >> 8; //0x02;
 
     DBGPrintf("\nsend L2CAP_ConfigResponse(RXID:%x, SCID:%x)\n", rxid, scid);
     btController_->sendL2CapCommand(handle, l2capbuf, sizeof(l2capbuf));

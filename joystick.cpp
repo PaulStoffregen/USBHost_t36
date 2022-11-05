@@ -1365,8 +1365,54 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 
         joystickEvent = true;
        
+    } else if (data[0] == 0x30) {
+        // Assume switch full report
+        //  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48
+        // 30 E0 80 00 00 00 D9 37 79 19 98 70 00 0D 0B F1 02 F0 0A 41 FE 25 FC 89 00 F8 0A F0 02 F2 0A 41 FE D9 FB 99 00 D4 0A F6 02 FC 0A 3C FE 69 FB B8 00 
+        //<<(02 15 21):48 20 11 00 0D 00 71 00 A1 
+        //static const uint8_t switch_bt_axis_order_mapping[] = { 0, 1, 2, 3};
+        axis_mask_ = 0x1ff;
+        axis_changed_mask_ = 0; // assume none for now
+        
+        // We have a data transfer.  Lets see what is new...
+        uint32_t cur_buttons = data[3] | (data[4] << 8) |  (data[5] << 16);
+        if (cur_buttons != buttons) {
+            buttons = cur_buttons;
+            anychange = true;
+            joystickEvent = true;
+            println("  Button Change: ", buttons, HEX);
+        }
+        // We will put the HAT into axis 9 for now..
+        /*
+        if (sw1d->hat != axis[9]) {
+            axis[9] = sw1d->hat;
+            axis_changed_mask_ |= (1 << 9);
+            anychange = true;            
+        }
+        */
+
+        uint16_t new_axis[4];
+        new_axis[0] = data[6] | ((data[7] & 0xF) << 8);
+        new_axis[1] = (data[7] >> 4) | (data[8] << 4);
+        new_axis[2] = data[9] | ((data[10] & 0xF) << 8);
+        new_axis[3] = (data[10] >> 4) | (data[11] << 4);
+
+        for (uint8_t i = 0; i < sizeof (new_axis); i++) {
+            // The first two values were unsigned.
+            
+            if (new_axis[i] != axis[i]) {
+                axis[i] = new_axis[i];
+                axis_changed_mask_ |= (1 << i);
+                anychange = true;
+            }
+        }
+
+        joystickEvent = true;
+
     } else if (data[0] == 0x21)  {
-        USBHDBGSerial.printf("Joystick Acknowledge Command Rcvd! pending: %u\n", connectedComplete_pending_);
+        USBHDBGSerial.printf("Joystick Acknowledge Command Rcvd! pending: %u SC: %x", connectedComplete_pending_, data[14]);
+        if (data[13] & 0x80) USBHDBGSerial.printf(" ACK(%x)\n", data[13]);
+        else USBHDBGSerial.printf(" ** NACK(%x) **\n", data[13]);
         DBGPrintf("  Joystick Data: ");
         for (uint16_t i = 0; i < length; i++) DBGPrintf("%02x ", data[i]);
         DBGPrintf("\r\n");
@@ -1383,7 +1429,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 			break;
 		case 2:
 			DBGPrintf("\nSet Report Mode\n");
-			packet_[0] = 0x3F;
+			packet_[0] = 0x30; //0x3F;
 			sw_sendCmd(0x03, packet_, 1);
 			connectedComplete_pending_ = 3;
 			break;
@@ -1450,7 +1496,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
             break;
         case 10:
             DBGPrintf("\nTry to set LEDS\n");
-            setLEDs(0xf, 0, 0);
+            setLEDs(0x1, 0, 0);
             connectedComplete_pending_ = 11;
             break;
 		case 11:
