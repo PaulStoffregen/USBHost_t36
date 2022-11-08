@@ -1589,7 +1589,12 @@ bool JoystickController::mapNameToJoystickType(const uint8_t *remoteName)
     } else if (strncmp((const char *)remoteName, "Pro Controller", 13) == 0) {
         DBGPrintf("  JoystickController::mapNameToJoystickType %x %s - set to Nintendo Pro Controller\n", (uint32_t)this, remoteName);
         joystickType_ = SWITCH;
-    } else {
+    } else if(strncmp((const char *)remoteName, "Joy-Con (R)", 11) == 0) {
+        DBGPrintf("  JoystickController::mapNameToJoystickType %x %s - set to Nintendo Joy-Con (R) Controller\n", (uint32_t)this, remoteName);
+        joystickType_ = SWITCH;
+    } else if(strncmp((const char *)remoteName, "Joy-Con (L)", 11) == 0) {
+        DBGPrintf("  JoystickController::mapNameToJoystickType %x %s - set to Nintendo Joy-Con (L) Controller\n", (uint32_t)this, remoteName);
+        joystickType_ = SWITCH;        } else {
         DBGPrintf("  JoystickController::mapNameToJoystickType %s - Unknown\n", remoteName);
     }
     DBGPrintf("  Joystick Type: %d\n", joystickType_);

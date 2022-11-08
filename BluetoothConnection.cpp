@@ -414,17 +414,21 @@ void BluetoothConnection::process_l2cap_config_response(uint8_t *data, uint16_t 
     DBGPrintf("\n");
 
     if (scid == control_dcid_) {
+        // Maybe we should avoid setting HID mode and only do 
+        // so if the class of device is either/or MOUSE or Keyboard.
         // Set HID Boot mode
         // Don't do if PS3... Or if class told us not to
-        if (use_hid_protocol_) {
-            // see what happens if I tell it to
-            btController_->setHIDProtocol(HID_RPT_PROTOCOL);
+        if (device_class_ & 0xC0) {
+            if (use_hid_protocol_) {
+                // see what happens if I tell it to
+                btController_->setHIDProtocol(HID_RPT_PROTOCOL);
 
-        } else {
-            // don't call through Null pointer
-            if ((device_driver_ == nullptr) ||
-                    !(device_driver_->special_process_required & BTHIDInput::SP_PS3_IDS)) {
-                btController_->setHIDProtocol(HID_BOOT_PROTOCOL);  //
+            } else {
+                // don't call through Null pointer
+                if ((device_driver_ == nullptr) ||
+                        !(device_driver_->special_process_required & BTHIDInput::SP_PS3_IDS)) {
+                    btController_->setHIDProtocol(HID_BOOT_PROTOCOL);  //
+                }
             }
         }
         //setHIDProtocol(HID_RPT_PROTOCOL);  //HID_RPT_PROTOCOL
@@ -441,6 +445,16 @@ void BluetoothConnection::process_l2cap_config_response(uint8_t *data, uint16_t 
         } else {
             btController_->pending_control_ = 0;
         }
+        // Could be cleaner
+        if (((device_class_ & 0xC0) == 0) && (pending_control_tx_ == STATE_TX_SEND_CONNECT_INT)) {
+            // if we are not mouse and keybboard and we need to send the connect int
+            // do it now.
+            delay(1);
+            connection_rxid_++;
+            sendl2cap_ConnectionRequest(device_connection_handle_, connection_rxid_, interrupt_dcid_, HID_INTR_PSM);
+            pending_control_tx_ = 0;
+        }
+    
         DBGPrintf("\tNew Pending control pair:%u driver:%p HID:%u TX: %x\n", btController_->do_pair_device_, device_driver_, check_for_hid_descriptor_, pending_control_tx_);
         connection_complete_ |= CCON_CONT;
     } else if (scid == interrupt_dcid_) {

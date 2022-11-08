@@ -2050,6 +2050,17 @@ bool BluetoothController::writeLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]) 
              pairing_keys_eeprom_start_index_ = EEPROM.length() - (pairing_keys_max_ * 22 - pairing_keys_eeprom_start_index_);
         } 
         DBGPrintf("\tEEPROM start addr: %u, max_keys: %u\n", pairing_keys_eeprom_start_index_, pairing_keys_max_);
+
+        if (bdaddr == nullptr) {
+            // passed in nullptr here.. we will assume that the user is asking us to erase the eeprom area of the link keys
+            uint32_t end_index = pairing_keys_eeprom_start_index_ + (pairing_keys_max_ * 22);
+            for (uint32_t i = pairing_keys_eeprom_start_index_; i < end_index; i++) {
+                EEPROM.write(i, 0xff);
+            }
+            DBGPrintf("\t*** Link Keys Erased ***");
+            return true;;
+        }
+
         for (uint8_t i = 0; i < pairing_keys_max_; i++) {
             uint16_t addr = pairing_keys_eeprom_start_index_ + (i * 22); // bddr plus link_key
             bool key_matched = true;
