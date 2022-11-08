@@ -143,7 +143,7 @@ const uint8_t *JoystickController::product()
 {
     if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_PROD]];
     if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]];
-    if (btdevice != nullptr) return remote_name_;
+    if (btconnect != nullptr) return btconnect->remote_name_;
     return nullptr;
 }
 
@@ -1397,7 +1397,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         new_axis[2] = data[9] | ((data[10] & 0xF) << 8);
         new_axis[3] = (data[10] >> 4) | (data[11] << 4);
 
-        for (uint8_t i = 0; i < sizeof (new_axis); i++) {
+        for (uint8_t i = 0; i < 4; i++) {
             // The first two values were unsigned.
             
             if (new_axis[i] != axis[i]) {

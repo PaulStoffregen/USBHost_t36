@@ -32,6 +32,7 @@
 #include <Arduino.h>
 #include "USBHost_t36.h"  // Read this header first for key info
 #include "utility/bt_defines.h"
+#include <EEPROM.h>
 
 #define print   USBHost::print_
 #define println USBHost::println_
@@ -68,6 +69,24 @@ hidclaim_t BTHIDInput::claim_bluetooth(BluetoothConnection *btconnection, uint32
 {
     return claim_bluetooth(btconnection->btController_, bluetooth_class, remoteName) ? CLAIM_INTERFACE : CLAIM_NO;
 }
+
+const uint8_t *BTHIDInput::manufacturer()
+{  
+    return nullptr; // so far don't have one
+}
+
+const uint8_t *BTHIDInput::product()
+{  
+    if (btconnect == nullptr) return nullptr;
+    return btconnect->remote_name_;
+}
+
+const uint8_t *BTHIDInput::serialNumber()
+{
+    return nullptr;
+}
+
+
 
 
 void BluetoothController::driver_ready_for_bluetooth(BTHIDInput *driver)
@@ -238,7 +257,7 @@ void BluetoothController::disconnect()
         if (current_connection_->btController_ == this) {
             if (current_connection_->device_driver_) {
                 current_connection_->device_driver_->release_bluetooth();
-                current_connection_->device_driver_->remote_name_[0] = 0;
+                current_connection_->remote_name_[0] = 0;
                 current_connection_->device_driver_ = nullptr;
             }
             current_connection_->btController_ = nullptr;
@@ -1464,8 +1483,13 @@ void BluetoothController::handle_hci_link_key_request() {
     // two ways out of this 
     // 1 we will receive an event with a kay
     // 2 we won't receive event but the command complete will show 0 returned.
+    bool send_link_key_reply = false;
     uint8_t link_key[16];
-    if (!do_pair_ssp_ && pairing_cb_ && pairing_cb_->readLinkKey(current_connection_->device_bdaddr_, link_key)) {
+    if (!do_pair_ssp_) {
+        send_link_key_reply = readLinkKey(current_connection_->device_bdaddr_, link_key);
+    }
+
+    if (send_link_key_reply) { 
         sendHCILinkKeyRequestReply(link_key);
         pending_control_ = 0; // NOT sure what this should be?
 
@@ -1532,7 +1556,7 @@ void BluetoothController::handle_hci_disconnect_complete()
 
     if (current_connection_->device_driver_) {
         current_connection_->device_driver_->release_bluetooth();
-        current_connection_->device_driver_->remote_name_[0] = 0;
+        current_connection_->remote_name_[0] = 0;
         current_connection_->device_driver_ = nullptr;
 
         // Restore to normal...
@@ -1922,7 +1946,11 @@ void BluetoothController::sendHCIAuthenticationRequested() {
 
 //---------------------------------------------
 void BluetoothController::sendHCILinkKeyRequestReply(uint8_t link_key[16]) {
-    DBGPrintf("HCI_LINK_KEY_REQUEST_REPLY\n");
+    DBGPrintf("HCI_LINK_KEY_REQUEST_REPLY: bdaddr: %02x:%02x:%02x:%02x:%02x:%02x key: ",
+        current_connection_->device_bdaddr_[0],current_connection_->device_bdaddr_[1],current_connection_->device_bdaddr_[2],
+        current_connection_->device_bdaddr_[3],current_connection_->device_bdaddr_[4],current_connection_->device_bdaddr_[5]);
+    for (uint8_t i = 0; i < 16; i++) DBGPrintf(" %02X", link_key[i]);
+    DBGPrintf("\n");
     uint8_t connection_data[22];
     for (uint8_t i = 0; i < 6; i++) connection_data[i] = current_connection_->device_bdaddr_[i];
     for(uint8_t i = 0; i < 16; i++) connection_data[i + 6] = link_key[i]; // 16 octet link_key
@@ -1949,19 +1977,197 @@ bool BluetoothController::sendHCIReadStoredLinkKey(uint8_t link_key[16]) {
 }
 
 //---------------------------------------------
-void BluetoothController::sendHCIWriteStoredLinkKey(uint8_t link_key[16]) {
-    DBGPrintf("HCI_WRITE_STORED_LINK_KEY\n");
+// Save away the pairing keys storage information.
+//---------------------------------------------
+void BluetoothController::setPairingKeyStorageLocation(FS *pfs, int eeprom_index, int max_keys) {
+    pairing_keys_fs_ = pfs;
+    pairing_keys_eeprom_start_index_ = eeprom_index;
+    pairing_keys_max_ = max_keys;
+}
+
+//---------------------------------------------
+// Write the link key - 
+//---------------------------------------------
+static const char s_PairingFileName[] = "PairingKeys.dat";
+
+bool BluetoothController::writeLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]) {
+    DBGPrintf("writeLinkKey %p %p\n", bdaddr, link_key);
     if (pairing_cb_) {
-        if (pairing_cb_->writeLinkKey(current_connection_->device_bdaddr_, link_key)) {
-            return;
+        if (pairing_cb_->writeLinkKey(bdaddr, link_key)) {
+            // either the caller handled it or does not want it handled
+            return true;
         }
     }
+    // We will store the data either in FS or EEPROM
+    if (pairing_keys_fs_) {
+        if (bdaddr == nullptr) {
+            pairing_keys_fs_->remove(s_PairingFileName);
+            return true;;
+        }
+        File pairingFile;
+        pairingFile = pairing_keys_fs_->open(s_PairingFileName, FILE_WRITE_BEGIN);
+        if (pairingFile) {
+            // Lets see if we can find this item already in the file if not
+            // append it. 
+            uint8_t bdaddr_link_key_item[22];
+            for (int key_index = 0; ;key_index++) {
+                if (pairingFile.read(bdaddr_link_key_item, sizeof(bdaddr_link_key_item)) != sizeof(bdaddr_link_key_item)) {
+                    // Did not find key... should check count, but...
+                    if (link_key == nullptr) {
+                        DBGPrintf("\tkey to delete, not found");
+                        return false;
+                    }
+                    DBGPrintf("\tSaved in slot: %u\n", key_index);
+
+                    pairingFile.seek(key_index * sizeof(bdaddr_link_key_item), SEEK_SET);  // make sure right place 
+                    pairingFile.write(bdaddr, 6);
+                    pairingFile.write(link_key, 16);
+                    break;
+                }
+                if (memcmp(&bdaddr_link_key_item[0], bdaddr, 6) == 0) {
+                    // matched should we see if it changed before 
+                    if (link_key == nullptr) {
+                        // Asked to delete this key... Should we simply clear it out?
+                        // or should we compress it out?  For now, I am going to simply wipe it out. 
+                        DBGPrintf("\tremoved key in slot: %u\n", key_index);
+                        pairingFile.seek(key_index * sizeof(bdaddr_link_key_item), SEEK_SET);  // make sure right place 
+                        memset(bdaddr_link_key_item, 0xff, sizeof(bdaddr_link_key_item)); 
+                        pairingFile.write(bdaddr_link_key_item, sizeof(bdaddr_link_key_item));
+                    } else if (memcmp(&bdaddr_link_key_item[6], link_key, 16) != 0) {
+                        DBGPrintf("\tupdated in slot: %u\n", key_index);
+                        // Key changed
+                        pairingFile.seek(key_index * sizeof(bdaddr_link_key_item) + 6, SEEK_SET);  // make sure right place 
+                        pairingFile.write(link_key, 16);
+                    }
+                    break;
+                }
+            }
+            pairingFile.close();
+        }
+    } else {
+        if (pairing_keys_max_ < 0) pairing_keys_max_ = 5;
+        if (pairing_keys_eeprom_start_index_ < 0) {
+             pairing_keys_eeprom_start_index_ = EEPROM.length() - (pairing_keys_max_ * 22 - pairing_keys_eeprom_start_index_);
+        } 
+        DBGPrintf("\tEEPROM start addr: %u, max_keys: %u\n", pairing_keys_eeprom_start_index_, pairing_keys_max_);
+        for (uint8_t i = 0; i < pairing_keys_max_; i++) {
+            uint16_t addr = pairing_keys_eeprom_start_index_ + (i * 22); // bddr plus link_key
+            bool key_matched = true;
+            bool key_empty = true;
+            for (uint8_t j=0; j < 6; j++) {
+                uint8_t val = EEPROM.read(addr++);
+                if (val != bdaddr[j]) {
+                    key_matched = false;
+                    if (val != 0xff) {
+                        key_empty = false;
+                        break;
+                    }
+                }
+            }
+            if (key_empty) {
+                addr = pairing_keys_eeprom_start_index_ + (i * 22); // bddr plus link_key
+                for (uint8_t j=0; j < 6; j++) EEPROM.write(addr++, bdaddr[j]);
+            }
+            if (key_empty || key_matched) {
+                DBGPrintf("\tSaved in slot: %u\n", i);
+                for (uint8_t j=0; j < 16; j++) EEPROM.write(addr++, link_key[j]);
+                break;
+            }
+        }
+    }
+    return true;
+}
+
+bool BluetoothController::readLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]) {
+    // Now here is where we need to decide to say we have key or tell them to
+    // cancel key...  right now hard code to cancel...
+    // see if we can read in stored key...
+    // two ways out of this 
+    // 1 we will receive an event with a kay
+    // 2 we won't receive event but the command complete will show 0 returned.
+    DBGPrintf("readLinkKey(%p, %p) do_ssp:%x cb:%p\n", bdaddr, link_key, do_pair_ssp_, pairing_cb_);
+    if (do_pair_ssp_) return false;
+
+    bool send_link_key_reply = false;
+    if (pairing_cb_) {
+        int ret = pairing_cb_->readLinkKey(bdaddr, link_key);
+        if (ret > 0) return true;
+        else if (ret < 0) return false;
+    }
+
+    // else use one of our built in versions
+    // We will store the data either in FS or EEPROM
+
+    // First see of we are using FS version
+    if (pairing_keys_fs_) {
+        File pairingFile;
+        pairingFile = pairing_keys_fs_->open(s_PairingFileName, FILE_READ);
+        if (!pairingFile) return false;
+
+        // Lets see if we can find this item already in the file if not
+        // append it. 
+        uint8_t bdaddr_link_key_item[6];
+        for (int key_index = 0; ;key_index++) {
+            pairingFile.seek(key_index * sizeof(bdaddr_link_key_item), SEEK_SET);  // make sure right place 
+            if (pairingFile.read(bdaddr_link_key_item, sizeof(bdaddr_link_key_item)) != sizeof(bdaddr_link_key_item)) {
+                break; // did not find it
+            }
+            if (memcmp(&bdaddr_link_key_item[0], bdaddr, 6) == 0) {
+                if (pairingFile.read(link_key, 16) == 16) {
+                    DBGPrintf("\tFound in File, index:%u\n", key_index);
+                    send_link_key_reply = true;
+                }
+                break;
+            }
+        }
+        pairingFile.close();
+    } else {
+        if (pairing_keys_max_ < 0) pairing_keys_max_ = 5;
+        if (pairing_keys_eeprom_start_index_ < 0) {
+             pairing_keys_eeprom_start_index_ = EEPROM.length() - (pairing_keys_max_ * 22 - pairing_keys_eeprom_start_index_);
+        } 
+        DBGPrintf("\tEEPROM start addr: %u, max_keys: %u\n", pairing_keys_eeprom_start_index_, pairing_keys_max_);
+        for (uint8_t i = 0; i < pairing_keys_max_; i++) {
+            uint16_t addr = pairing_keys_eeprom_start_index_ + (i * 22); // bddr plus link_key
+            send_link_key_reply = true;
+            for (uint8_t j=0; j < 6; j++) {
+                uint8_t val = EEPROM.read(addr++);
+                if (val != bdaddr[j]) {
+                    send_link_key_reply = false;
+                    break;
+                }
+            }
+            if (send_link_key_reply) {
+                DBGPrintf("\tFound in slot: %u\n", i);
+                for (uint8_t j=0; j < 16; j++) link_key[j] = EEPROM.read(addr++);
+                break;
+            }
+        }
+    }
+    return send_link_key_reply;
+}
+
+//---------------------------------------------
+void BluetoothController::sendHCIWriteStoredLinkKey(uint8_t link_key[16]) {
+
+    DBGPrintf("sendHCIWriteStoredLinkKey: bdaddr: %02x:%02x:%02x:%02x:%02x:%02x key: ",
+        current_connection_->device_bdaddr_[0],current_connection_->device_bdaddr_[1],current_connection_->device_bdaddr_[2],
+        current_connection_->device_bdaddr_[3],current_connection_->device_bdaddr_[4],current_connection_->device_bdaddr_[5]);
+    for (uint8_t i = 0; i < 16; i++) DBGPrintf(" %02X", link_key[i]);
+    DBGPrintf("\n");
+#if 1 
+    writeLinkKey(current_connection_->device_bdaddr_, link_key); // could probably have simply renamed
+#else 
+    // You can not query the data back so not sure how much it helps  
     uint8_t link_key_data[23];
     link_key_data[0] = 1; // only store 1 key
     for (uint8_t i = 0; i < 6; i++) link_key_data[i+1] = current_connection_->device_bdaddr_[i];
     for(uint8_t i = 0; i < 16; i++) link_key_data[i + 7] = link_key[i]; // 16 octet link_key
     sendHCICommand(HCI_WRITE_STORED_LINK_KEY, sizeof(link_key_data), link_key_data);
+#endif
 }
+
+
 
 //---------------------------------------------
 // BUGBUG:: hard code string for this pass.

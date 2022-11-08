@@ -96,8 +96,8 @@ void BluetoothConnection::initializeConnection(BluetoothController *btController
 void BluetoothConnection::remoteNameComplete(const uint8_t *device_name)
 {
     // hack for now remember the device_name if we have one
-    if (device_name)strcpy((char*)descriptor_, (const char *)device_name);
-    else descriptor_[0] = 0; // null terminated string.
+    if (device_name)strcpy((char*)remote_name_, (const char *)device_name);
+    else remote_name_[0] = 0; // null terminated string.
 
     device_driver_ = find_driver(device_name, 0);
 }

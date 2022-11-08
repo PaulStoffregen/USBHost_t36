@@ -25,6 +25,7 @@
 #define USB_HOST_TEENSY36_
 
 #include <stdint.h>
+#include <FS.h>
 
 #if !defined(__MK66FX1M0__) && !defined(__IMXRT1052__) && !defined(__IMXRT1062__)
 #error "USBHost_t36 only works with Teensy 3.6 or Teensy 4.x.  Please select it in Tools > Boards"
@@ -560,12 +561,11 @@ public:
     operator bool() { return (btdevice != nullptr); } // experiment to see if overriding makes sense here
     uint16_t idVendor() { return (btdevice != nullptr) ? btdevice->idVendor : 0; }
     uint16_t idProduct() { return (btdevice != nullptr) ? btdevice->idProduct : 0; }
-    const uint8_t *manufacturer()
-    {  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; }
-    const uint8_t *product()
-    {  return  remote_name_; }
-    const uint8_t *serialNumber()
-    {  return  ((btdevice == nullptr) || (btdevice->strbuf == nullptr)) ? nullptr : &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; }
+
+    const uint8_t *manufacturer();
+    const uint8_t *product();
+    const uint8_t *serialNumber();
+
 private:
     virtual bool claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName) {return false;}
     // newer version that will allow called code to know when it is being called (0 - At the connect, 1 if NO HID...)
@@ -592,11 +592,9 @@ private:
 
 protected:
     enum {SP_NEED_CONNECT = 0x1, SP_DONT_NEED_CONNECT = 0x02, SP_PS3_IDS = 0x4};
-    enum {REMOTE_NAME_SIZE = 32};
     uint8_t  special_process_required = 0;
     Device_t *btdevice = NULL;
     BluetoothConnection *btconnect = nullptr;
-    uint8_t remote_name_[REMOTE_NAME_SIZE] = {0};
 
 };
 
@@ -1958,6 +1956,7 @@ public:
     BluetoothConnection *next_ = nullptr;
     BTHIDInput *    device_driver_ = nullptr;
     BluetoothController *btController_ = nullptr;
+    strbuf_t *      strbuf_ = nullptr;  // possible to hold onto string if we have one 
     uint16_t        connection_rxid_ = 0;
     uint16_t        control_dcid_ = 0x70;
     uint16_t        interrupt_dcid_ = 0x71;
@@ -2007,6 +2006,8 @@ public:
     uint8_t *sdp_buffer_ = nullptr;
     uint16_t sdp_buffer_len_ = 0;
     uint8_t descriptor_[800];
+    enum {REMOTE_NAME_SIZE = 32};
+    uint8_t remote_name_[REMOTE_NAME_SIZE] = {0};
     uint16_t descsize_;
     bool use_report_id = true;
     enum { TOPUSAGE_LIST_LEN = 6 };
@@ -2085,8 +2086,9 @@ public:
         {return true;}
 
 
-    virtual bool writeLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]) {return false;}
-    virtual bool readLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]) {return false;}
+    // These return > 0 for success, 0 for false, -1, don't want to support link keys. 
+    virtual int writeLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]) {return 0;}
+    virtual int readLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]) {return 0;}
 
     // Asked for PinCode?
     virtual bool sendPinCode(const char *pinCode)
@@ -2125,7 +2127,22 @@ public:
 
     // See if we can start up pairing after sketch is running. 
     bool startDevicePairing(const char *pin, bool pair_ssp = false);
+    
+    // Setup a bluetooth pairing callback to receive calls for information and
+    // for the sketch to be able to monitor some of the pairing progress
     void setBluetoothPairingCB(BluetoothPairingCB *pairing_cb) {pairing_cb_ = pairing_cb;}
+
+    // method to help control where or not all pairing keys should be stored
+    // Can be pointer to File system, in which case we will create a file "PairingKeys" 
+    // if FS is NULL, and EEPROM start is specified will store in EEPROM starting
+    // at that location.  Note if location is < -1 it will end the have the end
+    // of the storage that far from the end of the EEPROM
+    void setPairingKeyStorageLocation(FS *pfs = nullptr, int eeprom = -1, int max_keys = -1);
+
+    // Note write link with NULL link_key means delete null bdaddr and null link key delete them all
+    bool writeLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]);
+    bool readLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]);
+
 
     // BUGBUG version to allow some of the controlled objects to call?
     enum {CONTROL_SCID = -1, INTERRUPT_SCID = -2, SDP_SCID = -3};
@@ -2258,6 +2275,10 @@ private:
     uint8_t         my_bdaddr_[6];  // The bluetooth dongles Bluetooth address.
     uint8_t         features[8];    // remember our local features.
 	
+    // key storage info
+    FS              *pairing_keys_fs_ = nullptr;
+    int             pairing_keys_eeprom_start_index_ = -1;
+    int             pairing_keys_max_ = 5;
 
     typedef struct {
         uint16_t    idVendor;

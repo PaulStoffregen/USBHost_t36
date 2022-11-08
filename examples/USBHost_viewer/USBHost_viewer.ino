@@ -199,7 +199,8 @@ public:
         return true;
     }
     
-    bool writeLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]) {
+    #if 0
+    int writeLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]) {
         if (eeprom_start == (uint16_t)-1) eeprom_start = EEPROM.length() - EEPROM_OFFSET_FROM_END;
 
         Serial.printf("@@@ writeLinkKey: %02x:%02x:%02x:%02x:%02x:%02x = ", bdaddr[0],bdaddr[1],bdaddr[2],bdaddr[3],bdaddr[4],bdaddr[5]);
@@ -227,14 +228,14 @@ public:
             if (key_empty || key_matched) {
                 Serial.printf("\tSaved in slot: %u\n", i);
                 for (uint8_t j=0; j < 16; j++) EEPROM.write(addr++, link_key[j]);
-                return true;
+                return 1;
             }
         }
 
-        return false;
+        return 0;
     }
 
-    bool readLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]) {
+    int readLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]) {
         if (eeprom_start == (uint16_t)-1) eeprom_start = EEPROM.length() - EEPROM_OFFSET_FROM_END;
         Serial.printf("@@@ readLinkKey: %02x:%02x:%02x:%02x:%02x:%02x\n", bdaddr[0],bdaddr[1],bdaddr[2],bdaddr[3],bdaddr[4],bdaddr[5]);
         for (uint8_t i = 0; i < MAX_KEYS; i++) {
@@ -252,12 +253,13 @@ public:
                 Serial.printf("\t Found Match(%d): ", i);
                 for (uint8_t j=0; j < 16; j++) Serial.printf(" %02x",link_key[j]);
                 Serial.println();
-                return true;
+                return 1;
             }
         }
         Serial.println("\tNo Match");
-        return false;
+        return 0;
     }
+#endif    
 
     void eraseLinkKeys() {
         if (eeprom_start == (uint16_t)-1) eeprom_start = EEPROM.length() - EEPROM_OFFSET_FROM_END;
