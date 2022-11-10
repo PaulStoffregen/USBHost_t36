@@ -1013,6 +1013,9 @@ public:
 
     bool PS4GetCurrentPairing(uint8_t* bdaddr);
     bool PS4Pair(uint8_t* bdaddr);
+	
+	void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size);
+	void sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint8_t *data, uint16_t size);
 
 protected:
     // From USBDriver
@@ -1062,8 +1065,8 @@ private:
     bool transmitPS3UserFeedbackMsg();
     bool transmitPS3MotionUserFeedbackMsg();
     bool mapNameToJoystickType(const uint8_t *remoteName);
-    void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size);
-	void sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint8_t *data, uint16_t size);
+    //void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size);
+	//void sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint8_t *data, uint16_t size);
 	
     bool anychange = false;
     volatile bool joystickEvent = false;
