@@ -628,6 +628,9 @@ void ProcessMouseData() {
 //=============================================================================
 // ProcessJoystickData
 //=============================================================================
+elapsedMillis em_since_last_set_leds;
+uint8_t cycle_leds_value = 1;
+
 void ProcessJoystickData() {
     if (joystick.available()) {
         uint64_t axis_mask = joystick.axisMask();
@@ -705,6 +708,17 @@ void ProcessJoystickData() {
         Serial.println();
         tft_JoystickData();
         joystick.joystickDataClear();
+
+        // Hack play with SWITCH type to see if setting LEDs every second keeps it more alive.
+        if (joystick.joystickType() == JoystickController::SWITCH) {
+            if (em_since_last_set_leds >= 1000) {
+                em_since_last_set_leds = 0;
+                if (cycle_leds_value == 0x08) cycle_leds_value = 0x1;
+                else cycle_leds_value <<= 1;
+                joystick.setLEDs(cycle_leds_value, 0, 0); //  try to get to TRI/CIR/X/SQuare
+            }
+        }
+
     }
 }
 

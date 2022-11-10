@@ -915,9 +915,17 @@ void BluetoothController::handle_hci_command_complete()
         //  pending_control_ = PC_CONNECT_AFTER_SDP_DISCONNECT;
         //}
         break;
-    case HCI_OP_ROLE_DISCOVERY:
+
+    case HCI_OP_ROLE_DISCOVERY: // 0x0809
         current_connection_->handle_HCI_OP_ROLE_DISCOVERY_complete(rxbuf_);
         break;
+
+    case HCI_INQUIRY_CANCEL: // 0x0402
+        // Question should I setup up PC for this or do inline
+        sendHCIRemoteNameRequest();
+
+        break;
+
 	case HCI_OP_READ_REMOTE_FEATURES:
 		break; //0x041b
 	case  HCI_OP_READ_REMOTE_EXTENDED_FEATURE:
@@ -1185,13 +1193,11 @@ void BluetoothController::handle_hci_inquiry_result(bool fRSSI)
             current_connection_->initializeConnection(this, &rxbuf_[index_bd], bluetooth_class, true);
 
 
-            // BUGBUG, lets hard code to go to new state...
-            //for (uint8_t i = 0; i < 6; i++) current_connection_->device_bdaddr_[i] = rxbuf_[index_bd + i];
-            //current_connection_->device_class_ = bluetooth_class;
-            //current_connection_->device_driver_ = current_connection_->find_driver(nullptr, 0);
-            
             // lets get the remote name now.
-            sendHCIRemoteNameRequest();
+            // But first need to cancel the inquiry. 
+            //sendHCIRemoteNameRequest();
+            sendHCIInquiryCancel();
+            pending_control_ = 0; //PC_INQUIRE_CANCEL;
 #if 0
             if (current_connection_->device_driver_  || current_connection_->check_for_hid_descriptor_) {
                 // Now we need to bail from inquiry and setup to try to connect...
@@ -1612,8 +1618,11 @@ void BluetoothController::handle_hci_remote_name_complete() {
         // we are in some form of inquire pairing mode
         if (current_connection_->device_driver_  || current_connection_->check_for_hid_descriptor_) {
             // Now we need to bail from inquiry and setup to try to connect...
-            sendHCIInquiryCancel();
-            pending_control_ = PC_INQUIRE_CANCEL;
+            sendHCICreateConnection();
+            pending_control_ = 0;
+            //sendHCIInquiryCancel();
+            //            
+            //pending_control_ = PC_INQUIRE_CANCEL;
         }
 
     } else {
