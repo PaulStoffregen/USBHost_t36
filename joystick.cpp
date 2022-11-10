@@ -1364,7 +1364,6 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         }
 
         joystickEvent = true;
-       
     } else if (data[0] == 0x30) {
         // Assume switch full report
         //  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48
@@ -1594,7 +1593,8 @@ bool JoystickController::mapNameToJoystickType(const uint8_t *remoteName)
         joystickType_ = SWITCH;
     } else if(strncmp((const char *)remoteName, "Joy-Con (L)", 11) == 0) {
         DBGPrintf("  JoystickController::mapNameToJoystickType %x %s - set to Nintendo Joy-Con (L) Controller\n", (uint32_t)this, remoteName);
-        joystickType_ = SWITCH;        } else {
+        joystickType_ = SWITCH;
+    } else {
         DBGPrintf("  JoystickController::mapNameToJoystickType %s - Unknown\n", remoteName);
     }
     DBGPrintf("  Joystick Type: %d\n", joystickType_);
@@ -1657,8 +1657,8 @@ void JoystickController::connectionComplete()
 #if 1
 		uint8_t packet_[8];
         DBGPrintf("Request Device Info......\n");
-		packet_[0] = 0x0;
-		sw_sendCmd(0x02, packet_, 1);
+			packet_[0] = 0x00;
+			sw_sendCmd(0x02, packet_, 1);
         connectedComplete_pending_ = 1;
 
 		DBGPrintf("Config Complete!\n");
@@ -1750,14 +1750,14 @@ void JoystickController::sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size) {
 	packet->gpnum = switch_packet_num;
 	switch_packet_num = (switch_packet_num + 1) & 0x0f;
 	// 2-9 rumble data;
-	/*packet->rumbleDataL[0] = 0x00;
+	packet->rumbleDataL[0] = 0x00;
 	packet->rumbleDataL[1] = 0x01;
 	packet->rumbleDataL[2] = 0x40;
-	packet->rumbleDataL[3] = 0x00;
+	packet->rumbleDataL[3] = 0x40;
 	packet->rumbleDataR[0] = 0x00;
 	packet->rumbleDataR[1] = 0x01;
 	packet->rumbleDataR[2] = 0x40;
-	packet->rumbleDataR[3] = 0x00; */
+	packet->rumbleDataR[3] = 0x40;
 
 	packet->subCommand = cmd; // Report ID
 	for(uint16_t i = 0; i < size; i++) {
@@ -1769,7 +1769,7 @@ void JoystickController::sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size) {
 void JoystickController::sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint8_t *data, uint16_t size) {
 	struct SWProBTSendConfigData1 *packet1 =  (struct SWProBTSendConfigData1 *)txbuf_ ;
 	memset((void*)packet1, 0, sizeof(struct SWProBTSendConfigData1));
-	packet1->hid_hdr = 0xA1; // HID BT Get_report (0xA0) | Report Type (Output)
+	//packet1->hid_hdr = 0xA1; // HID BT Get_report (0xA0) | Report Type (Output)
 	packet1->id = 0x10; 
 	packet1->gpnum = switch_packet_num;
 	switch_packet_num = (switch_packet_num + 1) & 0x0f;

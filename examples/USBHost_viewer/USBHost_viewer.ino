@@ -384,7 +384,14 @@ void loop()
       } else if (ch == 'E') {
         Serial.println("Erase Pairing Link Keys");
         btpcb.eraseLinkKeys();
+      } else {
+        if (ch == 'I') {
+          uint8_t packet_[8];
+          packet_[0] = 0x00;
+          joystick.sw_sendCmd(0x02, packet_, 1);
+        }
       }
+      
     } 
 
 }
@@ -632,7 +639,7 @@ elapsedMillis em_since_last_set_leds;
 uint8_t cycle_leds_value = 1;
 
 void ProcessJoystickData() {
-    if (joystick.available()) {
+    if (joystick.available()) {   
         uint64_t axis_mask = joystick.axisMask();
         uint64_t axis_changed_mask = joystick.axisChangedMask();
         Serial.print("Joystick: buttons = ");
