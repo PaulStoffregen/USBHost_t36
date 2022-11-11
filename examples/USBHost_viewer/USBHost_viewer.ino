@@ -687,10 +687,19 @@ void ProcessJoystickData() {
                 joystick.setRumble(ltv, rtv, 50);
             }
             break;
-
+        case JoystickController::SWITCH:
+            ltv = joystick.getAxis(6);
+            rtv = joystick.getAxis(7);
+            if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
+                joystick_left_trigger_value = ltv;
+                joystick_right_trigger_value = rtv;
+                joystick.setRumble(ltv, rtv);
+                Serial.printf(" Set Rumble %d %d", ltv, rtv);
+            }
+            break;
         case JoystickController::XBOXONE:
         case JoystickController::XBOX360:
-        case JoystickController::SWITCH:
+        //case JoystickController::SWITCH:
             ltv = joystick.getAxis(4);
             rtv = joystick.getAxis(5);
             if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
@@ -842,6 +851,7 @@ void tft_JoystickData() {
         y += line_space; OutputNumberField(MOUSE_DATA_X, y, x2_cur, 320); //x2(z)
         y += line_space; OutputNumberField(MOUSE_DATA_X, y, y2_cur, 320); //y2
         switch (joystick.joystickType()) {
+        case JoystickController::SWITCH:
         case JoystickController::PS4:
         case JoystickController::PS3:
         case JoystickController::XBOXONE:

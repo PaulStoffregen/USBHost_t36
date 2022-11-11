@@ -87,7 +87,32 @@ struct SWProBTSendConfigData1 {
         uint8_t subCommandData[38];
 } __attribute__((packed));
 
+struct SWProIMUCalibration {
+	int16_t acc_offset[3];
+	int16_t acc_sensitivity[3];
+	int16_t gyro_offset[3];
+	int16_t gyro_sensitivity[3];
+}  __attribute__((packed));
 
+struct SWProIMUCalibration SWIMUCal;
+
+struct SWProStickCalibration {
+	uint16_t rstick_center_x;
+	uint16_t rstick_center_y;
+	uint16_t rstick_x_min;
+	uint16_t rstick_x_max;
+	uint16_t rstick_y_min;
+	uint16_t rstick_y_max;
+	
+	uint16_t lstick_center_x;
+	uint16_t lstick_center_y;
+	uint16_t lstick_x_min;
+	uint16_t lstick_x_max;
+	uint16_t lstick_y_min;
+	uint16_t lstick_y_max;
+}  __attribute__((packed));
+
+struct SWProStickCalibration SWStickCal;
 
 //-----------------------------------------------------------------------------
 void JoystickController::init()
@@ -1375,6 +1400,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         
         // We have a data transfer.  Lets see what is new...
         uint32_t cur_buttons = data[3] | (data[4] << 8) |  (data[5] << 16);
+		//DBGPrintf("BUTTONS: %x\n", cur_buttons);
         if (cur_buttons != buttons) {
             buttons = cur_buttons;
             anychange = true;
@@ -1390,13 +1416,41 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         }
         */
 
-        uint16_t new_axis[4];
-        new_axis[0] = data[6] | ((data[7] & 0xF) << 8);
-        new_axis[1] = (data[7] >> 4) | (data[8] << 4);
-        new_axis[2] = data[9] | ((data[10] & 0xF) << 8);
-        new_axis[3] = (data[10] >> 4) | (data[11] << 4);
+        uint16_t new_axis[8];
+		//Joystick data
+        new_axis[0] = data[6] | ((data[7] & 0xF) << 8);   //xl
+        new_axis[1] = (data[7] >> 4) | (data[8] << 4);	  //yl
+        new_axis[2] = data[9] | ((data[10] & 0xF) << 8);  //xr
+        new_axis[3] = (data[10] >> 4) | (data[11] << 4);  //yr
+		
+		//Kludge to get trigger buttons tripping
+		if(buttons == 0x8040) {
+			new_axis[5] = 0x01;
+		} else {
+			new_axis[5] = 0;
+		}
+		if(buttons == 0x408000) {
+			new_axis[4] = 0x01;
+		} else {
+			new_axis[4] = 0;
+		}
+		if(buttons == 0x808000) {
+			new_axis[6] = 0x01;
+		} else {
+			new_axis[6] = 0;
+		}
+		if(buttons == 0x8080) {
+			new_axis[7] = 0x01;
+		} else {
+			new_axis[7] = 0;
+		}
 
-        for (uint8_t i = 0; i < 4; i++) {
+		//next up - having fun with IMU
+		
+		
+		//map axes
+		
+        for (uint8_t i = 0; i < 8; i++) {
             // The first two values were unsigned.
             
             if (new_axis[i] != axis[i]) {
@@ -1416,10 +1470,10 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         for (uint16_t i = 0; i < length; i++) DBGPrintf("%02x ", data[i]);
         DBGPrintf("\r\n");
 		
-		uint8_t packet_[8];
+		sw_parseAckMsg(data);
 		
+		uint8_t packet_[8];
         switch (connectedComplete_pending_) {
-			
 	    case 1:
 			DBGPrintf("\nSet Shipment Low Power State\n");
 			packet_[0] = 0x00;
@@ -1427,83 +1481,83 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 			connectedComplete_pending_ = 2;
 			break;
 		case 2:
-			DBGPrintf("\nSet Report Mode\n");
-			packet_[0] = 0x30; //0x3F;
-			sw_sendCmd(0x03, packet_, 1);
-			connectedComplete_pending_ = 3;
-			break;
-		case 3:
 			DBGPrintf("\n Read: Stick device parameters1\n");
 			packet_[0] = 0x80;
 			packet_[1] = 0x60;
 			packet_[2] = 0x00;
 			packet_[3] = 0x00;
-			packet_[4] = 0x18;  // read 24 bytes
+			packet_[4] = 0x18; 
 			sw_sendCmd(0x10, packet_, 5);	
-			connectedComplete_pending_ = 4;
+			connectedComplete_pending_ = 3;
 			break;
-		case 4:
+		case 3:
 			DBGPrintf("\n Read: Stick device parameters2\n");
 			packet_[0] = 0x98;
 			packet_[1] = 0x60;
 			packet_[2] = 0x00;
 			packet_[3] = 0x00;
-			packet_[4] = 0x12;  // read 24 bytes
+			packet_[4] = 0x12; 
+			sw_sendCmd(0x10, packet_, 5);	
+			connectedComplete_pending_ = 4;
+			break;
+		case 4:
+			DBGPrintf("\n Read: User Analog Sticks calibration\n");
+			packet_[0] = 0x10;
+			packet_[1] = 0x80;
+			packet_[2] = 0x00;
+			packet_[3] = 0x00;
+			packet_[4] = 0x18;
 			sw_sendCmd(0x10, packet_, 5);	
 			connectedComplete_pending_ = 5;
 			break;
 		case 5:
-			DBGPrintf("\n Read: User Analog Sticks calibration\n");
-			packet_[0] = 0x10;
-			packet_[1] = 0x80;
-			packet_[2] = 0x60;
-			packet_[3] = 0x00;
-			packet_[4] = 0x18;  // read 24 bytes
-			sw_sendCmd(0x10, packet_, 5);	
-			connectedComplete_pending_ = 6;
-			break;
-		case 6:
 			DBGPrintf("\n Read: Factory Analog stick calibration and Controller Colours\n");
 			packet_[0] = 0x3D;
 			packet_[1] = 0x60;
 			packet_[2] = 0x00;
 			packet_[3] = 0x00;
-			packet_[4] = 0x19;  // read 24 bytes
+			packet_[4] = (0x6055 - 0x603D + 1); 
 			sw_sendCmd(0x10, packet_, 5);	
-			connectedComplete_pending_ = 7;
+			connectedComplete_pending_ = 6;
 			break;
-		case 7:
+		case 6:
 			DBGPrintf("\nTry to Get IMU Calibration Data\n");
-			packet_[0] = 0x80;
+			packet_[0] = 0x20;
 			packet_[1] = 0x60;
 			packet_[2] = 0x00;
 			packet_[3] = 0x00;
 			packet_[4] = (0x6037 - 0x6020 + 1);
 			sw_sendCmd(0x10, packet_, 5);	
-			connectedComplete_pending_ = 8;
+			connectedComplete_pending_ = 7;
 			break;
-		case 8:
+		case 7:
 			DBGPrintf("\nTry to Enable IMU\n");
 			packet_[0] = 0x01;
 			sw_sendCmd(0x40, packet_, 1);   /* 0x40 IMU, note: 0x00 would disable */
-			connectedComplete_pending_ = 9;
+			connectedComplete_pending_ = 8;
 			break;
-		case 9:
-            DBGPrintf("\nTry to set Rumble\n");
-            setRumble(0xff, 0xff, 0xff);
-            connectedComplete_pending_ = 10;
-            break;
-        case 10:
-            DBGPrintf("\nTry to set LEDS\n");
-            setLEDs(0x1, 0, 0);
-            connectedComplete_pending_ = 11;
-            break;
-		case 11:
+		case 8:
 			DBGPrintf("\nTry to Enable Rumble\n");
 			packet_[0] = 0x01;
 			sw_sendCmd(0x48, packet_, 1);
-			connectedComplete_pending_ = 0;
+			connectedComplete_pending_ = 90;
 			break;
+        case 9:
+            DBGPrintf("\nTry to set LEDS\n");
+            setLEDs(0x1, 0, 0);
+            connectedComplete_pending_ = 10;
+            break;
+		case 10:
+			DBGPrintf("\nSet Report Mode\n");
+			packet_[0] = 0x30; //0x3F;
+			sw_sendCmd(0x03, packet_, 1);
+			connectedComplete_pending_ = 3;
+			break;
+		case 11:
+            DBGPrintf("\nTry to set Rumble\n");
+            setRumble(0xff, 0xff, 0xff);
+            connectedComplete_pending_ = 12;
+            break;
 		case 12:
 		{
 			DBGPrintf("\nVibration\n");
@@ -1742,6 +1796,7 @@ bool JoystickController::PS4Pair(uint8_t* bdaddr) {
     return driver_->sendControlPacket(0x21, 0x09, 0x0313, 0, sizeof(ps4_pair_msg), txbuf_);
 }
 
+//Nintendo Switch functions
 void JoystickController::sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size) {
 	struct SWProBTSendConfigData *packet =  (struct SWProBTSendConfigData *)txbuf_ ;
 	memset((void*)packet, 0, sizeof(struct SWProBTSendConfigData));
@@ -1779,4 +1834,66 @@ void JoystickController::sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint
 		packet1->subCommandData[i] = data[i];
 	}
 	btdriver_->sendL2CapCommand((uint8_t *)packet1, sizeof(struct SWProBTSendConfigData1), BluetoothController::INTERRUPT_SCID /*0x40*/);
+}
+
+void JoystickController::sw_parseAckMsg(const uint8_t *buf_) 
+{
+	uint16_t data[6];
+	uint8_t offset = 20;
+	uint8_t icount = 0;
+	
+	if(buf_[14] == 0x10 && buf_[15] == 0x20) {
+		//parse IMU calibration
+		DBGPrintf("===>  IMU Calibration \n");	
+		for(uint8_t i = 0; i < 3; i++) {
+			SWIMUCal.acc_offset[i] = (int16_t)(buf_[icount+offset] | (buf_[icount+offset+1] << 8));
+			SWIMUCal.acc_sensitivity[i] = (int16_t)(buf_[icount+offset+6] | (buf_[icount+offset+1+6] << 8));
+			SWIMUCal.gyro_offset[i] = (int16_t)(buf_[icount+offset+12] | (buf_[icount+offset+1+12] << 8));
+			SWIMUCal.gyro_sensitivity[i] = (int16_t)(buf_[icount+offset+18] | (buf_[icount+offset+1+18] << 8));
+			icount = i * 2;
+		}
+		for(uint8_t i = 0; i < 3; i++) {
+			DBGPrintf("\t %d, %d, %d, %d\n", SWIMUCal.acc_offset[i], SWIMUCal.acc_sensitivity[i],
+				SWIMUCal.gyro_offset[i], SWIMUCal.gyro_sensitivity[i]);
+		} 
+	} else if(buf_[14] == 0x10 && buf_[15] == 0x3D){
+		//left stick
+		offset = 20;
+		data[0] = ((buf_[1+offset] << 8) & 0xF00) | buf_[0+offset];
+		data[1] = (buf_[2+offset] << 4) | (buf_[1+offset] >> 4);
+		data[2] = ((buf_[4+offset] << 8) & 0xF00) | buf_[3+offset];
+		data[3] = (buf_[5+offset] << 4) | (buf_[4+offset] >> 4);
+		data[4] = ((buf_[7+offset] << 8) & 0xF00) | buf_[6+offset];
+		data[5] = (buf_[8+offset] << 4) | (buf_[7+offset] >> 4);
+		
+		SWStickCal.lstick_center_x = data[0];
+		SWStickCal.lstick_center_y = data[1];
+		SWStickCal.lstick_x_min = SWStickCal.lstick_center_x - data[2];
+		SWStickCal.lstick_x_max = SWStickCal.lstick_center_x + data[4];
+		SWStickCal.lstick_y_min = SWStickCal.lstick_center_y - data[3];
+		SWStickCal.lstick_y_max = SWStickCal.lstick_center_y + data[5];
+		
+		DBGPrintf("Left Stick Calibrataion\n");
+		DBGPrintf("center: %d, %d\n", SWStickCal.lstick_center_x, SWStickCal.lstick_center_y );
+		DBGPrintf("min/max x: %d, %d\n", SWStickCal.lstick_x_min, SWStickCal.lstick_x_max);
+		DBGPrintf("min/max y: %d, %d\n", SWStickCal.lstick_y_min, SWStickCal.lstick_y_max);
+		
+		//right stick
+		offset = 29;
+		data[0] = ((buf_[1+offset] << 8) & 0xF00) | buf_[0+offset];
+		data[1] = (buf_[2+offset] << 4) | (buf_[1+offset] >> 4);
+		data[2] = ((buf_[4+offset] << 8) & 0xF00) | buf_[3+offset];
+		data[3] = (buf_[5+offset] << 4) | (buf_[4+offset] >> 4);
+		data[4] = ((buf_[7+offset] << 8) & 0xF00) | buf_[6+offset];
+		data[5] = (buf_[8+offset] << 4) | (buf_[7+offset] >> 4);
+		
+		SWStickCal.rstick_center_x = data[0];
+		SWStickCal.rstick_center_y = data[1];
+		SWStickCal.rstick_x_min = SWStickCal.rstick_center_x - data[2];
+		SWStickCal.rstick_x_max = SWStickCal.rstick_center_x + data[4];
+		SWStickCal.rstick_y_min = SWStickCal.rstick_center_y - data[3];
+		SWStickCal.rstick_y_max = SWStickCal.rstick_center_y + data[5];
+
+	}
+	
 }
