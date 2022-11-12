@@ -18,7 +18,7 @@
 // This example is in the public domain
 //=============================================================================
 //#define USE_ST77XX // define this if you wish to use one of these displays.
-#define USE_KURTE_MMOD2
+//#define USE_KURTE_MMOD2
 
 #include "USBHost_t36.h"
 #include <EEPROM.h>
@@ -696,6 +696,13 @@ void ProcessJoystickData() {
                 joystick.setRumble(ltv, rtv);
                 Serial.printf(" Set Rumble %d %d", ltv, rtv);
             }
+
+            Serial.println("\nIMU CalibratedAccel/Gyro");
+            float accel[3];
+            float gyro[3];
+            joystick.sw_getIMUCalValues(accel, gyro);
+            Serial.printf("Ax: %f, Ay: %f, Az:%f\n",accel[0], accel[1], accel[2]);
+            Serial.printf("gx: %f, Ay: %f, Az:%f\n",gyro[0], gyro[1], gyro[2]);
             break;
         case JoystickController::XBOXONE:
         case JoystickController::XBOX360:

@@ -27,7 +27,7 @@
 #define print   USBHost::print_
 #define println USBHost::println_
 
-#define DEBUG_JOYSTICK
+//#define DEBUG_JOYSTICK
 #ifdef  DEBUG_JOYSTICK
 #define DBGPrintf USBHDBGSerial.printf
 #else
@@ -329,7 +329,7 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
 {
     // Need to know which joystick we are on.  Start off with XBox support - maybe need to add some enum value for the known
     // joystick types.
-    Serial.printf("::setLEDS(%x %x %x)\n", lr, lg, lb);
+    DBGPrintf("::setLEDS(%x %x %x)\n", lr, lg, lb);
     if ((leds_[0] != lr) || (leds_[1] != lg) || (leds_[2] != lb)) {
         leds_[0] = lr;
         leds_[1] = lg;
@@ -1332,7 +1332,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         //DBGPrintf("Axis Mask (axis_mask_, axis_changed_mask_; %d, %d\n", axis_mask_,axis_changed_mask_);
         joystickEvent = true;
         connected_ = true;
-    #if 1    
+    #if 1    //Switch
     } else if (data[0] == 0x3f) {
         // Assume switch:
         //<<(02 15 21):48 20 11 00 0D 00 71 00 A1 
@@ -1416,7 +1416,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         }
         */
 
-        uint16_t new_axis[8];
+       uint16_t new_axis[14];
 		//Joystick data
         new_axis[0] = data[6] | ((data[7] & 0xF) << 8);   //xl
         new_axis[1] = (data[7] >> 4) | (data[8] << 4);	  //yl
@@ -1444,28 +1444,30 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 		} else {
 			new_axis[7] = 0;
 		}
+		
+		axis[8] = (int16_t)(data[13]  | (data[14] << 8)); //ax
+		axis[9] = (int16_t)(data[15]  | (data[16] << 8)); //ay
+		axis[10] = (int16_t)(data[17] | (data[18] << 8)); //az
+		axis[11] = (int16_t)(data[19] | (data[20] << 8));  //gx
+		axis[12] = (int16_t)(data[21] | (data[22] << 8)); //gy
+		axis[13] = (int16_t)(data[23] | (data[24] << 8)); //gz	
 
-		//next up - having fun with IMU
-		
-		
 		//map axes
-		
-        for (uint8_t i = 0; i < 8; i++) {
+		for (uint8_t i = 0; i < 8; i++) {
             // The first two values were unsigned.
-            
             if (new_axis[i] != axis[i]) {
                 axis[i] = new_axis[i];
                 axis_changed_mask_ |= (1 << i);
                 anychange = true;
             }
         }
-
+		
         joystickEvent = true;
 
     } else if (data[0] == 0x21)  {
-        USBHDBGSerial.printf("Joystick Acknowledge Command Rcvd! pending: %u SC: %x", connectedComplete_pending_, data[14]);
-        if (data[13] & 0x80) USBHDBGSerial.printf(" ACK(%x)\n", data[13]);
-        else USBHDBGSerial.printf(" ** NACK(%x) **\n", data[13]);
+        DBGPrintf("Joystick Acknowledge Command Rcvd! pending: %u SC: %x", connectedComplete_pending_, data[14]);
+        if (data[13] & 0x80) DBGPrintf(" ACK(%x)\n", data[13]);
+        else DBGPrintf(" ** NACK(%x) **\n", data[13]);
         DBGPrintf("  Joystick Data: ");
         for (uint16_t i = 0; i < length; i++) DBGPrintf("%02x ", data[i]);
         DBGPrintf("\r\n");
@@ -1480,7 +1482,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 			sw_sendCmd(0x08, packet_, 1);
 			connectedComplete_pending_ = 2;
 			break;
-		case 2:
+/*		case 2:
 			DBGPrintf("\n Read: Stick device parameters1\n");
 			packet_[0] = 0x80;
 			packet_[1] = 0x60;
@@ -1510,7 +1512,8 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 			sw_sendCmd(0x10, packet_, 5);	
 			connectedComplete_pending_ = 5;
 			break;
-		case 5:
+*/
+		case 2:
 			DBGPrintf("\n Read: Factory Analog stick calibration and Controller Colours\n");
 			packet_[0] = 0x3D;
 			packet_[1] = 0x60;
@@ -1518,9 +1521,9 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 			packet_[3] = 0x00;
 			packet_[4] = (0x6055 - 0x603D + 1); 
 			sw_sendCmd(0x10, packet_, 5);	
-			connectedComplete_pending_ = 6;
+			connectedComplete_pending_ = 3;
 			break;
-		case 6:
+		case 3:
 			DBGPrintf("\nTry to Get IMU Calibration Data\n");
 			packet_[0] = 0x20;
 			packet_[1] = 0x60;
@@ -1528,50 +1531,36 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 			packet_[3] = 0x00;
 			packet_[4] = (0x6037 - 0x6020 + 1);
 			sw_sendCmd(0x10, packet_, 5);	
-			connectedComplete_pending_ = 7;
+			connectedComplete_pending_ = 4;
 			break;
-		case 7:
+		case 4:
 			DBGPrintf("\nTry to Enable IMU\n");
 			packet_[0] = 0x01;
 			sw_sendCmd(0x40, packet_, 1);   /* 0x40 IMU, note: 0x00 would disable */
-			connectedComplete_pending_ = 8;
+			connectedComplete_pending_ = 5;
 			break;
-		case 8:
+		case 5:
 			DBGPrintf("\nTry to Enable Rumble\n");
 			packet_[0] = 0x01;
 			sw_sendCmd(0x48, packet_, 1);
-			connectedComplete_pending_ = 90;
+			connectedComplete_pending_ = 6;
 			break;
-        case 9:
+        case 6:
             DBGPrintf("\nTry to set LEDS\n");
             setLEDs(0x1, 0, 0);
-            connectedComplete_pending_ = 10;
+            connectedComplete_pending_ = 7;
             break;
-		case 10:
+		case 7:
 			DBGPrintf("\nSet Report Mode\n");
 			packet_[0] = 0x30; //0x3F;
 			sw_sendCmd(0x03, packet_, 1);
-			connectedComplete_pending_ = 3;
+			connectedComplete_pending_ = 8;
 			break;
-		case 11:
+		case 8:
             DBGPrintf("\nTry to set Rumble\n");
             setRumble(0xff, 0xff, 0xff);
-            connectedComplete_pending_ = 12;
+            connectedComplete_pending_ = 0;
             break;
-		case 12:
-		{
-			DBGPrintf("\nVibration\n");
-			packet_[0] = 0x18; // try full 0x30?; // Report ID
-			packet_[1] = 0x03; // try full 0x30?; // Report ID
-			packet_[2] = 0x72; // try full 0x30?; // Report ID
-			packet_[3] = 0x00; // try full 0x30?; // Report ID
-			packet_[4] = 0x00; // try full 0x30?; // Report ID
-			packet_[5] = 0x00; // try full 0x30?; // Report ID
-			packet_[6] = 0x00; // try full 0x30?; // Report ID
-			sw_sendCmd_norumble(0x10, 0x03, packet_, 7);
-			connectedComplete_pending_ = 0;
-        }
-			break;
 		}
     }
 #endif 
@@ -1895,5 +1884,13 @@ void JoystickController::sw_parseAckMsg(const uint8_t *buf_)
 		SWStickCal.rstick_y_max = SWStickCal.rstick_center_y + data[5];
 
 	}
-	
+}
+
+void JoystickController::sw_getIMUCalValues(float *accel, float *gyro) 
+{
+	for(uint8_t i = 0; i < 3; i++) {
+		accel[i] = (float)(axis[8+i] - SWIMUCal.acc_offset[i]) * (1.0f / (float)SWIMUCal.acc_sensitivity[i]) * 4.0f;
+		gyro[i]  = (float)(axis[11+i] - SWIMUCal.gyro_offset[i]) * (816.0f / (float)SWIMUCal.gyro_sensitivity[i]);
+	}	
+
 }
