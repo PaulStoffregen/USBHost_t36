@@ -1451,6 +1451,8 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 		axis[11] = (int16_t)(data[19] | (data[20] << 8));  //gx
 		axis[12] = (int16_t)(data[21] | (data[22] << 8)); //gy
 		axis[13] = (int16_t)(data[23] | (data[24] << 8)); //gz	
+		
+		axis[14] = data[2] >> 4;  //Battery level, 8=full, 6=medium, 4=low, 2=critical, 0=empty
 
 		//map axes
 		for (uint8_t i = 0; i < 8; i++) {
