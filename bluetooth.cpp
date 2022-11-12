@@ -37,8 +37,8 @@
 #define print   USBHost::print_
 #define println USBHost::println_
 
-#define DEBUG_BT
-#define DEBUG_BT_VERBOSE
+//#define DEBUG_BT
+//#define DEBUG_BT_VERBOSE
 
 #ifndef DEBUG_BT
 #undef DEBUG_BT_VERBOSE
@@ -500,7 +500,9 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
 		//use simple pairing
         case EV_READ_REMOTE_SUPPORTED_FEATURES_COMPLETE: //0x0B
             USBHDBGSerial.printf(" Remote read features complete: status:%x ", rxbuf_[2]);
-            print_error_codes(rxbuf_[2]);
+            #if defined(DEBUG_BT_VERBOSE) 
+				print_error_codes(rxbuf_[2]);
+			#endif
             USBHDBGSerial.printf(" Requested to use SSP Pairing: %d\n", do_pair_ssp_);
             if ( (rxbuf_[11]) & (0x01 << 3)) {
                 if (current_connection_) {
@@ -528,8 +530,9 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
 
         case EV_READ_REMOTE_EXTENDED_FEATURES_COMPLETE:  //0x23
             USBHDBGSerial.printf(" Extended features read complete: status:%x ", rxbuf_[2]);
-            print_error_codes(rxbuf_[2]);
-
+            #if defined(DEBUG_BT_VERBOSE)
+				print_error_codes(rxbuf_[2]);
+			#endif
 			USBHDBGSerial.printf(" Requested to use SSP Pairing: %d\n", do_pair_ssp_);
             if ( ((rxbuf_[7] >> 0) & 0x01) == 1) {
                 if (current_connection_) {

@@ -1016,6 +1016,7 @@ public:
 	
 	void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size);
 	void sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint8_t *data, uint16_t size);
+	void sw_getIMUCalValues(float *accel, float *gyro);
 
 protected:
     // From USBDriver
