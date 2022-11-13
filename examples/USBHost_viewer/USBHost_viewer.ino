@@ -377,7 +377,6 @@ void loop()
       if (ch == 'P') {
         if (bluet.startDevicePairing("0000", false)) {
           Serial.println("Pairing operation started with SSP false");
-
         } else {
           Serial.println("Staring of Pairing operation failed");
         }
@@ -411,8 +410,8 @@ void loop()
           uint8_t packet_[8];
           packet_[0] = 0x00;
           joystick.sw_sendCmd(0x02, packet_, 1);
-      }
-      
+     }
+
     } 
 
 }
@@ -709,13 +708,14 @@ void ProcessJoystickData() {
             }
             break;
         case JoystickController::SWITCH:
+        {
             ltv = joystick.getAxis(6);
             rtv = joystick.getAxis(7);
             if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
+                Serial.printf(" Set Rumble %d %d\n", ltv, rtv);
                 joystick_left_trigger_value = ltv;
                 joystick_right_trigger_value = rtv;
                 joystick.setRumble(ltv, rtv);
-                Serial.printf(" Set Rumble %d %d", ltv, rtv);
             }
 
             Serial.println("\nIMU CalibratedAccel/Gyro");
@@ -724,6 +724,27 @@ void ProcessJoystickData() {
             joystick.sw_getIMUCalValues(accel, gyro);
             Serial.printf("Ax: %f, Ay: %f, Az:%f\n",accel[0], accel[1], accel[2]);
             Serial.printf("gx: %f, Ay: %f, Az:%f\n",gyro[0], gyro[1], gyro[2]);
+            
+            //Battery level, 8=full, 6=medium, 4=low, 2=critical, 0=empty
+            uint8_t battery = joystick.getAxis(14);
+            switch (battery) {
+              case 8:
+                Serial.println("Battery FULL");
+                break;
+              case 6:
+                Serial.println("Battery MEDIUM");
+                break;
+              case 4:
+                Serial.println("Battery LOW");
+                break;
+              case 2:
+                Serial.println("Battery CRITICAL");
+                break;
+              default:
+                Serial.println("Battery EMPTY");
+                break;
+            }
+        }
             break;
         case JoystickController::XBOXONE:
         case JoystickController::XBOX360:

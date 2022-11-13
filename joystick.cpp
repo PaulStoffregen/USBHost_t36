@@ -259,32 +259,33 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
             struct SWProBTSendConfigData *packet =  (struct SWProBTSendConfigData *)txbuf_ ;
             memset((void*)packet, 0, sizeof(struct SWProBTSendConfigData));
             packet->hid_hdr = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
-            packet->id = 0x1; 
+            packet->id = 0x10; 
             packet->gpnum = switch_packet_num;
             switch_packet_num = (switch_packet_num + 1) & 0x0f;
             // 2-9 rumble data;
             DBGPrintf("Set Rumble data\n");
             // 2-9 rumble data;
-            if ((lValue != 0xff) || (rValue != 0xff) || (timeout != 0xff)) {
-                packet->rumbleDataL[0] = 0x80;
-                packet->rumbleDataL[1] = 0x00;
-                packet->rumbleDataL[2] = 0x40;
-                packet->rumbleDataL[3] = 0x40;
-                packet->rumbleDataR[0] = 0x80;
-                packet->rumbleDataR[1] = 0x00;
-                packet->rumbleDataR[2] = 0x40;
-                packet->rumbleDataR[3] = 0x40;
-                if (lValue != 0) {
-                    packet->rumbleDataR[0] = 0x08;
-                    packet->rumbleDataR[1] = lValue;
-                } else if (rValue != 0) {
-                    packet->rumbleDataR[0] = 0x10;
-                    packet->rumbleDataR[1] = rValue;
+			uint8_t rumble_on[8] = {0x28, 0x88, 0x60, 0x61, 0x28, 0x88, 0x60, 0x61};
+			uint8_t rumble_off[8] =  {0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40};
+			
+			//if ((lValue == 0x00) || (rValue == 0x00)) {
+			//	for(uint8_t i = 0; i < 4; i++) packet->rumbleDataR[i] = rumble_off[i];
+			//	for(uint8_t i = 4; i < 8; i++) packet->rumbleDataL[i-4] = rumble_off[i];
+			//}
+            if ((lValue != 0x0) || (rValue != 0x0) ) {
+                if (lValue != 0 && rValue == 0) {
+					for(uint8_t i = 0; i < 4; i++) packet->rumbleDataR[i] = rumble_off[i];
+					for(uint8_t i = 4; i < 8; i++) packet->rumbleDataL[i-4] = rumble_on[i];
+                } else if (rValue != 0 && lValue == 0) {
+					for(uint8_t i = 0; i < 4; i++) packet->rumbleDataR[i] = rumble_on[i];
+					for(uint8_t i = 4; i < 8; i++) packet->rumbleDataL[i-4] = rumble_off[i];
+                } else if (rValue != 0 && lValue == 0) {
+					for(uint8_t i = 0; i < 4; i++) packet->rumbleDataR[i] = rumble_on[i];
+					for(uint8_t i = 4; i < 8; i++) packet->rumbleDataL[i-4] = rumble_on[i];
                 }
-            }
-
-            packet->subCommand = 0x48; // Report ID 
-            packet->subCommandData[0] = 1; // try full 0x30?; // Report ID
+            } 
+            packet->subCommand = 0x0;
+            packet->subCommandData[0] = 0; 
             btdriver_->sendL2CapCommand((uint8_t *)packet, sizeof(struct SWProBTSendConfigData), BluetoothController::INTERRUPT_SCID /*0x40*/);
             return true;
         }
@@ -1389,6 +1390,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         }
 
         joystickEvent = true;
+
     } else if (data[0] == 0x30) {
         // Assume switch full report
         //  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48
@@ -1465,7 +1467,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         }
 		
         joystickEvent = true;
-
+		
     } else if (data[0] == 0x21)  {
         DBGPrintf("Joystick Acknowledge Command Rcvd! pending: %u SC: %x", connectedComplete_pending_, data[14]);
         if (data[13] & 0x80) DBGPrintf(" ACK(%x)\n", data[13]);
@@ -1475,7 +1477,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         DBGPrintf("\r\n");
 		
 		sw_parseAckMsg(data);
-		
+
 		uint8_t packet_[8];
         switch (connectedComplete_pending_) {
 	    case 1:
