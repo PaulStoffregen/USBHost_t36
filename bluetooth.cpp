@@ -37,8 +37,8 @@
 #define print   USBHost::print_
 #define println USBHost::println_
 
-//#define DEBUG_BT
-//#define DEBUG_BT_VERBOSE
+#define DEBUG_BT
+#define DEBUG_BT_VERBOSE
 
 #ifndef DEBUG_BT
 #undef DEBUG_BT_VERBOSE
@@ -456,6 +456,12 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
     // location.  We will only go into process the next logical state
     // when we have the full response read in...
     if (rx_packet_data_remaining_ == 0) {   // Previous command was fully handled
+        if (len == 0) {
+            DBGPrintf("<< Empty Packet >>\n");
+            // probably could combine with below.
+            queue_Data_Transfer_Debug(rxpipe_, rxbuf_, rx_size_, this, __LINE__);
+            return;
+        }
         rx_packet_data_remaining_ = rxbuf_[1] + 2;  // length of data plus the two bytes at start...
     }
     // Now see if the data
@@ -602,6 +608,9 @@ void BluetoothController::rx_data(const Transfer_t *transfer)
         case EV_NUM_COMPLETE_PKT: //13 05 01 47 00 01 00 
             VDBGPrintf("    NUM_COMPLETE_PKT: ch:%u fh:%04x comp:%u\n",
                 rxbuf_[2], rxbuf_[3] + (rxbuf_[4] << 8), rxbuf_[rxbuf_[1]] + (rxbuf_[rxbuf_[1] + 1] << 8) );
+            break;
+        case EV_LE_META_EVENT:
+            handle_ev_meta_event(); // 0x3e
             break;
         default:
             break;
@@ -863,6 +872,10 @@ void BluetoothController::handle_hci_command_complete()
 		}
         break;
     case HCI_LE_Read_Buffer_Size:   //0x2002
+        {
+            DBGPrintf("LE Buffer Size: Size:%u, cnt:%u\n",
+                rxbuf_[6] + (rxbuf_[7] << 8), rxbuf_[8]);
+        }
         break;
     case HCI_LE_Read_Local_supported_Features:  //0x2003
         break;
@@ -971,7 +984,22 @@ void BluetoothController::queue_next_hci_command()
         sendHCISetEventMask();  // Set the event mask to include extend inquire event
         pending_control_++;
         break;
-
+    // ----------------------
+    // Added some LE setup as experiment
+    case PC_SET_LE_EVENT_MASK:
+        {
+            DBGPrintf("HCI_LE_SET_EVENT_MASK\n");
+            static const uint8_t hci_le_event_mask_data[8] = {
+                0xff, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+            sendHCICommand(HCI_LE_SET_EVENT_MASK, sizeof(hci_le_event_mask_data), hci_le_event_mask_data);
+        }  // default plus extended inquiry mode
+        pending_control_++;
+        break;
+    case PC_LE_READ_BUFFER_SIZE:
+        DBGPrintf("HCI_LE_Read_Buffer_Size\n");
+        sendHCICommand(HCI_LE_Read_Buffer_Size, 0, nullptr);
+        pending_control_++;
+        break;
     case PC_WRITE_CLASS_DEVICE:
         sendHDCWriteClassOfDev();
         pending_control_++;
@@ -1878,7 +1906,9 @@ void BluetoothController::sendHCISetEventMask() {
 		static const uint8_t hci_event_mask_data[8] = {
 			// Default: 0x0000 1FFF FFFF FFFF
 			//0xff, 0xff, 0xff, 0xff, 0xff, 0x5f, 0x00, 0x00
-            0xff, 0xff, 0xff, 0xfb, 0xff, 0x1f, 0x00, 0x00
+            // 0    8    16    24    32    40    48   54
+            //0xff, 0xff, 0xff, 0xfb, 0xff, 0x1f, 0x00, 0x00
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3f
 		};  // default plus extended inquiry mode
 		sendHCICommand(HCI_Set_Event_Mask, sizeof(hci_event_mask_data), hci_event_mask_data);
 	}
@@ -2460,5 +2490,105 @@ void BluetoothController::setHIDProtocol(uint8_t protocol) {
     l2capbuf[0] = 0x70 | protocol; // Set Protocol, see Bluetooth HID specs page 33
     DBGPrintf("Set HID Protocol %d (", protocol);
     sendL2CapCommand(current_connection_->device_connection_handle_, l2capbuf, sizeof(l2capbuf), current_connection_->control_scid_ & 0xff, current_connection_->control_scid_ >> 8);
+}
+
+// BLE experiments
+// Experiments to enable LE scanning
+bool BluetoothController::setLEScanEnable(uint8_t enable, uint8_t filter_duplicates) 
+{
+    DBGPrintf("HCI_LE_SET_SCAN_ENABLE(%x %x)\n", enable, filter_duplicates);
+    uint8_t hci_data[2];
+    hci_data[0] = enable;
+    hci_data[1] = filter_duplicates; 
+    sendHCICommand(HCI_LE_SET_SCAN_ENABLE, sizeof(hci_data), hci_data);
+    return true;
+}
+bool BluetoothController::setLEScanParameters(uint8_t scan_type, uint16_t scan_interval, uint16_t scan_window, uint8_t own_address_type, uint8_t filter_policy)
+{
+    DBGPrintf("HCI_LE_SET_SCAN_PARAMETERS(%x %x %x %x)\n", scan_type, scan_interval, scan_window, own_address_type, filter_policy);
+    uint8_t hci_data[7];
+    hci_data[0] = scan_type;
+    hci_data[1] = scan_interval & 0xff; 
+    hci_data[2] = scan_interval >> 8; 
+    hci_data[3] = scan_window & 0xff; 
+    hci_data[4] = scan_window >> 8; 
+    hci_data[5] = own_address_type; 
+    hci_data[6] = filter_policy; 
+
+    sendHCICommand(HCI_LE_SET_SCAN_PARAMETERS, sizeof(hci_data), hci_data);
+    return true;
+}
+
+void BluetoothController::handle_ev_meta_event() { // 0x3e
+//<<(01, 74):3E 2B 02 | 01 03 01 90 A4 0E 8F BA 20 1F 1E FF 06 00 01 09 20 22 1E 4D 54 BF 0B 07 41 F7 D8 91 12 A9 A0 76 00 A6 74 19 26 2B F5 82 EF BC 
+    USBHDBGSerial.printf("handle_ev_meta_event SubEvent: %u", rxbuf_[2]);
+    switch (rxbuf_[2]) {
+    case EV_LE_Connection_Complete:
+        break;
+    case EV_LE_ADVERTISING_REPORT:
+        {
+            uint8_t cnt_reports = rxbuf_[3];
+            USBHDBGSerial.printf(" Advertise Report: Num reports: %u ET:",  rxbuf_[3]);
+            uint8_t index = 4;
+            for (uint8_t i = 0; i < cnt_reports; i++) {
+                USBHDBGSerial.printf(" %u", rxbuf_[index]);
+                switch (rxbuf_[index]) {
+                case 0: USBHDBGSerial.printf("(ADV_IND)"); break;
+                case 1: USBHDBGSerial.printf("(ADV_DIRECT_IND)"); break; 
+                case 2: USBHDBGSerial.printf("(ADV_SCAN_IND)"); break; 
+                case 3: USBHDBGSerial.printf("(ADV_NONCONN_IND)"); break; 
+                case 4: USBHDBGSerial.printf("(SCAN_RSP)"); break; 
+                }
+                index++;
+            }
+            USBHDBGSerial.printf(" AT:");
+            for (uint8_t i = 0; i < cnt_reports; i++) {
+                USBHDBGSerial.printf(" %u", rxbuf_[index]);
+                switch (rxbuf_[index]) {
+                case 0: USBHDBGSerial.printf("(Public Device Address)"); break;
+                case 1: USBHDBGSerial.printf("(Random Device Address)"); break; 
+                case 2: USBHDBGSerial.printf("(Public Identity Address)"); break; 
+                case 3: USBHDBGSerial.printf("(Random static)"); break; 
+                }
+                index++;
+            }
+            for (uint8_t i = 0; i < cnt_reports; i++) {
+                USBHDBGSerial.printf("%02X:%02X:%02X:%02X:%02X:%02X", rxbuf_[index+5], rxbuf_[index+4],
+                    rxbuf_[index+3], rxbuf_[index+2], rxbuf_[index+1], rxbuf_[index+0]);
+                index += 6;
+            }
+            // lets loop in the data:
+            USBHDBGSerial.printf("\n");
+            uint8_t data_index = index + cnt_reports;
+            for (uint8_t i = 0; i < cnt_reports; i++) {
+                USBHDBGSerial.printf("\t(%u):", i);
+                uint8_t data_length = rxbuf_[index++];
+                uint8_t ad_start = 0;
+                while (ad_start < data_length) {
+                    uint8_t ads_len = rxbuf_[data_index + ad_start];
+                    uint8_t ads_type = rxbuf_[data_index + ad_start+1];
+                    USBHDBGSerial.printf(" || len:%u type:%x data:", ads_len, ads_type);
+                    if ((ads_type == 0x9) || (ads_type == 0x08)) {
+                        USBHDBGSerial.printf("'");
+                        USBHDBGSerial.write(&rxbuf_[data_index + ad_start+2], ads_len-1);
+                        USBHDBGSerial.printf("'");
+                    } else {
+                        for (uint8_t j=1; j < ads_len; j++ ) USBHDBGSerial.printf(" %02X", rxbuf_[data_index + ad_start+1+j]);
+                    }
+                    ad_start += ads_len + 1;
+                }
+                USBHDBGSerial.printf("\n");
+                data_index += data_length;
+            }
+        }
+        break;
+    case EV_LE_CONNECTION_UPDATE_COMPLETE:
+        break;
+    case EV_LE_READ_REMOTE_FEATURES_COMPLETE:
+        break;
+    case EV_LE_LONG_TERM_KEY_REQUEST:
+        break;
+    //default:    
+    }
 }
 

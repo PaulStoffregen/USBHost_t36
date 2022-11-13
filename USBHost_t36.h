@@ -2148,6 +2148,10 @@ public:
     bool writeLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]);
     bool readLinkKey(uint8_t bdaddr[6], uint8_t link_key[16]);
 
+    // Experiments to enable LE scanning
+    bool setLEScanEnable(uint8_t enable, uint8_t filter_duplicates);
+    bool setLEScanParameters(uint8_t scan_type, uint16_t scan_interval, uint16_t scan_window, uint8_t own_address_type, uint8_t filter_policy);
+
 
     // BUGBUG version to allow some of the controlled objects to call?
     enum {CONTROL_SCID = -1, INTERRUPT_SCID = -2, SDP_SCID = -3};
@@ -2243,6 +2247,7 @@ private:
     void handle_hci_link_key_notification();
     void handle_hci_link_key_request();
     void handle_hci_return_link_keys();
+    void handle_ev_meta_event(); // 0x3e
     void queue_next_hci_command();
 
     void handle_HCI_IO_CAPABILITY_REQUEST_REPLY();

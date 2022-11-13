@@ -337,6 +337,14 @@ void setup()
     tft.setTextSize(2);
     tft.println("Waiting for Device...");
     tft.useFrameBuffer(true);
+
+    Serial.println("\n============================================");
+    Serial.println("Simple keyboard commands");
+    Serial.println("\tP - Start simple pairing key 0000");
+    Serial.println("\tS - Start linking with SSP"); 
+    Serial.println("\tE - Erase link keys");
+    Serial.println("\tL - Toggle BLE scan enable");
+    Serial.println("\tI - SWITCH joystick test");
 }
 
 
@@ -384,12 +392,25 @@ void loop()
       } else if (ch == 'E') {
         Serial.println("Erase Pairing Link Keys");
         btpcb.eraseLinkKeys();
-      } else {
-        if (ch == 'I') {
+      } else if (ch == 'L') {
+        static bool le_scan_enabled = false;
+        le_scan_enabled = !le_scan_enabled;
+        Serial.printf("Toggle LE Scan enable (%x)\n", le_scan_enabled);
+        if (le_scan_enabled)
+        {
+            bluet.setLEScanEnable(false, true);
+            delay(5);
+            bluet.setLEScanParameters(0x1, 0x20, 0x20, 0x0, 0x0);
+            delay(5);
+            bluet.setLEScanEnable(true, false);
+        } else {
+            bluet.setLEScanEnable(false, true);
+        }
+
+      } else if (ch == 'I') {
           uint8_t packet_[8];
           packet_[0] = 0x00;
           joystick.sw_sendCmd(0x02, packet_, 1);
-        }
       }
       
     } 
