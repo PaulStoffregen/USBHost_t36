@@ -260,26 +260,27 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
             memset((void*)packet, 0, sizeof(struct SWProBTSendConfigData));
             packet->hid_hdr = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
             packet->id = 0x10; 
+			if(switch_packet_num > 0x10) switch_packet_num = 0;
             packet->gpnum = switch_packet_num;
             switch_packet_num = (switch_packet_num + 1) & 0x0f;
             // 2-9 rumble data;
-            DBGPrintf("Set Rumble data\n");
+            Serial.printf("Set Rumble data: %d, %d\n", lValue, rValue);
             // 2-9 rumble data;
 			uint8_t rumble_on[8] = {0x28, 0x88, 0x60, 0x61, 0x28, 0x88, 0x60, 0x61};
 			uint8_t rumble_off[8] =  {0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40};
 			
-			//if ((lValue == 0x00) || (rValue == 0x00)) {
+			//if ((lValue == 0x00) && (rValue == 0x00)) {
 			//	for(uint8_t i = 0; i < 4; i++) packet->rumbleDataR[i] = rumble_off[i];
 			//	for(uint8_t i = 4; i < 8; i++) packet->rumbleDataL[i-4] = rumble_off[i];
 			//}
-            if ((lValue != 0x0) || (rValue != 0x0) ) {
+			if ((lValue != 0x0) || (rValue != 0x0)) {
                 if (lValue != 0 && rValue == 0) {
 					for(uint8_t i = 0; i < 4; i++) packet->rumbleDataR[i] = rumble_off[i];
 					for(uint8_t i = 4; i < 8; i++) packet->rumbleDataL[i-4] = rumble_on[i];
                 } else if (rValue != 0 && lValue == 0) {
 					for(uint8_t i = 0; i < 4; i++) packet->rumbleDataR[i] = rumble_on[i];
 					for(uint8_t i = 4; i < 8; i++) packet->rumbleDataL[i-4] = rumble_off[i];
-                } else if (rValue != 0 && lValue == 0) {
+                } else if (rValue != 0 && lValue != 0) {
 					for(uint8_t i = 0; i < 4; i++) packet->rumbleDataR[i] = rumble_on[i];
 					for(uint8_t i = 4; i < 8; i++) packet->rumbleDataL[i-4] = rumble_on[i];
                 }
@@ -1376,6 +1377,20 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
             axis_changed_mask_ |= (1 << 9);
             anychange = true;            
         }
+		
+		//just a hack for a single joycon.
+		if(buttons == 0x8000) {	//ZL
+			axis[6] = 1;
+		} else {
+			axis[6] = 0;
+		}
+		if(buttons == 0x8000) {		//ZR
+			axis[7] = 1;
+		} else {
+			axis[7] = 0;
+		}
+		
+		
         for (uint8_t i = 0; i < sizeof (switch_bt_axis_order_mapping); i++) {
             // The first two values were unsigned.
             int axis_value = (uint16_t)sw1d->axis[i];
@@ -1399,10 +1414,20 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         //static const uint8_t switch_bt_axis_order_mapping[] = { 0, 1, 2, 3};
         axis_mask_ = 0x1ff;
         axis_changed_mask_ = 0; // assume none for now
-        
         // We have a data transfer.  Lets see what is new...
-        uint32_t cur_buttons = data[3] | (data[4] << 8) |  (data[5] << 16);
+        uint32_t cur_buttons = data[3] | (data[4] << 8) | (data[5] << 16);
 		//DBGPrintf("BUTTONS: %x\n", cur_buttons);
+		if(initialPass_ == true) {
+			if(cur_buttons == 0x8000) {
+				buttonOffset_ = 0x8000;
+			} else {
+				buttonOffset_ = 0;
+			}
+			initialPass_ = false;
+		}
+		
+		cur_buttons = cur_buttons - buttonOffset_;
+
         if (cur_buttons != buttons) {
             buttons = cur_buttons;
             anychange = true;
@@ -1426,25 +1451,29 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         new_axis[3] = (data[10] >> 4) | (data[11] << 4);  //yr
 		
 		//Kludge to get trigger buttons tripping
-		if(buttons == 0x8040) {
-			new_axis[5] = 0x01;
+		if(buttons == 0x40) {  	//R1
+			new_axis[5] = 1;
 		} else {
 			new_axis[5] = 0;
 		}
-		if(buttons == 0x408000) {
-			new_axis[4] = 0x01;
+		if(buttons == 0x400000) {	//L1
+			new_axis[4] = 1;
 		} else {
 			new_axis[4] = 0;
 		}
-		if(buttons == 0x808000) {
-			new_axis[6] = 0x01;
+		if(buttons == 0x800000) {	//ZL
+			new_axis[6] = 1;
 		} else {
 			new_axis[6] = 0;
 		}
-		if(buttons == 0x8080) {
-			new_axis[7] = 0x01;
+		if(buttons == 0x80) {		//ZR
+			new_axis[7] = 1;
 		} else {
 			new_axis[7] = 0;
+		}
+		if(buttons == 0x800080) {
+			new_axis[6] = 1;
+			new_axis[7] = 1;
 		}
 		
 		axis[8] = (int16_t)(data[13]  | (data[14] << 8)); //ax
@@ -1467,6 +1496,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         }
 		
         joystickEvent = true;
+		initialPass_ = false;
 		
     } else if (data[0] == 0x21)  {
         DBGPrintf("Joystick Acknowledge Command Rcvd! pending: %u SC: %x", connectedComplete_pending_, data[14]);

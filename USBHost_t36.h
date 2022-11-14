@@ -1070,6 +1070,10 @@ private:
 	//void sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint8_t *data, uint16_t size);
 	void sw_parseAckMsg(const uint8_t *buf_);
 	
+	//kludge for switch having different button values
+	bool initialPass_ = true;
+	uint32_t buttonOffset_ = 0x00;
+	
     bool anychange = false;
     volatile bool joystickEvent = false;
     uint32_t buttons = 0;
