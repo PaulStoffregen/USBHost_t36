@@ -37,8 +37,8 @@
 #define print   USBHost::print_
 #define println USBHost::println_
 
-#define DEBUG_BT
-#define DEBUG_BT_VERBOSE
+//#define DEBUG_BT
+//#define DEBUG_BT_VERBOSE
 
 #ifndef DEBUG_BT
 #undef DEBUG_BT_VERBOSE

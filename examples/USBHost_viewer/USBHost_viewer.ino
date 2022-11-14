@@ -656,6 +656,8 @@ void ProcessMouseData() {
 // ProcessJoystickData
 //=============================================================================
 elapsedMillis em_since_last_set_leds;
+elapsedMillis em_since_last_set_rumble;
+
 uint8_t cycle_leds_value = 1;
 
 void ProcessJoystickData() {
@@ -711,12 +713,15 @@ void ProcessJoystickData() {
         {
             ltv = joystick.getAxis(6);
             rtv = joystick.getAxis(7);
-            if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
-                Serial.printf(" Set Rumble %d %d\n", ltv, rtv);
+            //if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
+            Serial.printf(" Set Rumble %d %d\n", ltv, rtv);
+            if(em_since_last_set_rumble > 100) {
                 joystick_left_trigger_value = ltv;
                 joystick_right_trigger_value = rtv;
                 joystick.setRumble(ltv, rtv);
+                em_since_last_set_rumble = 0;
             }
+            //}
 
             Serial.println("\nIMU CalibratedAccel/Gyro");
             float accel[3];
