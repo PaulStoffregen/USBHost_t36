@@ -711,6 +711,7 @@ void ProcessJoystickData() {
             break;
         case JoystickController::SWITCH:
         {
+          if(bthid_driver_active[0]) {
             ltv = joystick.getAxis(6);
             rtv = joystick.getAxis(7);
             //if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
@@ -721,6 +722,17 @@ void ProcessJoystickData() {
                 joystick.setRumble(ltv, rtv);
                 em_since_last_set_rumble = 0;
             }
+          } else {
+            ltv = joystick.getAxis(4);
+            rtv = joystick.getAxis(5);
+            Serial.printf(" Set Rumble %d %d\n", ltv, rtv);
+            if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
+              joystick_left_trigger_value = ltv;
+              joystick_right_trigger_value = rtv;
+              Serial.printf("Rumbling: %d, %d\r\n", ltv, rtv);
+              joystick.setRumble(ltv, rtv);
+            }
+          }
             //}
 
             Serial.println("\nIMU CalibratedAccel/Gyro");
@@ -825,7 +837,26 @@ void tft_JoystickData() {
     // Second Axis as well as maybe L1/R1 axis 
     switch (joystick.joystickType()) {
     case JoystickController::SWITCH:
-        // like XBOXONE, but so far no triggers.
+        //Second Axis
+        if (user_axis[2] != x2_cur) {  //xR
+            x2_cur = user_axis[2];
+            something_changed = true;
+        }
+        if (user_axis[3] != y2_cur) {  //yR or z-axis
+            y2_cur = user_axis[3];
+            something_changed = true;
+        }
+        
+        // Triggers
+        if (user_axis[4] != L1_cur) {  //xR
+            L1_cur = user_axis[4];
+            something_changed = true;
+        }
+        if (user_axis[5] != R1_cur) {  //yR or z-axis
+            R1_cur = user_axis[5];
+            something_changed = true;
+        }
+        break;
     case JoystickController::XBOXONE:
         //Second Axis
         if (user_axis[2] != x2_cur) {  //xR

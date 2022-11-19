@@ -27,7 +27,7 @@
 #define print   USBHost::print_
 #define println USBHost::println_
 
-//#define DEBUG_JOYSTICK
+#define DEBUG_JOYSTICK
 #ifdef  DEBUG_JOYSTICK
 #define DBGPrintf USBHDBGSerial.printf
 #else
@@ -41,8 +41,8 @@ bool JoystickController::queue_Data_Transfer_Debug(Pipe_t *pipe, void *buffer,
 {
     if ((pipe == nullptr) || (driver == nullptr) || ((len > 0) && (buffer == nullptr))) {
         // something wrong:
-        USBHDBGSerial.printf("\n !!!!!!!!!!! JoystickController::queue_Data_Transfer called with bad data line: %u\n", line);
-        USBHDBGSerial.printf("\t pipe:%p buffer:%p len:%u driver:%p\n", pipe, buffer, len, driver);
+        DBGPrintf("\n !!!!!!!!!!! JoystickController::queue_Data_Transfer called with bad data line: %u\n", line);
+        DBGPrintf("\t pipe:%p buffer:%p len:%u driver:%p\n", pipe, buffer, len, driver);
         return false;
     }
     return queue_Data_Transfer(pipe, buffer, len, driver);
@@ -291,7 +291,7 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
             return true;
         }
 
-        memset(txbuf_, 0, 10);  // make sure it is cleared out
+        memset(txbuf_, 0, 18);  // make sure it is cleared out
         txbuf_[0] = 0x80;
         txbuf_[1] = 0x92;
         txbuf_[3] = 0x31;
@@ -300,6 +300,7 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
         // Now add in subcommand data:
         // Probably do this better soon
         txbuf_[9 + 0] = rumble_counter++; //
+
         txbuf_[9 + 1] = 0x80;
         txbuf_[9 + 2] = 0x00;
         txbuf_[9 + 3] = 0x40;
@@ -321,6 +322,9 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
             println("switch rumble transfer fail");
             Serial.printf("Switch Rumble transfer fail\n");
         }
+
+
+
         return true;
     }
     return false;
@@ -599,6 +603,7 @@ void JoystickController::disconnect_collection(Device_t *dev)
 void JoystickController::hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax)
 {
     // TODO: set up translation from logical min/max to consistent 16 bit scale
+	
 }
 
 void JoystickController::hid_input_data(uint32_t usage, int32_t value)
@@ -655,6 +660,7 @@ void JoystickController::hid_input_data(uint32_t usage, int32_t value)
 
     }
     // TODO: hat switch?
+
 }
 
 void JoystickController::hid_input_end()
@@ -666,7 +672,7 @@ void JoystickController::hid_input_end()
 
 bool JoystickController::hid_process_out_data(const Transfer_t *transfer)
 {
-    //DBGPrintf("JoystickController::hid_process_out_data\n");
+    DBGPrintf("JoystickController::hid_process_out_data\n");
     return true;
 }
 
@@ -822,7 +828,7 @@ bool JoystickController::claim(Device_t *dev, int type, const uint8_t *descripto
     memset(axis, 0, sizeof(axis));  // clear out any data.
     joystickType_ = jtype;      // remember we are an XBox One.
     DBGPrintf("   JoystickController::claim joystickType_ %d\n", joystickType_);
-    return true;
+	return true;
 }
 
 void JoystickController::control(const Transfer_t *transfer)
@@ -994,7 +1000,68 @@ void JoystickController::rx_data(const Transfer_t *transfer)
             if (anychange) joystickEvent = true;
         }
     } else if (joystickType_ == SWITCH) {
+		uint8_t packet_[8];
+		if(initialPass_ == true) {
+			switch(connectedComplete_pending_) {
+				case 0:
+					//setup handshake
+					DBGPrintf("Request Mac address\n");
+					packet_[0] = 0x01;
+					sw_sendCmdUSB(0x80, packet_, 1);
+					connectedComplete_pending_ = 1;
+					break;
+				case 1:
+					//setup handshake
+					DBGPrintf("Send Handshake\n");
+					packet_[0] = 0x02;
+					sw_sendCmdUSB(0x80, packet_, 1);
+					connectedComplete_pending_ = 2;
+					break;
+				case 2:
+					DBGPrintf("Change buadrate\n");
+					packet_[0] = 0x03;
+					sw_sendCmdUSB(0x80, packet_, 1);
+					connectedComplete_pending_ = 3;
+					break;
+				case 3:
+					DBGPrintf("Send Handshake after baud rate change\n");
+					packet_[0] = 0x02;
+					sw_sendCmdUSB(0x80, packet_, 1);
+						connectedComplete_pending_ = 4;
+					break;
+				case 4:
+					DBGPrintf("Send Hid only\n");
+					packet_[0] = 0x04;
+					sw_sendCmdUSB(0x80, packet_, 1); 
+					connectedComplete_pending_ = 5;
+					break;
+				case 5:
+					//Send report type
+					DBGPrintf("Enable IMU\n");
+					packet_[0] = 0x01;
+					sw_sendSubCmdUSB(0x40, packet_, 1);
+					connectedComplete_pending_ = 6;
+					break;
+				case 6:
+					DBGPrintf("Enable Rumble\n");
+					packet_[0] = 0x01;
+					sw_sendSubCmdUSB(0x48, packet_, 1);
+					connectedComplete_pending_ = 7;
+					break;
+				case 7:
+					DBGPrintf("Enable Std Rpt\n");
+					packet_[0] = 0x30;
+					sw_sendSubCmdUSB(0x3f, packet_, 1);
+					connectedComplete_pending_ = 8;
+				case 8:
+					connectedComplete_pending_ = 0;
+					initialPass_ = false;
+					break;
+			}
+		}
+
         switchdataUSB_t  *switchd = (switchdataUSB_t *)transfer->buffer;
+		//uint32_t cur_buttons = switchd->buttons_l | (switchd->buttons_m << 8) | (switchd->buttons_h << 16);
         uint16_t cur_buttons = (switchd->buttons_h << 8) | switchd->buttons_l;
         if (buttons != cur_buttons) {
             buttons = cur_buttons;
@@ -1596,6 +1663,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
             connectedComplete_pending_ = 0;
             break;
 		}
+		
     }
 #endif 
 
@@ -1857,6 +1925,54 @@ void JoystickController::sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint
 		packet1->subCommandData[i] = data[i];
 	}
 	btdriver_->sendL2CapCommand((uint8_t *)packet1, sizeof(struct SWProBTSendConfigData1), BluetoothController::INTERRUPT_SCID /*0x40*/);
+}
+
+void JoystickController::sw_sendCmdUSB(uint8_t cmd, uint8_t *data, uint16_t size) {
+        memset(txbuf_, 0, 1 + size);  // make sure it is cleared out
+        txbuf_[0] = cmd;
+		
+		//sub-command
+		for(uint16_t i = 0; i < size; i++) {
+			txbuf_[i + 1] = data[i];
+		}
+
+        if (!queue_Data_Transfer_Debug(txpipe_, txbuf_, size + 1, this, __LINE__)) {
+            println("switch transfer fail");
+            Serial.printf("Switch transfer fail\n");
+        }
+}
+
+void JoystickController::sw_sendSubCmdUSB(uint8_t sub_cmd, uint8_t *data, uint16_t size) {
+        memset(txbuf_, 0, 19 + size);  // make sure it is cleared out
+        txbuf_[0] = 0x80;
+        txbuf_[1] = 0x92;
+		txbuf_[3] = 0x31;
+        txbuf_[8] = 0x01;   // Command
+
+        // Now add in subcommand data:
+        // Probably do this better soon
+        txbuf_[9 + 0] = rumble_counter++; //
+
+        txbuf_[9 + 1] = 0x80;
+        txbuf_[9 + 2] = 0x00;
+        txbuf_[9 + 3] = 0x40;
+        txbuf_[9 + 4] = 0x40;
+        txbuf_[9 + 5] = 0x80;
+        txbuf_[9 + 6] = 0x00;
+        txbuf_[9 + 7] = 0x40;
+        txbuf_[9 + 8] = 0x40;
+		
+		txbuf_[9 + 9] = sub_cmd;
+		
+		//sub-command
+		for(uint16_t i = 0; i < size; i++) {
+			txbuf_[i + 19] = data[i];
+		}
+
+        if (!queue_Data_Transfer_Debug(txpipe_, txbuf_, 19 + size, this, __LINE__)) {
+            println("switch transfer fail");
+            Serial.printf("Switch transfer fail\n");
+        }
 }
 
 void JoystickController::sw_parseAckMsg(const uint8_t *buf_) 
