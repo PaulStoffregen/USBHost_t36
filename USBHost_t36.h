@@ -60,7 +60,7 @@
 
 
 // Uncomment this line to see lots of debugging info!
-#define USBHOST_PRINT_DEBUG
+//#define USBHOST_PRINT_DEBUG
 
 
 // This can let you control where to send the debugging messages
@@ -1068,8 +1068,8 @@ private:
     bool mapNameToJoystickType(const uint8_t *remoteName);
     //void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size);
 	//void sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint8_t *data, uint16_t size);
-	void sw_sendCmdUSB(uint8_t cmd, uint8_t *data, uint16_t size);
-	void sw_sendSubCmdUSB(uint8_t sub_cmd, uint8_t *data, uint16_t size);
+	void sw_sendCmdUSB(uint8_t cmd, uint8_t *data, uint8_t size);
+	void sw_sendSubCmdUSB(uint8_t sub_cmd, uint8_t *data, uint8_t size);
 	void sw_parseAckMsg(const uint8_t *buf_);
 	
 	//kludge for switch having different button values

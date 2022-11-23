@@ -87,8 +87,8 @@ USBHIDParser hid7(myusb);
 MouseController mouse(myusb);
 DigitizerController tablet(myusb);
 JoystickController joystick(myusb);
-//BluetoothController bluet(myusb, false, "0000", true);   // Version does pairing to device
-BluetoothController bluet(myusb);   // version assumes it already was paired
+BluetoothController bluet(myusb, false, "0000", true);   // Version does pairing to device
+//BluetoothController bluet(myusb);   // version assumes it already was paired
 RawHIDController rawhid2(myusb);
 
 // Lets only include in the lists The most top level type devices we wish to show information for.
@@ -723,18 +723,18 @@ void ProcessJoystickData() {
                 em_since_last_set_rumble = 0;
             }
           } else {
-            ltv = joystick.getAxis(4);
+            ltv = joystick.getAxis(6);  //new Jamwall 6/5, Beboncool 6/5 
             rtv = joystick.getAxis(5);
             Serial.printf(" Set Rumble %d %d\n", ltv, rtv);
-            if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
-              joystick_left_trigger_value = ltv;
-              joystick_right_trigger_value = rtv;
-              Serial.printf("Rumbling: %d, %d\r\n", ltv, rtv);
-              joystick.setRumble(ltv, rtv);
+            if(em_since_last_set_rumble > 100) {
+                joystick_left_trigger_value = ltv;
+                joystick_right_trigger_value = rtv;
+                joystick.setRumble(ltv, rtv);
+                em_since_last_set_rumble = 0;
             }
           }
             //}
-
+          if(bthid_driver_active[0]) {
             Serial.println("\nIMU CalibratedAccel/Gyro");
             float accel[3];
             float gyro[3];
@@ -761,11 +761,11 @@ void ProcessJoystickData() {
                 Serial.println("Battery EMPTY");
                 break;
             }
+          }
         }
             break;
         case JoystickController::XBOXONE:
         case JoystickController::XBOX360:
-        //case JoystickController::SWITCH:
             ltv = joystick.getAxis(4);
             rtv = joystick.getAxis(5);
             if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
@@ -847,13 +847,13 @@ void tft_JoystickData() {
             something_changed = true;
         }
         
-        // Triggers
-        if (user_axis[4] != L1_cur) {  //xR
-            L1_cur = user_axis[4];
+        // Shoulder buttons 
+        if (user_axis[6] != L1_cur) {  //xR
+            L1_cur = user_axis[6];
             something_changed = true;
         }
-        if (user_axis[5] != R1_cur) {  //yR or z-axis
-            R1_cur = user_axis[5];
+        if (user_axis[7] != R1_cur) {  //yR or z-axis
+            R1_cur = user_axis[7];
             something_changed = true;
         }
         break;
