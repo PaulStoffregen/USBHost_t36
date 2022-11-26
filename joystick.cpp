@@ -331,9 +331,9 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
 		txbuf_[11] = 0x00;
 		txbuf_[12] = 0x00;
 		
-		if(txpipe_ == 0) {
+		if(driver_) {
 			driver_->sendPacket(txbuf_, 18);
-		} else {
+		} else if (txpipe_) {
 			if (!queue_Data_Transfer_Debug(txpipe_, txbuf_, 12, this, __LINE__)) {
 				println("switch transfer fail");
 				Serial.printf("Switch transfer fail\n");
@@ -429,9 +429,9 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
             println("Switch set leds: driver? ", (uint32_t)driver_, HEX);
             print_hexbytes((uint8_t*)txbuf_, 20);
 			
-			if(txpipe_ == 0) {
+			if(driver_) {
 				driver_->sendPacket(txbuf_, 20);
-			} else {
+			} else if (txpipe_) {
 				if (!queue_Data_Transfer_Debug(txpipe_, txbuf_, 20, this, __LINE__)) {
 					println("switch transfer fail");
 					Serial.printf("Switch transfer fail\n");
@@ -718,7 +718,7 @@ bool JoystickController::sw_handle_usb_init_of_joystick(uint8_t *buffer, uint16_
         if (ack_rpt == 0x81) {
             uint8_t ack_81_subrpt = buffer[1];
             DBGPrintf("\t(%u)CMD last sent: %x ack cmd: %x ", (uint32_t)em_sw_, sw_last_cmd_sent_, ack_81_subrpt);
-            switch(ack_rpt) {
+            switch(ack_81_subrpt) {
                 case 0x02: DBGPrintf("Handshake Complete......\n"); break;
                 case 0x03: DBGPrintf("Baud Rate Change Complete......\n"); break;
                 case 0x04: DBGPrintf("Disabled USB Timeout Complete......\n"); break;
@@ -838,11 +838,11 @@ bool JoystickController::sw_handle_usb_init_of_joystick(uint8_t *buffer, uint16_
 bool JoystickController::hid_process_in_data(const Transfer_t *transfer)
 {
     uint8_t *buffer = (uint8_t *)transfer->buffer;
-    if (!transfer->buffer || *buffer == 1) return false; // don't do report 1
-    DBGPrintf("hid_process_in_data %x %u %u %p %x %x:", transfer->buffer, transfer->length, joystickType_, txpipe_, initialPass_, connectedComplete_pending_);
     uint8_t cnt = transfer->length;
-    uint8_t *pb = buffer;
-	while (cnt--)DBGPrintf(" %02x", *pb++);
+    if (!buffer || *buffer == 1) return false; // don't do report 1
+
+    DBGPrintf("hid_process_in_data %x %u %u %p %x %x:", transfer->buffer, transfer->length, joystickType_, txpipe_, initialPass_, connectedComplete_pending_);
+    for (uint8_t i = 0; i < cnt; i++) DBGPrintf(" %02x", buffer[i]);
     DBGPrintf("\n");
 
 	if (joystickType_ == SWITCH) {
@@ -2079,22 +2079,8 @@ void JoystickController::sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size) {
 	for(uint16_t i = 0; i < size; i++) {
 		packet->subCommandData[i] = data[i];
 	}
-	btdriver_->sendL2CapCommand((uint8_t *)packet, sizeof(struct SWProBTSendConfigData), BluetoothController::INTERRUPT_SCID /*0x40*/);
-}
-
-void JoystickController::sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint8_t *data, uint16_t size) {
-	struct SWProBTSendConfigData1 *packet1 =  (struct SWProBTSendConfigData1 *)txbuf_ ;
-	memset((void*)packet1, 0, sizeof(struct SWProBTSendConfigData1));
-	//packet1->hid_hdr = 0xA1; // HID BT Get_report (0xA0) | Report Type (Output)
-	packet1->id = 0x10; 
-	packet1->gpnum = switch_packet_num;
-	switch_packet_num = (switch_packet_num + 1) & 0x0f;
-
-	packet1->subCommand = cmd; // Report ID
-	for(uint16_t i = 0; i < size; i++) {
-		packet1->subCommandData[i] = data[i];
-	}
-	btdriver_->sendL2CapCommand((uint8_t *)packet1, sizeof(struct SWProBTSendConfigData1), BluetoothController::INTERRUPT_SCID /*0x40*/);
+	if (btdriver_) btdriver_->sendL2CapCommand((uint8_t *)packet, sizeof(struct SWProBTSendConfigData), BluetoothController::INTERRUPT_SCID /*0x40*/);
+    else Serial.printf("\n####### sw_sendCMD(%x %p %u) called with btdriver_ == 0 ", cmd, data, size);
 }
 
 void JoystickController::sw_sendCmdUSB(uint8_t cmd, uint32_t timeout) {
@@ -2146,12 +2132,12 @@ void JoystickController::sw_sendSubCmdUSB(uint8_t sub_cmd, uint8_t *data, uint8_
 		println("USB send sub cmd: driver? ", (uint32_t)driver_, HEX);
 		print_hexbytes((uint8_t*)txbuf_, 32);
 		
-		if(txpipe_ == 0) {
+		if(driver_) {
 			driver_->sendPacket(txbuf_, 32);
             if (timeout != 0) {
                 driver_->startTimer(timeout);
             }
-		} else {
+		} else if (txpipe_) {
 			if (!queue_Data_Transfer_Debug(txpipe_, txbuf_, 32, this, __LINE__)) {
 				println("switch transfer fail");
 			}

@@ -1015,7 +1015,6 @@ public:
     bool PS4Pair(uint8_t* bdaddr);
 	
 	void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size);
-	void sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint8_t *data, uint16_t size);
 	void sw_getIMUCalValues(float *accel, float *gyro);
     bool sw_handle_usb_init_of_joystick(uint8_t *buffer, uint16_t cb, bool timer_event);
 
@@ -1069,7 +1068,6 @@ private:
     bool transmitPS3MotionUserFeedbackMsg();
     bool mapNameToJoystickType(const uint8_t *remoteName);
     //void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size);
-	//void sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint8_t *data, uint16_t size);
 	//void sw_sendCmdUSB(uint8_t cmd, uint8_t *data, uint8_t size);
     void sw_sendCmdUSB(uint8_t cmd, uint32_t timeout);
 	void sw_sendSubCmdUSB(uint8_t sub_cmd, uint8_t *data, uint8_t size, uint32_t timeout = 0);

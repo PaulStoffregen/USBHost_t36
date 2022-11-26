@@ -743,23 +743,25 @@ void ProcessJoystickData() {
             
             //Battery level, 8=full, 6=medium, 4=low, 2=critical, 0=empty
             uint8_t battery = joystick.getAxis(14);
-            switch (battery) {
+            switch (battery & 0xfe) {  // low bit is charging bit
               case 8:
-                Serial.println("Battery FULL");
+                Serial.print("Battery FULL");
                 break;
               case 6:
-                Serial.println("Battery MEDIUM");
+                Serial.print("Battery MEDIUM");
                 break;
               case 4:
-                Serial.println("Battery LOW");
+                Serial.print("Battery LOW");
                 break;
               case 2:
-                Serial.println("Battery CRITICAL");
+                Serial.print("Battery CRITICAL");
                 break;
               default:
-                Serial.println("Battery EMPTY");
+                Serial.printf("Battery EMPTY(%x)", battery);
                 break;
             }
+            if (battery & 0x01) Serial.println(" - charging");
+            else Serial.println();
           //}
         }
             break;
