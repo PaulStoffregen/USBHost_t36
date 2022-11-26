@@ -336,6 +336,14 @@ void BluetoothConnection::process_l2cap_connection_response(uint8_t *data, uint1
             sdp_scid_ = scid;
             sendl2cap_ConfigRequest(device_connection_handle_, connection_rxid_, scid);
         }
+    } else {
+        DBGPrintf("      Unknown Response\n");
+        // Unknown dcid... Guess
+        if (((connection_complete_ | CCON_SDP) == CCON_ALL) && (result !=0)) {
+            DBGPrintf("      Guess SDP Response failure\n");
+            connection_complete_ |= CCON_SDP;
+            btController_->sendHCIWriteScanEnable(2);
+        }
     }
 }
 

@@ -1017,6 +1017,7 @@ public:
 	void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size);
 	void sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint8_t *data, uint16_t size);
 	void sw_getIMUCalValues(float *accel, float *gyro);
+    bool sw_handle_usb_init_of_joystick(uint8_t *buffer, uint16_t cb, bool timer_event);
 
 protected:
     // From USBDriver
@@ -1033,6 +1034,7 @@ protected:
     virtual void disconnect_collection(Device_t *dev);
     virtual bool hid_process_out_data(const Transfer_t *transfer);
     virtual bool hid_process_in_data(const Transfer_t *transfer);
+    virtual void hid_timer_event(USBDriverTimer *whichTimer);
 
     // Bluetooth data
     virtual hidclaim_t claim_bluetooth(BluetoothConnection *btconnection, uint32_t bluetooth_class, uint8_t *remoteName, int type);
@@ -1068,6 +1070,9 @@ private:
     bool mapNameToJoystickType(const uint8_t *remoteName);
     //void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size);
 	//void sw_sendCmd_norumble(uint8_t packetID, uint8_t cmd, uint8_t *data, uint16_t size);
+	//void sw_sendCmdUSB(uint8_t cmd, uint8_t *data, uint8_t size);
+    void sw_sendCmdUSB(uint8_t cmd, uint32_t timeout);
+	void sw_sendSubCmdUSB(uint8_t sub_cmd, uint8_t *data, uint8_t size, uint32_t timeout = 0);
 	void sw_parseAckMsg(const uint8_t *buf_);
 	
 	//kludge for switch having different button values
@@ -1093,6 +1098,10 @@ private:
     uint8_t leds_[3] = {0, 0, 0};
     uint8_t connected_ = 0; // what type of device if any is connected xbox 360...
     uint8_t connectedComplete_pending_ = 0;
+    uint8_t sw_last_cmd_sent_ = 0;
+    uint8_t sw_last_cmd_repeat_count = 0;
+    enum {SW_CMD_TIMEOUT = 250000};
+    elapsedMicros em_sw_;
 
     // Used by HID code
     uint8_t collections_claimed = 0;

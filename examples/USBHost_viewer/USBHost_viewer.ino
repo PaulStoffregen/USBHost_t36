@@ -18,7 +18,7 @@
 // This example is in the public domain
 //=============================================================================
 //#define USE_ST77XX // define this if you wish to use one of these displays.
-//#define USE_KURTE_MMOD2
+#define USE_KURTE_MMOD2
 
 #include "USBHost_t36.h"
 #include <EEPROM.h>
@@ -667,8 +667,7 @@ void ProcessJoystickData() {
         Serial.print("Joystick: buttons = ");
         buttons = joystick.getButtons();
         Serial.print(buttons, HEX);
-        //Serial.printf(" AMasks: %x %x:%x", axis_mask, (uint32_t)(user_axis_mask >> 32), (uint32_t)(user_axis_mask & 0xffffffff));
-        //Serial.printf(" M: %lx %lx", axis_mask, joystick.axisChangedMask());
+        Serial.printf(" M: %lx %lx", axis_mask, joystick.axisChangedMask());
         if (show_changed_only) {
             for (uint8_t i = 0; axis_changed_mask != 0; i++, axis_changed_mask >>= 1) {
                 if (axis_changed_mask & 1) {
@@ -711,6 +710,7 @@ void ProcessJoystickData() {
             break;
         case JoystickController::SWITCH:
         {
+          if(bthid_driver_active[0]) {
             ltv = joystick.getAxis(6);
             rtv = joystick.getAxis(7);
             //if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
@@ -721,8 +721,19 @@ void ProcessJoystickData() {
                 joystick.setRumble(ltv, rtv);
                 em_since_last_set_rumble = 0;
             }
+          } else {
+            ltv = joystick.getAxis(6);  //new Jamwall 6/5, Beboncool 6/5 
+            rtv = joystick.getAxis(5);
+            Serial.printf(" Set Rumble %d %d\n", ltv, rtv);
+            if(em_since_last_set_rumble > 100) {
+                joystick_left_trigger_value = ltv;
+                joystick_right_trigger_value = rtv;
+                joystick.setRumble(ltv, rtv);
+                em_since_last_set_rumble = 0;
+            }
+          }
             //}
-
+          //if(bthid_driver_active[0]) {
             Serial.println("\nIMU CalibratedAccel/Gyro");
             float accel[3];
             float gyro[3];
@@ -749,11 +760,11 @@ void ProcessJoystickData() {
                 Serial.println("Battery EMPTY");
                 break;
             }
+          //}
         }
             break;
         case JoystickController::XBOXONE:
         case JoystickController::XBOX360:
-        //case JoystickController::SWITCH:
             ltv = joystick.getAxis(4);
             rtv = joystick.getAxis(5);
             if ((ltv != joystick_left_trigger_value) || (rtv != joystick_right_trigger_value)) {
@@ -825,7 +836,26 @@ void tft_JoystickData() {
     // Second Axis as well as maybe L1/R1 axis 
     switch (joystick.joystickType()) {
     case JoystickController::SWITCH:
-        // like XBOXONE, but so far no triggers.
+        //Second Axis
+        if (user_axis[2] != x2_cur) {  //xR
+            x2_cur = user_axis[2];
+            something_changed = true;
+        }
+        if (user_axis[3] != y2_cur) {  //yR or z-axis
+            y2_cur = user_axis[3];
+            something_changed = true;
+        }
+        
+        // Shoulder buttons 
+        if (user_axis[6] != L1_cur) {  //xR
+            L1_cur = user_axis[6];
+            something_changed = true;
+        }
+        if (user_axis[7] != R1_cur) {  //yR or z-axis
+            R1_cur = user_axis[7];
+            something_changed = true;
+        }
+        break;
     case JoystickController::XBOXONE:
         //Second Axis
         if (user_axis[2] != x2_cur) {  //xR
