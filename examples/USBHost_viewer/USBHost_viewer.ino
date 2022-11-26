@@ -18,7 +18,7 @@
 // This example is in the public domain
 //=============================================================================
 //#define USE_ST77XX // define this if you wish to use one of these displays.
-//#define USE_KURTE_MMOD2
+#define USE_KURTE_MMOD2
 
 #include "USBHost_t36.h"
 #include <EEPROM.h>
@@ -87,8 +87,8 @@ USBHIDParser hid7(myusb);
 MouseController mouse(myusb);
 DigitizerController tablet(myusb);
 JoystickController joystick(myusb);
-BluetoothController bluet(myusb, false, "0000", true);   // Version does pairing to device
-//BluetoothController bluet(myusb);   // version assumes it already was paired
+//BluetoothController bluet(myusb, false, "0000", true);   // Version does pairing to device
+BluetoothController bluet(myusb);   // version assumes it already was paired
 RawHIDController rawhid2(myusb);
 
 // Lets only include in the lists The most top level type devices we wish to show information for.
@@ -667,8 +667,7 @@ void ProcessJoystickData() {
         Serial.print("Joystick: buttons = ");
         buttons = joystick.getButtons();
         Serial.print(buttons, HEX);
-        //Serial.printf(" AMasks: %x %x:%x", axis_mask, (uint32_t)(user_axis_mask >> 32), (uint32_t)(user_axis_mask & 0xffffffff));
-        //Serial.printf(" M: %lx %lx", axis_mask, joystick.axisChangedMask());
+        Serial.printf(" M: %lx %lx", axis_mask, joystick.axisChangedMask());
         if (show_changed_only) {
             for (uint8_t i = 0; axis_changed_mask != 0; i++, axis_changed_mask >>= 1) {
                 if (axis_changed_mask & 1) {
@@ -734,7 +733,7 @@ void ProcessJoystickData() {
             }
           }
             //}
-          if(bthid_driver_active[0]) {
+          //if(bthid_driver_active[0]) {
             Serial.println("\nIMU CalibratedAccel/Gyro");
             float accel[3];
             float gyro[3];
@@ -761,7 +760,7 @@ void ProcessJoystickData() {
                 Serial.println("Battery EMPTY");
                 break;
             }
-          }
+          //}
         }
             break;
         case JoystickController::XBOXONE:
