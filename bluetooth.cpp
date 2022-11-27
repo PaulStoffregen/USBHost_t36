@@ -46,7 +46,7 @@ void inline DBGPrintf(...) {};
 void inline DBGFlush() {};
 #else
 #define DBGPrintf USBHDBGSerial.printf
-#define DBGFlush USBHDBGSerial.flush
+#define DBGFlush  USBHDBGSerial.flush
 #endif
 elapsedMillis em_rx_tx2 = 0;
 elapsedMillis em_rx_tx = 0;
@@ -279,7 +279,8 @@ void BluetoothController::timer_event(USBDriverTimer *whichTimer)
     if (whichTimer == &timer_) {
         if (timer_connection_) timer_connection_->timer_event(whichTimer);
     } else if (whichTimer->pointer) {
-        ((BluetoothController*)(whichTimer->pointer))->timer_event(whichTimer);
+        BluetoothConnection* btc = (BluetoothConnection*)(whichTimer->pointer);
+        btc->timer_event(whichTimer);
     }
 
 }
@@ -1598,6 +1599,9 @@ void BluetoothController::handle_hci_disconnect_complete()
     #ifdef DEBUG_BT
     print_error_codes(rxbuf_[5]);
     #endif 
+
+    // bail if no current connection
+    if (!current_connection_) return;
 
     if (current_connection_->device_driver_) {
         current_connection_->device_driver_->release_bluetooth();
