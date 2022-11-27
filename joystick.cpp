@@ -27,7 +27,7 @@
 #define print   USBHost::print_
 #define println USBHost::println_
 
-//#define DEBUG_JOYSTICK
+#define DEBUG_JOYSTICK
 #ifdef  DEBUG_JOYSTICK
 #define DBGPrintf USBHDBGSerial.printf
 #else
@@ -713,7 +713,7 @@ bool JoystickController::sw_handle_usb_init_of_joystick(uint8_t *buffer, uint16_
     if (buffer) {
         if ((buffer[0] != 0x81) && (buffer[0] != 0x21))
             return false; // was not an event message
-        if (driver_) driver_->stopTimer();
+        driver_->stopTimer();
         uint8_t ack_rpt = buffer[0];
         if (ack_rpt == 0x81) {
             uint8_t ack_81_subrpt = buffer[1];
@@ -790,7 +790,6 @@ bool JoystickController::sw_handle_usb_init_of_joystick(uint8_t *buffer, uint16_
             packet_[3] = 0x00;
             packet_[4] = (0x6037 - 0x6020 + 1);
             sw_sendSubCmdUSB(0x10, packet_, 5, SW_CMD_TIMEOUT);   // doesnt work wired
-            connectedComplete_pending_++;
             break;
 		case 3:
 			DBGPrintf("\n Read: Factory Analog stick calibration and Controller Colours\n");
@@ -799,8 +798,7 @@ bool JoystickController::sw_handle_usb_init_of_joystick(uint8_t *buffer, uint16_
 			packet_[2] = 0x00;
 			packet_[3] = 0x00;
 			packet_[4] = (0x6055 - 0x603D + 1); 
-			sw_sendCmd(0x10, packet_, 5);	
-            connectedComplete_pending_++;
+			sw_sendSubCmdUSB(0x10, packet_, 5, SW_CMD_TIMEOUT);	
             break;
         case 4:
             connectedComplete_pending_++;
@@ -849,7 +847,7 @@ bool JoystickController::hid_process_in_data(const Transfer_t *transfer)
         if (sw_handle_usb_init_of_joystick(buffer, cnt, false))
             return true;
 		// the main HID parse code should handle it. 
-		process_bluetooth_HID_data(buffer, cnt);
+		sw_process_HID_data(buffer, cnt);
         return true; // don't let main hid code process this.		
 	}
 
@@ -865,6 +863,13 @@ void JoystickController::hid_timer_event(USBDriverTimer *whichTimer)
     sw_handle_usb_init_of_joystick(nullptr, 0, true);
 }
 
+void JoystickController::bt_hid_timer_event(USBDriverTimer *whichTimer)
+{
+    DBGPrintf("Bluetooth JoystickController: Timer\n");
+    if (!btconnect) return;
+    btconnect->stopTimer();
+    sw_handle_bt_init_of_joystick(nullptr, 0, true);
+}
 
 bool JoystickController::hid_process_control(const Transfer_t *transfer) {
     Serial.printf("USBHIDParser::control msg: %x %x : %x %u :", transfer->setup.word1, transfer->setup.word2, transfer->buffer, transfer->length);
@@ -1319,6 +1324,8 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
     //   LX LY RX RY BT BT PS LT RT
     DBGPrintf("JoystickController::process_bluetooth_HID_data: data[0]=%x\n", data[0]);
     // May have to look at this one with other controllers...
+
+
     if (data[0] == 1) {
         //print("  Joystick Data: ");
         // print_hexbytes(data, length);
@@ -1558,8 +1565,145 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         //DBGPrintf("Axis Mask (axis_mask_, axis_changed_mask_; %d, %d\n", axis_mask_,axis_changed_mask_);
         joystickEvent = true;
         connected_ = true;
-    #if 1    //Switch
-    } else if (data[0] == 0x3f) {
+    } else if (joystickType_ == SWITCH) {
+        if (sw_handle_bt_init_of_joystick(data, length, false))
+            return true;
+
+        return sw_process_HID_data(data, length);
+    }
+    
+    return false;
+}
+
+
+
+//-----------------------------------------------------------------------------
+// Process SWITCH controller data messages - split out here as used both for HID
+// and Bluetooth HID
+//-----------------------------------------------------------------------------
+bool JoystickController::sw_handle_bt_init_of_joystick(const uint8_t *data, uint16_t length, bool timer_event)
+{
+
+    if (data) {
+        if (data[0] != 0x21) return false;
+        DBGPrintf("Joystick Acknowledge Command Rcvd! pending: %u SC: %x", connectedComplete_pending_, data[14]);
+        if (data[13] & 0x80) DBGPrintf(" ACK(%x)\n", data[13]);
+        else DBGPrintf(" ** NACK(%x) **\n", data[13]);
+        DBGPrintf("  Joystick Data: ");
+        for (uint16_t i = 0; i < length; i++) DBGPrintf("%02x ", data[i]);
+        DBGPrintf("\r\n");
+        
+        btconnect->stopTimer();
+
+        sw_parseAckMsg(data);
+
+        DBGPrintf("\t(%u)CMD Submd ack cmd: %x \n", (uint32_t)em_sw_, data[1]);
+        switch (data[1]) {
+            case 0x40: DBGPrintf("IMU Enabled......\n"); break;
+            case 0x48: DBGPrintf("Rumbled Enabled......\n"); break;
+            case 0x10: DBGPrintf("IMU Cal......\n"); break;
+            case 0x30: DBGPrintf("Std Rpt Enabled......\n"); break;
+            default: DBGPrintf("Other"); break;
+        }
+        if (!initialPass_) return true; // don't need to process
+        // Shold maybe double check the right one...
+        connectedComplete_pending_++; 
+    } else if (timer_event) {
+        if (!initialPass_) return true; // don't need to process
+        DBGPrintf("\t(%u)Timer event - advance\n", (uint32_t)em_sw_);
+        connectedComplete_pending_++; 
+    }
+
+    // only called by BT;
+    uint8_t packet_[8];
+    switch (connectedComplete_pending_) {
+    case 1:
+        DBGPrintf("\nSet Shipment Low Power State\n");
+        packet_[0] = 0x00;
+        sw_sendCmd(0x08, packet_, 1, SW_CMD_TIMEOUT );
+        break;
+/*      case 2:
+        DBGPrintf("\n Read: Stick device parameters1\n");
+        packet_[0] = 0x80;
+        packet_[1] = 0x60;
+        packet_[2] = 0x00;
+        packet_[3] = 0x00;
+        packet_[4] = 0x18; 
+        sw_sendCmd(0x10, packet_, 5);   
+        connectedComplete_pending_ = 3;
+        break;
+    case 3:
+        DBGPrintf("\n Read: Stick device parameters2\n");
+        packet_[0] = 0x98;
+        packet_[1] = 0x60;
+        packet_[2] = 0x00;
+        packet_[3] = 0x00;
+        packet_[4] = 0x12; 
+        sw_sendCmd(0x10, packet_, 5);   
+        connectedComplete_pending_ = 4;
+        break;
+    case 4:
+        DBGPrintf("\n Read: User Analog Sticks calibration\n");
+        packet_[0] = 0x10;
+        packet_[1] = 0x80;
+        packet_[2] = 0x00;
+        packet_[3] = 0x00;
+        packet_[4] = 0x18;
+        sw_sendCmd(0x10, packet_, 5);   
+        connectedComplete_pending_ = 5;
+        break;
+*/
+    case 2:
+        DBGPrintf("\n Read: Factory Analog stick calibration and Controller Colours\n");
+        packet_[0] = 0x3D;
+        packet_[1] = 0x60;
+        packet_[2] = 0x00;
+        packet_[3] = 0x00;
+        packet_[4] = (0x6055 - 0x603D + 1); 
+        sw_sendCmd(0x10, packet_, 5, SW_CMD_TIMEOUT);   
+        break;
+    case 3:
+        DBGPrintf("\nTry to Get IMU Calibration Data\n");
+        packet_[0] = 0x20;
+        packet_[1] = 0x60;
+        packet_[2] = 0x00;
+        packet_[3] = 0x00;
+        packet_[4] = (0x6037 - 0x6020 + 1);
+        sw_sendCmd(0x10, packet_, 5, SW_CMD_TIMEOUT);   
+        break;
+    case 4:
+        DBGPrintf("\nTry to Enable IMU\n");
+        packet_[0] = 0x01;
+        sw_sendCmd(0x40, packet_, 1, SW_CMD_TIMEOUT);   /* 0x40 IMU, note: 0x00 would disable */
+        break;
+    case 5:
+        DBGPrintf("\nTry to Enable Rumble\n");
+        packet_[0] = 0x01;
+        sw_sendCmd(0x48, packet_, 1, SW_CMD_TIMEOUT);
+        break;
+    case 6:
+        DBGPrintf("\nTry to set LEDS\n");
+        setLEDs(0x1, 0, 0);
+        break;
+    case 7:
+        DBGPrintf("\nSet Report Mode\n");
+        packet_[0] = 0x30; //0x3F;
+        sw_sendCmd(0x03, packet_, 1, SW_CMD_TIMEOUT);
+        break;
+    case 8:
+        DBGPrintf("\nTry to set Rumble\n");
+        setRumble(0xff, 0xff, 0xff);
+        connectedComplete_pending_ = 0xff;
+        break;
+    }
+    return true;
+}
+
+
+
+bool JoystickController::sw_process_HID_data(const uint8_t *data, uint16_t length)
+{
+    if (data[0] == 0x3f) {
         // Assume switch:
         //<<(02 15 21):48 20 11 00 0D 00 71 00 A1 
         // 16 bits buttons
@@ -1601,20 +1745,20 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
             axis_changed_mask_ |= (1 << 9);
             anychange = true;            
         }
-		
-		//just a hack for a single joycon.
-		if(buttons == 0x8000) {	//ZL
-			axis[6] = 1;
-		} else {
-			axis[6] = 0;
-		}
-		if(buttons == 0x8000) {		//ZR
-			axis[7] = 1;
-		} else {
-			axis[7] = 0;
-		}
-		
-		
+        
+        //just a hack for a single joycon.
+        if(buttons == 0x8000) { //ZL
+            axis[6] = 1;
+        } else {
+            axis[6] = 0;
+        }
+        if(buttons == 0x8000) {     //ZR
+            axis[7] = 1;
+        } else {
+            axis[7] = 0;
+        }
+        
+        
         for (uint8_t i = 0; i < sizeof (switch_bt_axis_order_mapping); i++) {
             // The first two values were unsigned.
             int axis_value = (uint16_t)sw1d->axis[i];
@@ -1639,25 +1783,25 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         axis_mask_ = 0x1ff;
         axis_changed_mask_ = 0; // assume none for now
         // We have a data transfer.  Lets see what is new...
-		uint32_t cur_buttons;
+        uint32_t cur_buttons;
         if(txpipe_ != 0) {
-			cur_buttons = data[3] | (data[4] << 8) | (data[5] << 16);
-		} else {
-			cur_buttons = data[3] | (data[4] << 8) | (data[5] << 16);
-			buttonOffset_ = 0x8000;
-		}
-		//DBGPrintf("BUTTONS: %x\n", cur_buttons);
-		if(initialPass_ == true) {
-			if(cur_buttons == 0x8000) {
-				buttonOffset_ = 0x8000;
-			} else {
-				buttonOffset_ = 0;
-			}
-			initialPass_ = false;
-		}
-		
-		cur_buttons = cur_buttons - buttonOffset_;
-		//Serial.printf("Buttons (3,4,5): %x, %x, %x, %x, %x, %x\n", buttonOffset_, cur_buttons, buttons, data[3], data[4], data[5]);
+            cur_buttons = data[3] | (data[4] << 8) | (data[5] << 16);
+        } else {
+            cur_buttons = data[3] | (data[4] << 8) | (data[5] << 16);
+            buttonOffset_ = 0x8000;
+        }
+        //DBGPrintf("BUTTONS: %x\n", cur_buttons);
+        if(initialPass_ == true) {
+            if(cur_buttons == 0x8000) {
+                buttonOffset_ = 0x8000;
+            } else {
+                buttonOffset_ = 0;
+            }
+            initialPass_ = false;
+        }
+        
+        cur_buttons = cur_buttons - buttonOffset_;
+        //Serial.printf("Buttons (3,4,5): %x, %x, %x, %x, %x, %x\n", buttonOffset_, cur_buttons, buttons, data[3], data[4], data[5]);
 
         if (cur_buttons != buttons) {
             buttons = cur_buttons;
@@ -1675,53 +1819,53 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
         */
 
        uint16_t new_axis[14];
-		//Joystick data
+        //Joystick data
         new_axis[0] = data[6] | ((data[7] & 0xF) << 8);   //xl
-        new_axis[1] = (data[7] >> 4) | (data[8] << 4);	  //yl
+        new_axis[1] = (data[7] >> 4) | (data[8] << 4);    //yl
         new_axis[2] = data[9] | ((data[10] & 0xF) << 8);  //xr
         new_axis[3] = (data[10] >> 4) | (data[11] << 4);  //yr
-		
-		//Kludge to get trigger buttons tripping
-		if(buttons == 0x40) {  	//R1
-			new_axis[5] = 1;
-		} else {
-			new_axis[5] = 0;
-		}
-		if(buttons == 0x400000) {	//L1
-			new_axis[4] = 1;
-		} else {
-			new_axis[4] = 0;
-		}
-		if(buttons == 0x400040) {
-			new_axis[4] = 0xff;
-			new_axis[5] = 0xff;
-		}
-		if(buttons == 0x800000) {	//ZL
-			new_axis[6] = 0xff;
-		} else {
-			new_axis[6] = 0;
-		}
-		if(buttons == 0x80) {		//ZR
-			new_axis[7] = 0xff;
-		} else {
-			new_axis[7] = 0;
-		}
-		if(buttons == 0x800080) {
-			new_axis[6] = 0xff;
-			new_axis[7] = 0xff;
-		}
-		
-		axis[8] = (int16_t)(data[13]  | (data[14] << 8)); //ax
-		axis[9] = (int16_t)(data[15]  | (data[16] << 8)); //ay
-		axis[10] = (int16_t)(data[17] | (data[18] << 8)); //az
-		axis[11] = (int16_t)(data[19] | (data[20] << 8));  //gx
-		axis[12] = (int16_t)(data[21] | (data[22] << 8)); //gy
-		axis[13] = (int16_t)(data[23] | (data[24] << 8)); //gz	
-		
-		axis[14] = data[2] >> 4;  //Battery level, 8=full, 6=medium, 4=low, 2=critical, 0=empty
+        
+        //Kludge to get trigger buttons tripping
+        if(buttons == 0x40) {   //R1
+            new_axis[5] = 1;
+        } else {
+            new_axis[5] = 0;
+        }
+        if(buttons == 0x400000) {   //L1
+            new_axis[4] = 1;
+        } else {
+            new_axis[4] = 0;
+        }
+        if(buttons == 0x400040) {
+            new_axis[4] = 0xff;
+            new_axis[5] = 0xff;
+        }
+        if(buttons == 0x800000) {   //ZL
+            new_axis[6] = 0xff;
+        } else {
+            new_axis[6] = 0;
+        }
+        if(buttons == 0x80) {       //ZR
+            new_axis[7] = 0xff;
+        } else {
+            new_axis[7] = 0;
+        }
+        if(buttons == 0x800080) {
+            new_axis[6] = 0xff;
+            new_axis[7] = 0xff;
+        }
+        
+        axis[8] = (int16_t)(data[13]  | (data[14] << 8)); //ax
+        axis[9] = (int16_t)(data[15]  | (data[16] << 8)); //ay
+        axis[10] = (int16_t)(data[17] | (data[18] << 8)); //az
+        axis[11] = (int16_t)(data[19] | (data[20] << 8));  //gx
+        axis[12] = (int16_t)(data[21] | (data[22] << 8)); //gy
+        axis[13] = (int16_t)(data[23] | (data[24] << 8)); //gz  
+        
+        axis[14] = data[2] >> 4;  //Battery level, 8=full, 6=medium, 4=low, 2=critical, 0=empty
 
-		//map axes
-		for (uint8_t i = 0; i < 8; i++) {
+        //map axes
+        for (uint8_t i = 0; i < 8; i++) {
             // The first two values were unsigned.
             if (new_axis[i] != axis[i]) {
                 axis[i] = new_axis[i];
@@ -1729,117 +1873,13 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
                 anychange = true;
             }
         }
-		
+        
         joystickEvent = true;
-		initialPass_ = false;
-		
-    } else if (data[0] == 0x21)  {
-        DBGPrintf("Joystick Acknowledge Command Rcvd! pending: %u SC: %x", connectedComplete_pending_, data[14]);
-        if (data[13] & 0x80) DBGPrintf(" ACK(%x)\n", data[13]);
-        else DBGPrintf(" ** NACK(%x) **\n", data[13]);
-        DBGPrintf("  Joystick Data: ");
-        for (uint16_t i = 0; i < length; i++) DBGPrintf("%02x ", data[i]);
-        DBGPrintf("\r\n");
-		
-		sw_parseAckMsg(data);
-
-		//if(txpipe_ != 0) {
-		if(btdriver_) {	
-			uint8_t packet_[8];
-			switch (connectedComplete_pending_) {
-			case 1:
-				DBGPrintf("\nSet Shipment Low Power State\n");
-				packet_[0] = 0x00;
-				sw_sendCmd(0x08, packet_, 1);
-				connectedComplete_pending_ = 2;
-				break;
-	/*		case 2:
-				DBGPrintf("\n Read: Stick device parameters1\n");
-				packet_[0] = 0x80;
-				packet_[1] = 0x60;
-				packet_[2] = 0x00;
-				packet_[3] = 0x00;
-				packet_[4] = 0x18; 
-				sw_sendCmd(0x10, packet_, 5);	
-				connectedComplete_pending_ = 3;
-				break;
-			case 3:
-				DBGPrintf("\n Read: Stick device parameters2\n");
-				packet_[0] = 0x98;
-				packet_[1] = 0x60;
-				packet_[2] = 0x00;
-				packet_[3] = 0x00;
-				packet_[4] = 0x12; 
-				sw_sendCmd(0x10, packet_, 5);	
-				connectedComplete_pending_ = 4;
-				break;
-			case 4:
-				DBGPrintf("\n Read: User Analog Sticks calibration\n");
-				packet_[0] = 0x10;
-				packet_[1] = 0x80;
-				packet_[2] = 0x00;
-				packet_[3] = 0x00;
-				packet_[4] = 0x18;
-				sw_sendCmd(0x10, packet_, 5);	
-				connectedComplete_pending_ = 5;
-				break;
-	*/
-			case 2:
-				DBGPrintf("\n Read: Factory Analog stick calibration and Controller Colours\n");
-				packet_[0] = 0x3D;
-				packet_[1] = 0x60;
-				packet_[2] = 0x00;
-				packet_[3] = 0x00;
-				packet_[4] = (0x6055 - 0x603D + 1); 
-				sw_sendCmd(0x10, packet_, 5);	
-				connectedComplete_pending_ = 3;
-				break;
-			case 3:
-				DBGPrintf("\nTry to Get IMU Calibration Data\n");
-				packet_[0] = 0x20;
-				packet_[1] = 0x60;
-				packet_[2] = 0x00;
-				packet_[3] = 0x00;
-				packet_[4] = (0x6037 - 0x6020 + 1);
-				sw_sendCmd(0x10, packet_, 5);	
-				connectedComplete_pending_ = 4;
-				break;
-			case 4:
-				DBGPrintf("\nTry to Enable IMU\n");
-				packet_[0] = 0x01;
-				sw_sendCmd(0x40, packet_, 1);   /* 0x40 IMU, note: 0x00 would disable */
-				connectedComplete_pending_ = 5;
-				break;
-			case 5:
-				DBGPrintf("\nTry to Enable Rumble\n");
-				packet_[0] = 0x01;
-				sw_sendCmd(0x48, packet_, 1);
-				connectedComplete_pending_ = 6;
-				break;
-			case 6:
-				DBGPrintf("\nTry to set LEDS\n");
-				setLEDs(0x1, 0, 0);
-				connectedComplete_pending_ = 7;
-				break;
-			case 7:
-				DBGPrintf("\nSet Report Mode\n");
-				packet_[0] = 0x30; //0x3F;
-				sw_sendCmd(0x03, packet_, 1);
-				connectedComplete_pending_ = 8;
-				break;
-			case 8:
-				DBGPrintf("\nTry to set Rumble\n");
-				setRumble(0xff, 0xff, 0xff);
-				connectedComplete_pending_ = 0;
-				break;
-			}
-		}
+        initialPass_ = false;
+        
     }
-#endif 
-
     return false;
 }
-
 
 hidclaim_t JoystickController::bt_claim_collection(BluetoothConnection *btconnection, uint32_t bluetooth_class, uint32_t topusage)
 {
@@ -1973,8 +2013,8 @@ void JoystickController::connectionComplete()
 		uint8_t packet_[8];
         DBGPrintf("Request Device Info......\n");
 		packet_[0] = 0x00;
-		sw_sendCmd(0x02, packet_, 1);
-        connectedComplete_pending_ = 1;
+		sw_sendCmd(0x02, packet_, 1, SW_CMD_TIMEOUT);
+        connectedComplete_pending_ = 0;
 
 		DBGPrintf("Config Complete!\n");
 		
@@ -2058,7 +2098,7 @@ bool JoystickController::PS4Pair(uint8_t* bdaddr) {
 }
 
 //Nintendo Switch functions
-void JoystickController::sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size) {
+void JoystickController::sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size, uint32_t timeout) {
 	struct SWProBTSendConfigData *packet =  (struct SWProBTSendConfigData *)txbuf_ ;
 	memset((void*)packet, 0, sizeof(struct SWProBTSendConfigData));
 	packet->hid_hdr = 0xA2; // HID BT Get_report (0xA0) | Report Type (Output)
@@ -2079,8 +2119,14 @@ void JoystickController::sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size) {
 	for(uint16_t i = 0; i < size; i++) {
 		packet->subCommandData[i] = data[i];
 	}
-	if (btdriver_) btdriver_->sendL2CapCommand((uint8_t *)packet, sizeof(struct SWProBTSendConfigData), BluetoothController::INTERRUPT_SCID /*0x40*/);
+	if (btdriver_) {
+        if (timeout != 0) {
+            btconnect->startTimer(timeout);
+        }
+        btdriver_->sendL2CapCommand((uint8_t *)packet, sizeof(struct SWProBTSendConfigData), BluetoothController::INTERRUPT_SCID /*0x40*/);
+    }
     else Serial.printf("\n####### sw_sendCMD(%x %p %u) called with btdriver_ == 0 ", cmd, data, size);
+    em_sw_ = 0;
 }
 
 void JoystickController::sw_sendCmdUSB(uint8_t cmd, uint32_t timeout) {

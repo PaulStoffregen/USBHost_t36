@@ -37,14 +37,16 @@
 #define print   USBHost::print_
 #define println USBHost::println_
 
-//#define DEBUG_BT
-//#define DEBUG_BT_VERBOSE
+#define DEBUG_BT
+#define DEBUG_BT_VERBOSE
 
 #ifndef DEBUG_BT
 #undef DEBUG_BT_VERBOSE
 void inline DBGPrintf(...) {};
+void inline DBGFlush() {};
 #else
 #define DBGPrintf USBHDBGSerial.printf
+#define DBGFlush USBHDBGSerial.flush
 #endif
 elapsedMillis em_rx_tx2 = 0;
 elapsedMillis em_rx_tx = 0;
@@ -273,7 +275,13 @@ void BluetoothController::disconnect()
 
 void BluetoothController::timer_event(USBDriverTimer *whichTimer)
 {
-    if (timer_connection_) timer_connection_->timer_event();
+    DBGPrintf("BT::Timer_event(%p)->%p\n", whichTimer, whichTimer->pointer);DBGFlush();
+    if (whichTimer == &timer_) {
+        if (timer_connection_) timer_connection_->timer_event(whichTimer);
+    } else if (whichTimer->pointer) {
+        ((BluetoothController*)(whichTimer->pointer))->timer_event(whichTimer);
+    }
+
 }
 
 

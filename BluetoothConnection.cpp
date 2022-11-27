@@ -36,8 +36,8 @@
 #define print   USBHost::print_
 #define println USBHost::println_//#define DEBUG_BT
 
-//#define DEBUG_BT
-//#define DEBUG_BT_VERBOSE
+#define DEBUG_BT
+#define DEBUG_BT_VERBOSE
 
 #ifndef DEBUG_BT
 #undef DEBUG_BT_VERBOSE
@@ -70,6 +70,12 @@ void BluetoothConnection::initializeConnection(BluetoothController *btController
 {
     device_driver_ = nullptr;
     btController_ = btController;  // back pointer to main object
+
+    // lets setup a connection for this timer
+    bt_connection_timer_.init(btController_); // so it will use the main device
+    bt_connection_timer_.pointer = (void*)this; // but rememember us. 
+
+
     connection_rxid_ = 0;
     control_dcid_ = 0x70;
     interrupt_dcid_ = 0x71;
@@ -600,11 +606,15 @@ void BluetoothConnection::handle_HCI_OP_ROLE_DISCOVERY_complete(uint8_t *rxbuf)
     }
 }
 
-void BluetoothConnection::timer_event()
+void BluetoothConnection::timer_event(USBDriverTimer *whichTimer)
 {
     DBGPrintf("BluetoothConnection::timer_event(%p) : %u\n", this, connection_started_);
 
-    if (!connection_started_) {
+    if (whichTimer == &bt_connection_timer_) {
+        if (device_driver_) {
+            device_driver_->bt_hid_timer_event(whichTimer);
+        }
+    } else if (!connection_started_) {
         DBGPrintf("\t** Timed out now try issue connection requsts **\n ");
         connection_started_ = true;
         connection_started_by_timer_ = true;

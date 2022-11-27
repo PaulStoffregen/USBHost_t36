@@ -499,7 +499,6 @@ class USBDriverTimer {
 public:
     USBDriverTimer() { }
     USBDriverTimer(USBDriver *d) : driver(d) { }
-    USBDriverTimer(USBHIDInput *hd) : driver(nullptr), hidinput(hd) { }
 
     void init(USBDriver *d) { driver = d; };
     void start(uint32_t microseconds);
@@ -509,7 +508,6 @@ public:
     uint32_t started_micros; // testing only
 private:
     USBDriver      *driver;
-    USBHIDInput    *hidinput;
     uint32_t       usec;
     USBDriverTimer *next;
     USBDriverTimer *prev;
@@ -582,6 +580,7 @@ private:
     virtual void bt_hid_input_data(uint32_t usage, int32_t value) {};
     virtual void bt_hid_input_end() {};
     virtual void bt_disconnect_collection(Device_t *dev) {};
+    virtual void bt_hid_timer_event(USBDriverTimer *whichTimer) { }
 
 
     BTHIDInput *next = NULL;
@@ -1014,9 +1013,8 @@ public:
     bool PS4GetCurrentPairing(uint8_t* bdaddr);
     bool PS4Pair(uint8_t* bdaddr);
 	
-	void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size);
+	void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size, uint32_t timeout=0);
 	void sw_getIMUCalValues(float *accel, float *gyro);
-    bool sw_handle_usb_init_of_joystick(uint8_t *buffer, uint16_t cb, bool timer_event);
 
 protected:
     // From USBDriver
@@ -1048,6 +1046,7 @@ protected:
     virtual void bt_hid_input_data(uint32_t usage, int32_t value);
     virtual void bt_hid_input_end();
     virtual void bt_disconnect_collection(Device_t *dev);
+    virtual void bt_hid_timer_event(USBDriverTimer *whichTimer);
 
 
 
@@ -1072,6 +1071,10 @@ private:
     void sw_sendCmdUSB(uint8_t cmd, uint32_t timeout);
 	void sw_sendSubCmdUSB(uint8_t sub_cmd, uint8_t *data, uint8_t size, uint32_t timeout = 0);
 	void sw_parseAckMsg(const uint8_t *buf_);
+    bool sw_handle_usb_init_of_joystick(uint8_t *buffer, uint16_t cb, bool timer_event);
+    bool sw_handle_bt_init_of_joystick(const uint8_t *data, uint16_t length, bool timer_event);
+
+    bool sw_process_HID_data(const uint8_t *data, uint16_t length);
 	
 	//kludge for switch having different button values
 	bool initialPass_ = true;
@@ -1100,6 +1103,7 @@ private:
     uint8_t sw_last_cmd_repeat_count = 0;
     enum {SW_CMD_TIMEOUT = 250000};
     elapsedMicros em_sw_;
+    
 
     // Used by HID code
     uint8_t collections_claimed = 0;
@@ -1961,12 +1965,15 @@ public:
     BTHIDInput * find_driver(uint32_t topusage);
     BTHIDInput * find_driver(const uint8_t *remoteName, int type);
 
+    void startTimer(uint32_t microseconds) {bt_connection_timer_.start(microseconds);}
+    void stopTimer() {bt_connection_timer_.stop();}
+
     void dumpHIDReportDescriptor();
     void print_input_output_feature_bits(uint8_t val);
     void printUsageInfo(uint8_t usage_page, uint16_t usage);
     void useHIDProtocol(bool useHID) {use_hid_protocol_ = useHID;}
     void connectToSDP(); // temp to see if we can do this later...
-    void timer_event();
+    void timer_event(USBDriverTimer *whichTimer);
 
     // member variables
     BluetoothConnection *next_ = nullptr;
@@ -2036,6 +2043,10 @@ public:
     bool SDPRequestCompleted() {return sdp_request_completed_;}
     uint32_t SDPRequestBufferUsed() {return sdp_request_buffer_used_cnt_;}
     // Add starts of SDP processing.
+
+    // Allow each connection to have it's own timer
+    USBDriverTimer  bt_connection_timer_;
+
 protected:
     friend class BluetoothController;
 
@@ -2083,6 +2094,7 @@ protected:
     void print_sdpe_val(sdp_element_t &sdpe, bool verbose);
     void decode_SDP_buffer(bool verbose_output = false);
     void decode_SDP_Data(bool by_user_command);
+
 
 };
 
