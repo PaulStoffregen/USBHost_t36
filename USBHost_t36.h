@@ -1078,7 +1078,10 @@ private:
 	
 	//kludge for switch having different button values
 	bool initialPass_ = true;
+	bool initialPassButtons_ = true;
+	bool initialPassBT_ = true;
 	uint32_t buttonOffset_ = 0x00;
+	bool bt_timer_event = false;
 	
     bool anychange = false;
     volatile bool joystickEvent = false;
