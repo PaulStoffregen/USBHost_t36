@@ -27,12 +27,18 @@
 #define print   USBHost::print_
 #define println USBHost::println_
 
-#define DEBUG_JOYSTICK
+//#define DEBUG_JOYSTICK
 #ifdef  DEBUG_JOYSTICK
 #define DBGPrintf USBHDBGSerial.printf
 #else
 #define DBGPrintf(...)
 #endif
+
+	
+template<class T>
+const T& clamp(const T& x, const T& lower, const T& upper) {
+    return min(upper, max(x, lower));
+}
 
 bool ack_rvd = false;
 
@@ -99,19 +105,22 @@ struct SWProIMUCalibration {
 struct SWProIMUCalibration SWIMUCal;
 
 struct SWProStickCalibration {
-	uint16_t rstick_center_x;
-	uint16_t rstick_center_y;
-	uint16_t rstick_x_min;
-	uint16_t rstick_x_max;
-	uint16_t rstick_y_min;
-	uint16_t rstick_y_max;
+	int16_t rstick_center_x;
+	int16_t rstick_center_y;
+	int16_t rstick_x_min;
+	int16_t rstick_x_max;
+	int16_t rstick_y_min;
+	int16_t rstick_y_max;
 	
-	uint16_t lstick_center_x;
-	uint16_t lstick_center_y;
-	uint16_t lstick_x_min;
-	uint16_t lstick_x_max;
-	uint16_t lstick_y_min;
-	uint16_t lstick_y_max;
+	int16_t lstick_center_x;
+	int16_t lstick_center_y;
+	int16_t lstick_x_min;
+	int16_t lstick_x_max;
+	int16_t lstick_y_min;
+	int16_t lstick_y_max;
+	
+	int16_t deadzone_left;
+	int16_t deadzone_right;
 }  __attribute__((packed));
 
 struct SWProStickCalibration SWStickCal;
@@ -792,6 +801,15 @@ bool JoystickController::sw_handle_usb_init_of_joystick(uint8_t *buffer, uint16_
             sw_sendSubCmdUSB(0x10, packet_, 5, SW_CMD_TIMEOUT);   // doesnt work wired
             break;
 		case 3:
+			DBGPrintf("\nTry to Get IMU Horizontal Offset Data\n");
+			packet_[0] = 0x80;
+			packet_[1] = 0x60;
+			packet_[2] = 0x00;
+			packet_[3] = 0x00;
+			packet_[4] = (0x6085 - 0x6080 + 1);
+			sw_sendSubCmdUSB(0x10, packet_, 5, SW_CMD_TIMEOUT);   
+			break;
+		case 4:
 			DBGPrintf("\n Read: Factory Analog stick calibration and Controller Colours\n");
 			packet_[0] = 0x3D;
 			packet_[1] = 0x60;
@@ -800,32 +818,32 @@ bool JoystickController::sw_handle_usb_init_of_joystick(uint8_t *buffer, uint16_
 			packet_[4] = (0x6055 - 0x603D + 1); 
 			sw_sendSubCmdUSB(0x10, packet_, 5, SW_CMD_TIMEOUT);	
             break;
-        case 4:
+        case 5:
             connectedComplete_pending_++;
             DBGPrintf("Enable IMU\n");
             packet_[0] = 0x01;
             sw_sendSubCmdUSB(0x40, packet_, 1, SW_CMD_TIMEOUT);
             break;
-        case 5:
+        case 6:
             DBGPrintf("JC_USB_CMD_NO_TIMEOUT\n");
             sw_sendCmdUSB(0x04, SW_CMD_TIMEOUT);
             break;
-        case 6:
+        case 7:
             DBGPrintf("Enable Rumble\n");
             packet_[0] = 0x01;
             sw_sendSubCmdUSB(0x48, packet_, 1, SW_CMD_TIMEOUT);
             break;
-        case 7:
+        case 8:
             DBGPrintf("Enable Std Rpt\n");
             packet_[0] = 0x30;
             sw_sendSubCmdUSB(0x03, packet_, 1, SW_CMD_TIMEOUT);
             break;
-        case 8:
+        case 9:
             DBGPrintf("JC_USB_CMD_NO_TIMEOUT\n");
             packet_[0] = 0x04;
             sw_sendCmdUSB(0x04, SW_CMD_TIMEOUT);
             break;
-        case 9:
+        case 10:
             connectedComplete_pending_ = 99;
             initialPass_ = false;
     }
@@ -1597,7 +1615,7 @@ bool JoystickController::sw_handle_bt_init_of_joystick(const uint8_t *data, uint
 
         sw_parseAckMsg(data);
 
-		Serial.printf("==========> Connection Pending: %d\n",connectedComplete_pending_);
+		DBGPrintf("==========> Connection Pending: %d\n",connectedComplete_pending_);
 
 
         if (!initialPassBT_) return true; // don't need to process
@@ -1608,7 +1626,7 @@ bool JoystickController::sw_handle_bt_init_of_joystick(const uint8_t *data, uint
         DBGPrintf("\t(%u)Timer event - advance\n", (uint32_t)em_sw_);
         connectedComplete_pending_++; 
     }
-		Serial.printf("==========> Connection Pending: %d\n",connectedComplete_pending_);
+		DBGPrintf("==========> Connection Pending: %d\n",connectedComplete_pending_);
 
     // only called by BT;
     uint8_t packet_[8];
@@ -1618,47 +1636,34 @@ bool JoystickController::sw_handle_bt_init_of_joystick(const uint8_t *data, uint
         packet_[0] = 0x00;
         sw_sendCmd(0x08, packet_, 1, SW_CMD_TIMEOUT );
         break;
-/*      case 2:
-        DBGPrintf("\n Read: Stick device parameters1\n");
-        packet_[0] = 0x80;
+      case 2:
+        DBGPrintf("\n Read Left joystick dead zone\n");
+        packet_[0] = 0x86;
         packet_[1] = 0x60;
         packet_[2] = 0x00;
         packet_[3] = 0x00;
-        packet_[4] = 0x18; 
-        sw_sendCmd(0x10, packet_, 5);   
-        connectedComplete_pending_ = 3;
+        packet_[4] = (0x6097 - 0x6086 + 1); 
+        sw_sendCmd(0x10, packet_, 5, SW_CMD_TIMEOUT);   
         break;
     case 3:
-        DBGPrintf("\n Read: Stick device parameters2\n");
+        DBGPrintf("\n Read Right stick dead zone\n");
         packet_[0] = 0x98;
         packet_[1] = 0x60;
         packet_[2] = 0x00;
         packet_[3] = 0x00;
-        packet_[4] = 0x12; 
-        sw_sendCmd(0x10, packet_, 5);   
-        connectedComplete_pending_ = 4;
+        packet_[4] = (0x60A9 - 0x6098 + 1);  
+        sw_sendCmd(0x10, packet_, 5, SW_CMD_TIMEOUT);   
         break;
     case 4:
-        DBGPrintf("\n Read: User Analog Sticks calibration\n");
-        packet_[0] = 0x10;
-        packet_[1] = 0x80;
-        packet_[2] = 0x00;
-        packet_[3] = 0x00;
-        packet_[4] = 0x18;
-        sw_sendCmd(0x10, packet_, 5);   
-        connectedComplete_pending_ = 5;
-        break;
-*/
-    case 2:
-        DBGPrintf("\n Read: Factory Analog stick calibration and Controller Colours\n");
+        DBGPrintf("\n Read: Factory Analog stick calibration\n");
         packet_[0] = 0x3D;
         packet_[1] = 0x60;
         packet_[2] = 0x00;
         packet_[3] = 0x00;
-        packet_[4] = (0x6055 - 0x603D + 1); 
+        packet_[4] = (0x604E - 0x603D + 1); 
         sw_sendCmd(0x10, packet_, 5, SW_CMD_TIMEOUT);   
         break;
-    case 3:
+    case 5:
         DBGPrintf("\nTry to Get IMU Calibration Data\n");
         packet_[0] = 0x20;
         packet_[1] = 0x60;
@@ -1667,26 +1672,35 @@ bool JoystickController::sw_handle_bt_init_of_joystick(const uint8_t *data, uint
         packet_[4] = (0x6037 - 0x6020 + 1);
         sw_sendCmd(0x10, packet_, 5, SW_CMD_TIMEOUT);   
         break;
-    case 4:
+	case 6:
+        DBGPrintf("\nTry to Get IMU Horizontal Offset Data\n");
+        packet_[0] = 0x80;
+        packet_[1] = 0x60;
+        packet_[2] = 0x00;
+        packet_[3] = 0x00;
+        packet_[4] = (0x6097 - 0x6080 + 1);
+        sw_sendCmd(0x10, packet_, 5, SW_CMD_TIMEOUT);   
+		break;
+    case 7:
         DBGPrintf("\nTry to Enable IMU\n");
         packet_[0] = 0x01;
         sw_sendCmd(0x40, packet_, 1, SW_CMD_TIMEOUT);   /* 0x40 IMU, note: 0x00 would disable */
         break;
-    case 5:
+    case 8:
         DBGPrintf("\nTry to Enable Rumble\n");
         packet_[0] = 0x01;
         sw_sendCmd(0x48, packet_, 1, SW_CMD_TIMEOUT);
         break;
-    case 6:
+    case 9:
         DBGPrintf("\nTry to set LEDS\n");
         setLEDs(0x1, 0, 0);
         break;
-    case 7:
+    case 10:
         DBGPrintf("\nSet Report Mode\n");
         packet_[0] = 0x30; //0x3F;
         sw_sendCmd(0x03, packet_, 1, SW_CMD_TIMEOUT);
         break;
-    case 8:
+    case 11:
         DBGPrintf("\nTry to set Rumble\n");
         setRumble(0xff, 0xff, 0xff);
 		initialPassBT_ = false;
@@ -1816,7 +1830,12 @@ bool JoystickController::sw_process_HID_data(const uint8_t *data, uint16_t lengt
         new_axis[1] = (data[7] >> 4) | (data[8] << 4);    //yl
         new_axis[2] = data[9] | ((data[10] & 0xF) << 8);  //xr
         new_axis[3] = (data[10] >> 4) | (data[11] << 4);  //yr
-        
+
+		//ToDo:  apply stick calibration
+		//float xout, yout;
+		//CalcAnalogStick(xout, yout, new_axis[0], new_axis[1], true);
+		//Serial.printf("Correctd Left Stick: %f, %f\n", xout , yout);
+	
         //Kludge to get trigger buttons tripping
         if(buttons == 0x40) {   //R1
             new_axis[5] = 1;
@@ -2191,7 +2210,7 @@ void JoystickController::sw_parseAckMsg(const uint8_t *buf_)
 	uint8_t icount = 0;
 	//uint8_t packet_[8];
 	
-	if((buf_[14] == 0x10 && buf_[15] == 0x20) || (buf_[0] == 0x21 && buf_[14] == 0x10)) {
+	if((buf_[14] == 0x10 && buf_[15] == 0x20)) {
 		//parse IMU calibration
 		DBGPrintf("===>  IMU Calibration \n");	
 		for(uint8_t i = 0; i < 3; i++) {
@@ -2205,7 +2224,16 @@ void JoystickController::sw_parseAckMsg(const uint8_t *buf_)
 			DBGPrintf("\t %d, %d, %d, %d\n", SWIMUCal.acc_offset[i], SWIMUCal.acc_sensitivity[i],
 				SWIMUCal.gyro_offset[i], SWIMUCal.gyro_sensitivity[i]);
 		} 
-	} else if((buf_[14] == 0x10 && buf_[15] == 0x3D) || (buf_[0] == 0x21 && buf_[14] == 0x3D)){		//left stick
+	} else if((buf_[14] == 0x10 && buf_[15] == 0x80)) {
+		//parse IMU calibration
+		DBGPrintf("===>  IMU Calibration Offsets \n");	
+		for(uint8_t i = 0; i < 3; i++) {
+			SWIMUCal.acc_offset[i] = (int16_t)(buf_[i+offset] | (buf_[i+offset+1] << 8));
+		}
+		for(uint8_t i = 0; i < 3; i++) {
+			DBGPrintf("\t %d\n", SWIMUCal.acc_offset[i]);
+		}
+	} else if((buf_[14] == 0x10 && buf_[15] == 0x3D)){		//left stick
 		offset = 20;
 		data[0] = ((buf_[1+offset] << 8) & 0xF00) | buf_[0+offset];
 		data[1] = (buf_[2+offset] << 4) | (buf_[1+offset] >> 4);
@@ -2241,7 +2269,23 @@ void JoystickController::sw_parseAckMsg(const uint8_t *buf_)
 		SWStickCal.rstick_x_max = SWStickCal.rstick_center_x + data[4];
 		SWStickCal.rstick_y_min = SWStickCal.rstick_center_y - data[3];
 		SWStickCal.rstick_y_max = SWStickCal.rstick_center_y + data[5];
+		
+		DBGPrintf("\nRight Stick Calibrataion\n");
+		DBGPrintf("center: %d, %d\n", SWStickCal.rstick_center_x, SWStickCal.rstick_center_y );
+		DBGPrintf("min/max x: %d, %d\n", SWStickCal.rstick_x_min, SWStickCal.rstick_x_max);
+		DBGPrintf("min/max y: %d, %d\n", SWStickCal.rstick_y_min, SWStickCal.rstick_y_max);
+	}  else if((buf_[14] == 0x10 && buf_[15] == 0x86)){			//left stick deadzone_left
+		offset = 20;
+		SWStickCal.deadzone_left = (((buf_[4 + offset] << 8) & 0xF00) | buf_[3 + offset]);
+		DBGPrintf("\nLeft Stick Deadzone\n");
+		DBGPrintf("deadzone: %d\n", SWStickCal.deadzone_left);
+	}   else if((buf_[14] == 0x10 && buf_[15] == 0x98)){			//left stick deadzone_left
+		offset = 20;
+		SWStickCal.deadzone_left = (((buf_[4 + offset] << 8) & 0xF00) | buf_[3 + offset]);
+		DBGPrintf("\nRight Stick Deadzone\n");
+		DBGPrintf("deadzone: %d\n", SWStickCal.deadzone_right);
 	} 
+	
 }
 
 void JoystickController::sw_getIMUCalValues(float *accel, float *gyro) 
@@ -2250,5 +2294,78 @@ void JoystickController::sw_getIMUCalValues(float *accel, float *gyro)
 		accel[i] = (float)(axis[8+i] - SWIMUCal.acc_offset[i]) * (1.0f / (float)SWIMUCal.acc_sensitivity[i]) * 4.0f;
 		gyro[i]  = (float)(axis[11+i] - SWIMUCal.gyro_offset[i]) * (816.0f / (float)SWIMUCal.gyro_sensitivity[i]);
 	}	
+
+}
+
+void JoystickController::CalcAnalogStick
+(
+	float &pOutX,       // out: resulting stick X value
+	float &pOutY,       // out: resulting stick Y value
+	int16_t x,         // in: initial stick X value
+	int16_t y,         // in: initial stick Y value
+	bool isLeft			// are we dealing with left or right Joystick
+)
+{
+//		uint16_t x_calc[3],      // calc -X, CenterX, +X
+//		uint16_t y_calc[3]       // calc -Y, CenterY, +Y
+
+	int16_t min_x;
+	int16_t max_x;
+	int16_t center_x;
+	int16_t min_y;		// analog joystick calibration
+	int16_t max_y;
+	int16_t center_y;
+	if(isLeft) {
+		min_x = SWStickCal.lstick_x_min;
+		max_x = SWStickCal.lstick_x_max;
+		center_x = SWStickCal.lstick_center_x;
+		min_y = SWStickCal.lstick_y_min;
+		max_y = SWStickCal.lstick_y_max;
+		center_y = SWStickCal.lstick_center_y;
+	} else {
+		min_x = SWStickCal.rstick_x_min;
+		max_x = SWStickCal.rstick_x_max;
+		center_x = SWStickCal.rstick_center_x;
+		min_y = SWStickCal.rstick_y_min;
+		max_y = SWStickCal.rstick_y_max;
+		center_y = SWStickCal.rstick_center_y;
+	}
+
+
+	float x_f, y_f;
+	// Apply Joy-Con center deadzone. 0xAE translates approx to 15%. Pro controller has a 10% () deadzone
+	float deadZoneCenter = 0.15f;
+	// Add a small ammount of outer deadzone to avoid edge cases or machine variety.
+	float deadZoneOuter = 0.0f;
+
+	// convert to float based on calibration and valid ranges per +/-axis
+	x = clamp(x, min_x, max_x);
+	y = clamp(y, min_y, max_y);
+	if (x >= center_x) {
+		x_f = (float)(x - center_x) / (float)(max_x - center_x);
+	} else {
+		x_f = -((float)(x - center_x) / (float)(min_x - center_x));
+	}
+	if (y >= center_y) {
+		y_f = (float)(y - center_y) / (float)(max_y - center_y);
+	} else {
+		y_f = -((float)(y - center_y) / (float)(min_y - center_y));
+	}
+
+	// Interpolate zone between deadzones
+	float mag = sqrtf(x_f*x_f + y_f*y_f);
+	if (mag > deadZoneCenter) {
+		// scale such that output magnitude is in the range [0.0f, 1.0f]
+		float legalRange = 1.0f - deadZoneOuter - deadZoneCenter;
+		float normalizedMag = min(1.0f, (mag - deadZoneCenter) / legalRange);
+		float scale = normalizedMag / mag;
+		pOutX = (x_f * scale);
+		pOutY = (y_f * scale);
+	} else {
+		// stick is in the inner dead zone
+		pOutX = 0.0f;
+		pOutY = 0.0f;
+	}
+	
 
 }

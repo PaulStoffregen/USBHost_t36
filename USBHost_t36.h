@@ -1073,9 +1073,10 @@ private:
 	void sw_parseAckMsg(const uint8_t *buf_);
     bool sw_handle_usb_init_of_joystick(uint8_t *buffer, uint16_t cb, bool timer_event);
     bool sw_handle_bt_init_of_joystick(const uint8_t *data, uint16_t length, bool timer_event);
-
     bool sw_process_HID_data(const uint8_t *data, uint16_t length);
 	
+	void CalcAnalogStick(float &pOutX, float &pOutY, int16_t x, int16_t y, bool isLeft);
+
 	//kludge for switch having different button values
 	bool initialPass_ = true;
 	bool initialPassButton_ = true;
