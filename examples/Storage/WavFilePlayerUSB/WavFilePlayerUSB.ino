@@ -25,11 +25,11 @@
 //
 // This example code is in the public domain.
 
- // Modified for use with USB mass storage drives 2020 Warren Watson
+// Modified for use with USB mass storage drives 2020 Warren Watson
 
 #include <USBHost_t36.h>
 #include <Audio.h>
-#include "play_usb_wav.h" // Should be included in 'Audio.h'
+#include "play_usb_wav.h"  // Should be included in 'Audio.h'
 #include <Wire.h>
 #include <SPI.h>
 //#include <SD.h>
@@ -47,14 +47,14 @@ USBDrive msDrive1(myusb);
 
 USBFilesystem myFS(myusb);
 
-AudioPlayUSBWav           playWav1;
+AudioPlayUSBWav playWav1;
 // Use one of these 3 output types: Digital I2S, Digital S/PDIF, or Analog DAC
-AudioOutputI2S           audioOutput;
+AudioOutputI2S audioOutput;
 //AudioOutputSPDIF       audioOutput;
 //AudioOutputAnalog      audioOutput;
-AudioConnection          patchCord1(playWav1, 0, audioOutput, 0);
-AudioConnection          patchCord2(playWav1, 1, audioOutput, 1);
-AudioControlSGTL5000     sgtl5000_1;
+AudioConnection patchCord1(playWav1, 0, audioOutput, 0);
+AudioConnection patchCord2(playWav1, 1, audioOutput, 1);
+AudioControlSGTL5000 sgtl5000_1;
 
 void setup() {
   // Wait for USB Serial
@@ -65,10 +65,12 @@ void setup() {
   if (CrashReport) {
     Serial.print(CrashReport);
     Serial.println("Press any key to continue");
-    while (Serial.read() != -1);
-    while (Serial.read() == -1);
+    while (Serial.read() != -1)
+      ;
+    while (Serial.read() == -1)
+      ;
   }
-  
+
   // Start USBHost_t36, HUB(s) and USB devices.
   myusb.begin();
 
@@ -89,8 +91,7 @@ void setup() {
   Serial.println("Filesystem started");
 }
 
-void playFile(File *pfile, const char *filename)
-{
+void playFile(File *pfile, const char *filename) {
   Serial.print("Playing file: ");
   Serial.println(filename);
 
@@ -122,14 +123,18 @@ void loop() {
   for (;;) {
     wavFile = rootFile.openNextFile();
     if (!wavFile) break;
-      name = wavFile.name();
-      name_len = strlen(name);
-      if ((strcmp(&name[name_len - 4], ".wav") == 0) || (strcmp(&name[name_len - 4], ".WAV") == 0)) {
-        wav_files_found = true;
-        playFile(&wavFile, name);  
-        delay(500);
-      }
-      wavFile.close();
+    name = wavFile.name();
+    name_len = strlen(name);
+    if ((strcmp(&name[name_len - 4], ".wav") == 0) || (strcmp(&name[name_len - 4], ".WAV") == 0)) {
+      wav_files_found = true;
+      playFile(&wavFile, name);
+      delay(500);
+    }
+    wavFile.close();
+  }
+  if (!wav_files_found) {
+    Serial.println("There were no *.wav files found in the root directory");
+    delay(5000);
   }
   delay(1500);
   rootFile.close();
