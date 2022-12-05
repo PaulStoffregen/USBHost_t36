@@ -3,18 +3,12 @@
 // Setup USBHost_t36 and as many HUB ports as needed.
 USBHost myusb;
 USBHub hub1(myusb);
-USBHub hub2(myusb);
-USBHub hub3(myusb);
-USBHub hub4(myusb);
 
-// Instances for the number of USB drives you are using.
-USBDrive myDrive1(myusb);
-USBDrive myDrive2(myusb);
+// Instances for one drive
+USBDrive myDrive(myusb);
 
-// Instances for accessing the files on each drive
-USBFilesystem myFiles1(myusb);
-USBFilesystem myFiles2(myusb);
-
+// Instances for accessing the files on the drive
+USBFilesystem myFiles(myusb);
 
 // Show USB drive information for the selected USB drive.
 void printDriveInfo(USBDrive &drive) {
@@ -83,29 +77,25 @@ void setup()
   }
 
   myusb.begin();
-  Serial.println("\nInitializing USB drive 1...");
-  // future USBFilesystem will begin automatically
-  // begin(USBDrive) is a temporary feature
-  if (!myFiles1.begin(&myDrive1)) {
-    Serial.print("initialization failed with code: ");
-    myFiles1.printError(Serial);
-    return;
-  }
-  Serial.printf("Device 1 Info:\n");
-  printDriveInfo(myDrive1);
-  printFilesystemInfo(myFiles1);
+  Serial.println("\nWaiting for Drive to initialize...");
 
-  Serial.println("\nInitializing USB drive 2...");
-  // future USBFilesystem will begin automatically
-  // begin(USBDrive) is a temporary feature
-  if (!myFiles2.begin(&myDrive2)) {
-    Serial.print("initialization failed with code: ");
-    myFiles2.printError(Serial);
-    return;
+  // Wait for the drive to start.
+  while (!myDrive) {
+    myusb.Task();
   }
-  Serial.printf("Device 2 Info:\n");
-  printDriveInfo(myDrive2);
-  printFilesystemInfo(myFiles2);
+
+  Serial.printf("Device Info:\n");
+  printDriveInfo(myDrive);
+
+  elapsedMillis em;
+  while (!myFiles && (em < 1000)) {
+    myusb.Task();
+  }
+  if (myFiles) {
+    printFilesystemInfo(myFiles);
+  } else {
+    Serial.println("\n*** No Fat Filesystem Partitions found on drive **");
+  }
 }
 
 

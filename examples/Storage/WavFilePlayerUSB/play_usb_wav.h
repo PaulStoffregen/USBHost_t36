@@ -32,21 +32,20 @@
 #include "Arduino.h"
 #include "AudioStream.h"
 #include "FS.h"
-//#include <UsbMscFat.h>
 
 class AudioPlayUSBWav : public AudioStream
 {
 public:
 	AudioPlayUSBWav(void) : AudioStream(0, NULL), block_left(NULL), block_right(NULL) { begin(); }
 	void begin(void);
-	bool play(const char *filename);
+	bool play(File *pfile);
 	void stop(void);
 	bool isPlaying(void);
 	uint32_t positionMillis(void);
 	uint32_t lengthMillis(void);
 	virtual void update(void);
 private:
-	File wavfile;
+	File *wavfile;
 	bool consume(uint32_t size);
 	bool parse_format(void);
 	uint32_t header[10];		// temporary storage of wav header data

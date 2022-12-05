@@ -31,9 +31,6 @@
 #include "play_usb_wav.h"
 #include "spi_interrupt.h"
 
-extern USBFilesystem MSC;
-
-
 #define STATE_DIRECT_8BIT_MONO		0  // playing mono at native sample rate
 #define STATE_DIRECT_8BIT_STEREO	1  // playing stereo at native sample rate
 #define STATE_DIRECT_16BIT_MONO		2  // playing mono at native sample rate
@@ -65,8 +62,9 @@ void AudioPlayUSBWav::begin(void)
 }
 
 
-bool AudioPlayUSBWav::play(const char *filename)
+bool AudioPlayUSBWav::play(File *pfile)
 {
+  wavfile = pfile;
 	stop();
 	bool irq = false;
 	if (NVIC_IS_ENABLED(IRQ_SOFTWARE)) {
@@ -78,8 +76,7 @@ bool AudioPlayUSBWav::play(const char *filename)
 #else
 	AudioStartUsingSPI();
 #endif
-	wavfile = MSC.open(filename);
-	if (!wavfile) {
+	if (!*pfile) {
 #if defined(HAS_KINETIS_SDHC)
 		if (!(SIM_SCGC3 & SIM_SCGC3_SDHC)) AudioStopUsingSPI();
 #else
@@ -113,7 +110,7 @@ void AudioPlayUSBWav::stop(void)
 		state = STATE_STOP;
 		if (b1) release(b1);
 		if (b2) release(b2);
-		wavfile.close();
+		//wavfile->close();
 #if defined(HAS_KINETIS_SDHC)
 		if (!(SIM_SCGC3 & SIM_SCGC3_SDHC)) AudioStopUsingSPI();
 #else
@@ -159,10 +156,10 @@ void AudioPlayUSBWav::update(void)
 	}
 
 	// we only get to this point when buffer[512] is empty
-	if (state != STATE_STOP && wavfile.available()) {
+	if (state != STATE_STOP && wavfile->available()) {
 		// we can read more data from the file...
 		readagain:
-		buffer_length = wavfile.read(buffer, 2048);
+		buffer_length = wavfile->read(buffer, 2048);
 		if (buffer_length == 0) goto end;
 		buffer_offset = 0;
 		bool parsing = (state >= 8);
@@ -177,7 +174,7 @@ void AudioPlayUSBWav::update(void)
 		}
 	}
 end:	// end of file reached or other reason to stop
-	wavfile.close();
+	//wavfile->close();
 #if defined(HAS_KINETIS_SDHC)
 	if (!(SIM_SCGC3 & SIM_SCGC3_SDHC)) AudioStopUsingSPI();
 #else
