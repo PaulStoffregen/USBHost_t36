@@ -1471,42 +1471,6 @@ bool USBFilesystem::check_voltype_guid(int voltype, uint8_t *guid) {
 	return true;
 }
 
-//=============================================================================
-// USBFilesystem::begin - Manual way to startup a filesystem object
-//=============================================================================
-
-bool USBFilesystem::begin(USBDrive *pDrive, bool setCwv, uint8_t part) {
-	DBGPrintf(">>USBFilesystem::begin(%p, %u, %u)\n", pDrive, setCwv, part); DBGFlush();
-	if (device) return false;  // object is already in use. 
-	uint8_t guid[16];
-	device = pDrive;
-	device->begin();
-	if (device->errorCode() != 0) return false;
-	//device->printPartionTable(Serial);
-	int type;
-	uint32_t firstSector, numSectors;
-	uint32_t mbrLBA;
-	uint8_t mbrPart;
-
-
-	int voltype = device->findPartition(part, type, firstSector, numSectors, mbrLBA, mbrPart, guid);
-	if (!voltype) {
-		device = nullptr;
-		return false;  // not a valid volume...
-	}
-
-	// if this is a GPT setup, then make sure the guid is one we want.
-	if (!check_voltype_guid(voltype, guid)) {
-		device = nullptr;
-		return false;
-	}
-
-	if (mscfs.begin(pDrive, setCwv, firstSector, numSectors)) {
-		device->filesystem_assign_to_drive(this, true);
-	}
-	return true;
-}
-
 void USBFilesystem::end() {
 	mscfs.end();
 	_state_changed = USBFS_STATE_CHANGE_CONNECTION;

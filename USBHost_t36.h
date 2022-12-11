@@ -2261,8 +2261,6 @@ public:
 	int findPartition(int partition, int &type, uint32_t &firstSector, uint32_t &numSectors, 
 				   uint32_t &mbrLBA, uint8_t &mbrPart, uint8_t *guid=nullptr);
 
-	static void filesystem_ready_for_drive(USBFSBase *fsbase);
-	void filesystem_assign_to_drive(USBFSBase *fsbase, bool busy);
 
 public:
 	// Functions for SdFat FsBlockDeviceInterface
@@ -2503,8 +2501,6 @@ public:
 	USBFilesystem(USBHost &host) : USBFSBase() { init(); }
 	USBFilesystem(USBHost *host) : USBFSBase() { init(); }
 
-	// Manual way to associate a drive/partition to a Filesystem object
-	bool begin(USBDrive *pDrive, bool setCwv = true, uint8_t part = 1);
 	void end();
 	void init();
 	

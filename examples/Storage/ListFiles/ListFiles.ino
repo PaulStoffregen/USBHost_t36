@@ -37,13 +37,10 @@ void setup()
   // Start USBHost_t36, HUB(s) and USB devices.
   myusb.begin();
 
-  Serial.print("\nInitializing USB MSC drive...");
+  Serial.print("\nWaiting for partition to...");
 
-  // future USBFilesystem will begin automatically
-  // begin(USBDrive) is a temporary feature
-  if (!firstPartition.begin(&myDrive)) {
-    Serial.println("initialization failed!");
-    return;
+  while (!firstPartition) {
+    myusb.Task();
   }
   Serial.println("initialization done.");
 
