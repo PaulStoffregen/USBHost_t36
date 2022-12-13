@@ -1257,6 +1257,19 @@ void JoystickController::rx_data(const Transfer_t *transfer)
                 anychange = true;
             }
         }
+		
+		//apply stick calibration
+		float xout, yout;
+		CalcAnalogStick(xout, yout, axis[0], axis[1], true);
+		//Serial.printf("Correctd Left Stick: %f, %f\n", xout , yout);
+		axis[0] = int(round(xout));
+		axis[1] = int(round(yout));
+		
+		CalcAnalogStick(xout, yout, axis[2], axis[3], true);
+		axis[2] = int(round(xout));
+		axis[3] = int(round(yout));
+		
+		
         // the two triggers show up as 4 and 5
         if (axis[6] != switchd->lt) {
             axis[6] = switchd->lt;
@@ -1824,18 +1837,13 @@ bool JoystickController::sw_process_HID_data(const uint8_t *data, uint16_t lengt
         }
         */
 
-       uint16_t new_axis[14];
+        uint16_t new_axis[14];
         //Joystick data
         new_axis[0] = data[6] | ((data[7] & 0xF) << 8);   //xl
         new_axis[1] = (data[7] >> 4) | (data[8] << 4);    //yl
         new_axis[2] = data[9] | ((data[10] & 0xF) << 8);  //xr
         new_axis[3] = (data[10] >> 4) | (data[11] << 4);  //yr
 
-		//ToDo:  apply stick calibration
-		//float xout, yout;
-		//CalcAnalogStick(xout, yout, new_axis[0], new_axis[1], true);
-		//Serial.printf("Correctd Left Stick: %f, %f\n", xout , yout);
-	
         //Kludge to get trigger buttons tripping
         if(buttons == 0x40) {   //R1
             new_axis[5] = 1;
@@ -1885,6 +1893,17 @@ bool JoystickController::sw_process_HID_data(const uint8_t *data, uint16_t lengt
             }
         }
         
+		//apply stick calibration
+		float xout, yout;
+		CalcAnalogStick(xout, yout, new_axis[0], new_axis[1], true);
+		//Serial.printf("Correctd Left Stick: %f, %f\n", xout , yout);
+		axis[0] = int(round(xout));
+		axis[1] = int(round(yout));
+		
+		CalcAnalogStick(xout, yout, new_axis[2], new_axis[3], true);
+		axis[2] = int(round(xout));
+		axis[3] = int(round(yout));
+		
         joystickEvent = true;
         initialPass_ = false;
         
@@ -2205,12 +2224,12 @@ void JoystickController::sw_sendSubCmdUSB(uint8_t sub_cmd, uint8_t *data, uint8_
 
 void JoystickController::sw_parseAckMsg(const uint8_t *buf_) 
 {
-	uint16_t data[6];
+	int16_t data[6];
 	uint8_t offset = 20;
 	uint8_t icount = 0;
 	//uint8_t packet_[8];
 	
-	if((buf_[14] == 0x10 && buf_[15] == 0x20)) {
+	if((buf_[14] == 0x10 && buf_[15] == 0x20 && buf_[16] == 0x60)) {
 		//parse IMU calibration
 		DBGPrintf("===>  IMU Calibration \n");	
 		for(uint8_t i = 0; i < 3; i++) {
@@ -2224,7 +2243,7 @@ void JoystickController::sw_parseAckMsg(const uint8_t *buf_)
 			DBGPrintf("\t %d, %d, %d, %d\n", SWIMUCal.acc_offset[i], SWIMUCal.acc_sensitivity[i],
 				SWIMUCal.gyro_offset[i], SWIMUCal.gyro_sensitivity[i]);
 		} 
-	} else if((buf_[14] == 0x10 && buf_[15] == 0x80)) {
+	} else if((buf_[14] == 0x10 && buf_[15] == 0x80 && buf_[16] == 0x60)) {
 		//parse IMU calibration
 		DBGPrintf("===>  IMU Calibration Offsets \n");	
 		for(uint8_t i = 0; i < 3; i++) {
@@ -2233,7 +2252,7 @@ void JoystickController::sw_parseAckMsg(const uint8_t *buf_)
 		for(uint8_t i = 0; i < 3; i++) {
 			DBGPrintf("\t %d\n", SWIMUCal.acc_offset[i]);
 		}
-	} else if((buf_[14] == 0x10 && buf_[15] == 0x3D)){		//left stick
+	} else if((buf_[14] == 0x10 && buf_[15] == 0x3D && buf_[16] == 0x60)){		//left stick
 		offset = 20;
 		data[0] = ((buf_[1+offset] << 8) & 0xF00) | buf_[0+offset];
 		data[1] = (buf_[2+offset] << 4) | (buf_[1+offset] >> 4);
@@ -2242,11 +2261,11 @@ void JoystickController::sw_parseAckMsg(const uint8_t *buf_)
 		data[4] = ((buf_[7+offset] << 8) & 0xF00) | buf_[6+offset];
 		data[5] = (buf_[8+offset] << 4) | (buf_[7+offset] >> 4);
 		
-		SWStickCal.lstick_center_x = data[0];
-		SWStickCal.lstick_center_y = data[1];
-		SWStickCal.lstick_x_min = SWStickCal.lstick_center_x - data[2];
+		SWStickCal.lstick_center_x = data[2];
+		SWStickCal.lstick_center_y = data[3];
+		SWStickCal.lstick_x_min = SWStickCal.lstick_center_x - data[0];
 		SWStickCal.lstick_x_max = SWStickCal.lstick_center_x + data[4];
-		SWStickCal.lstick_y_min = SWStickCal.lstick_center_y - data[3];
+		SWStickCal.lstick_y_min = SWStickCal.lstick_center_y - data[1];
 		SWStickCal.lstick_y_max = SWStickCal.lstick_center_y + data[5];
 		
 		DBGPrintf("Left Stick Calibrataion\n");
@@ -2274,17 +2293,19 @@ void JoystickController::sw_parseAckMsg(const uint8_t *buf_)
 		DBGPrintf("center: %d, %d\n", SWStickCal.rstick_center_x, SWStickCal.rstick_center_y );
 		DBGPrintf("min/max x: %d, %d\n", SWStickCal.rstick_x_min, SWStickCal.rstick_x_max);
 		DBGPrintf("min/max y: %d, %d\n", SWStickCal.rstick_y_min, SWStickCal.rstick_y_max);
-	}  else if((buf_[14] == 0x10 && buf_[15] == 0x86)){			//left stick deadzone_left
+	}  else if((buf_[14] == 0x10 && buf_[15] == 0x86 && buf_[16] == 0x60)){			//left stick deadzone_left
 		offset = 20;
 		SWStickCal.deadzone_left = (((buf_[4 + offset] << 8) & 0xF00) | buf_[3 + offset]);
 		DBGPrintf("\nLeft Stick Deadzone\n");
 		DBGPrintf("deadzone: %d\n", SWStickCal.deadzone_left);
-	}   else if((buf_[14] == 0x10 && buf_[15] == 0x98)){			//left stick deadzone_left
+	}   else if((buf_[14] == 0x10 && buf_[15] == 0x98 && buf_[16] == 0x60)){			//left stick deadzone_left
 		offset = 20;
 		SWStickCal.deadzone_left = (((buf_[4 + offset] << 8) & 0xF00) | buf_[3 + offset]);
 		DBGPrintf("\nRight Stick Deadzone\n");
 		DBGPrintf("deadzone: %d\n", SWStickCal.deadzone_right);
-	} 
+	} else if((buf_[14] == 0x10 && buf_[15] == 0x10 && buf_[16] == 0x80)){
+		DBGPrintf("\nUser Calibration Rcvd!\n");
+	}
 	
 }
 
@@ -2297,6 +2318,8 @@ void JoystickController::sw_getIMUCalValues(float *accel, float *gyro)
 
 }
 
+
+#define sw_scale 2048
 void JoystickController::CalcAnalogStick
 (
 	float &pOutX,       // out: resulting stick X value
@@ -2359,8 +2382,8 @@ void JoystickController::CalcAnalogStick
 		float legalRange = 1.0f - deadZoneOuter - deadZoneCenter;
 		float normalizedMag = min(1.0f, (mag - deadZoneCenter) / legalRange);
 		float scale = normalizedMag / mag;
-		pOutX = (x_f * scale);
-		pOutY = (y_f * scale);
+		pOutX = (x_f * scale * sw_scale);
+		pOutY = (y_f * scale * sw_scale);
 	} else {
 		// stick is in the inner dead zone
 		pOutX = 0.0f;
