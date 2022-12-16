@@ -991,9 +991,20 @@ public:
 
     bool    available() { return joystickEvent; }
     void    joystickDataClear();
+
+    // Returns the currently pressed buttons on the joystick
     uint32_t getButtons() { return buttons; }
+
+    // Returns the HID Report ID
+    uint8_t getReportID() { return report_id_;}
+
+    // Returns the specified axis value
     int     getAxis(uint32_t index) { return (index < (sizeof(axis) / sizeof(axis[0]))) ? axis[index] : 0; }
+
+    // Retuns bit mask showing which axis are defined for the current joystick
     uint64_t axisMask() {return axis_mask_;}
+
+    // returns a bit mask showing which axis have changed since the last read. 
     uint64_t axisChangedMask() { return axis_changed_mask_;}
     uint64_t axisChangeNotifyMask() {return axis_change_notify_mask_;}
     void     axisChangeNotifyMask(uint64_t notify_mask) {axis_change_notify_mask_ = notify_mask;}
@@ -1014,7 +1025,7 @@ public:
     bool PS4Pair(uint8_t* bdaddr);
 	
 	void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size, uint32_t timeout=0);
-	void sw_getIMUCalValues(float *accel, float *gyro);
+	bool sw_getIMUCalValues(float *accel, float *gyro);
 
 protected:
     // From USBDriver
@@ -1073,6 +1084,7 @@ private:
 	void sw_parseAckMsg(const uint8_t *buf_);
     bool sw_handle_usb_init_of_joystick(uint8_t *buffer, uint16_t cb, bool timer_event);
     bool sw_handle_bt_init_of_joystick(const uint8_t *data, uint16_t length, bool timer_event);
+    inline void sw_update_axis(uint8_t axis_index, int new_value);
     bool sw_process_HID_data(const uint8_t *data, uint16_t length);
 	
 	void CalcAnalogStick(float &pOutX, float &pOutY, int16_t x, int16_t y, bool isLeft);
@@ -1083,6 +1095,7 @@ private:
 	bool initialPassBT_ = true;
 	uint32_t buttonOffset_ = 0x00;
 	
+    uint8_t report_id_ = 0;
     bool anychange = false;
     volatile bool joystickEvent = false;
     uint32_t buttons = 0;

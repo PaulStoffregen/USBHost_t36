@@ -854,6 +854,7 @@ bool JoystickController::sw_handle_usb_init_of_joystick(uint8_t *buffer, uint16_
 bool JoystickController::hid_process_in_data(const Transfer_t *transfer)
 {
     uint8_t *buffer = (uint8_t *)transfer->buffer;
+    if (*buffer) report_id_ = *buffer;
     uint8_t cnt = transfer->length;
     if (!buffer || *buffer == 1) return false; // don't do report 1
 
@@ -1355,6 +1356,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
     //   LX LY RX RY BT BT PS LT RT
     DBGPrintf("JoystickController::process_bluetooth_HID_data: data[0]=%x\n", data[0]);
     // May have to look at this one with other controllers...
+    report_id_ = data[0];
 
 
     if (data[0] == 1) {
@@ -1723,7 +1725,14 @@ bool JoystickController::sw_handle_bt_init_of_joystick(const uint8_t *data, uint
     return true;
 }
 
-
+void JoystickController::sw_update_axis(uint8_t axis_index, int new_value)
+{
+    if (axis[axis_index] != new_value) {
+        axis[axis_index] = new_value;
+        anychange = true;
+        axis_changed_mask_ |= (1 << axis_index);
+    }
+}
 
 bool JoystickController::sw_process_HID_data(const uint8_t *data, uint16_t length)
 {
@@ -1804,7 +1813,7 @@ bool JoystickController::sw_process_HID_data(const uint8_t *data, uint16_t lengt
         // 30 E0 80 00 00 00 D9 37 79 19 98 70 00 0D 0B F1 02 F0 0A 41 FE 25 FC 89 00 F8 0A F0 02 F2 0A 41 FE D9 FB 99 00 D4 0A F6 02 FC 0A 3C FE 69 FB B8 00 
         //<<(02 15 21):48 20 11 00 0D 00 71 00 A1 
         //static const uint8_t switch_bt_axis_order_mapping[] = { 0, 1, 2, 3};
-        axis_mask_ = 0x1ff;
+        axis_mask_ = 0x7fff;  // have all of the fields. 
         axis_changed_mask_ = 0; // assume none for now
         // We have a data transfer.  Lets see what is new...
         uint32_t cur_buttons = data[3] | (data[4] << 8) | (data[5] << 16);
@@ -1874,14 +1883,14 @@ bool JoystickController::sw_process_HID_data(const uint8_t *data, uint16_t lengt
             new_axis[7] = 0xff;
         }
         
-        axis[8] = (int16_t)(data[13]  | (data[14] << 8)); //ax
-        axis[9] = (int16_t)(data[15]  | (data[16] << 8)); //ay
-        axis[10] = (int16_t)(data[17] | (data[18] << 8)); //az
-        axis[11] = (int16_t)(data[19] | (data[20] << 8));  //gx
-        axis[12] = (int16_t)(data[21] | (data[22] << 8)); //gy
-        axis[13] = (int16_t)(data[23] | (data[24] << 8)); //gz  
+        sw_update_axis(8, (int16_t)(data[13]  | (data[14] << 8))); //ax
+        sw_update_axis(9, (int16_t)(data[15]  | (data[16] << 8))); //ay
+        sw_update_axis(10,  (int16_t)(data[17] | (data[18] << 8))); //az
+        sw_update_axis(11,  (int16_t)(data[19] | (data[20] << 8)));  //gx
+        sw_update_axis(12,  (int16_t)(data[21] | (data[22] << 8))); //gy
+        sw_update_axis(13,  (int16_t)(data[23] | (data[24] << 8))); //gz  
         
-        axis[14] = data[2] >> 4;  //Battery level, 8=full, 6=medium, 4=low, 2=critical, 0=empty
+        sw_update_axis(14,  data[2] >> 4);  //Battery level, 8=full, 6=medium, 4=low, 2=critical, 0=empty
 
         //map axes
         for (uint8_t i = 0; i < 8; i++) {
@@ -2309,13 +2318,15 @@ void JoystickController::sw_parseAckMsg(const uint8_t *buf_)
 	
 }
 
-void JoystickController::sw_getIMUCalValues(float *accel, float *gyro) 
+bool JoystickController::sw_getIMUCalValues(float *accel, float *gyro) 
 {
+    // Fail if we don't have actually have those fields. We need axis 8-13 for this
+    if ((axis_mask_ & 0x3f00) != 0x3f00) return false;
 	for(uint8_t i = 0; i < 3; i++) {
 		accel[i] = (float)(axis[8+i] - SWIMUCal.acc_offset[i]) * (1.0f / (float)SWIMUCal.acc_sensitivity[i]) * 4.0f;
 		gyro[i]  = (float)(axis[11+i] - SWIMUCal.gyro_offset[i]) * (816.0f / (float)SWIMUCal.gyro_sensitivity[i]);
 	}	
-
+    return true;
 }
 
 
