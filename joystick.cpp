@@ -1885,10 +1885,10 @@ bool JoystickController::sw_process_HID_data(const uint8_t *data, uint16_t lengt
         
         sw_update_axis(8, (int16_t)(data[13]  | (data[14] << 8))); //ax
         sw_update_axis(9, (int16_t)(data[15]  | (data[16] << 8))); //ay
-        sw_update_axis(1,  (int16_t)(data[17] | (data[18] << 8))); //az
-        sw_update_axis(1,  (int16_t)(data[19] | (data[20] << 8)));  //gx
-        sw_update_axis(1,  (int16_t)(data[21] | (data[22] << 8))); //gy
-        sw_update_axis(1,  (int16_t)(data[23] | (data[24] << 8))); //gz  
+        sw_update_axis(10,  (int16_t)(data[17] | (data[18] << 8))); //az
+        sw_update_axis(11,  (int16_t)(data[19] | (data[20] << 8)));  //gx
+        sw_update_axis(12,  (int16_t)(data[21] | (data[22] << 8))); //gy
+        sw_update_axis(13,  (int16_t)(data[23] | (data[24] << 8))); //gz  
         
         sw_update_axis(14,  data[2] >> 4);  //Battery level, 8=full, 6=medium, 4=low, 2=critical, 0=empty
 
