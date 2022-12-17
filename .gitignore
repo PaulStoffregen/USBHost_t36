@@ -21,3 +21,4 @@ examples/Bluetooth/JoystickBT/Compile.cmd
 *.sublime-workspace
 examples/Storage/DriveInfoAll/Compile.cmd
 examples/Storage/fatFormatterUSB_TEST/Compile.cmd
+*.cmd
