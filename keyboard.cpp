@@ -365,7 +365,7 @@ hidclaim_t KeyboardController::claim_collection(USBHIDParser *driver, Device_t *
 	// Lets try to claim a few specific Keyboard related collection/reports
 	//USBHDBGSerial.printf("KeyboardController::claim_collection(%p) Driver:%p(%u %u) Dev:%p Top:%x\n", this, driver, 
 	//	driver->interfaceSubClass(), driver->interfaceProtocol(), dev, topusage);
-	USBHDBGSerial.printf("KeyboardController::claim_collection(%p) Driver:%p Dev:%p Top:%x\n", this, driver, dev, topusage);
+	//USBHDBGSerial.printf("KeyboardController::claim_collection(%p) Driver:%p Dev:%p Top:%x\n", this, driver, dev, topusage);
 
 	// only claim from one physical device
 	// Lets only claim if this is the same device as claimed Keyboard... 
@@ -400,7 +400,7 @@ hidclaim_t KeyboardController::claim_collection(USBHIDParser *driver, Device_t *
 	}
 	mydevice = dev;
 	collections_claimed_++;
-	USBHDBGSerial.printf("\tKeyboardController claim collection\n");
+	//USBHDBGSerial.printf("\tKeyboardController claim collection\n");
 	return CLAIM_REPORT;
 }
 
