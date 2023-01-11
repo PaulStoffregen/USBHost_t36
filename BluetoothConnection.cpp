@@ -988,7 +988,7 @@ int BluetoothConnection::extract_next_SDP_Token(uint8_t *pbElement, int cb_left,
     sdpe.element_size = element & 7;
     sdpe.data.luw = 0; // start off 0
 
-    int size_of_element;
+    int size_of_element = -1; // should never use this initialized value
     switch (sdpe.element_size) {
         case 0: size_of_element = 2; break;
         case 1: size_of_element = 3; break;
@@ -1855,7 +1855,7 @@ void BluetoothConnection::parse()
             p += *p + 3;
             continue;
         }
-        uint32_t val;
+        uint32_t val = 0;
         switch (tag & 0x03) { // Short Item data
         case 0: val = 0;
             p++;
@@ -1959,7 +1959,7 @@ void BluetoothConnection::parse(uint16_t type_and_report_id, const uint8_t *data
             p += p[1] + 3;
             continue;
         }
-        uint32_t val;
+        uint32_t val = 0;
         switch (tag & 0x03) { // Short Item data
         case 0: val = 0;
             p++;
