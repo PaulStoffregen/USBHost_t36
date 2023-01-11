@@ -2328,7 +2328,7 @@ void BluetoothController::sendHCISimplePairingMode() {
 }
 
 void BluetoothController::sendHCIReadSimplePairingMode() {
-	uint8_t hcibuf[2];
+	static const uint8_t hcibuf[2] = {0, 0} ; // could probably toss and pass nullptr
 	DBGPrintf("HCI_Read Simple Pairing Mode\n");
 	sendHCICommand(HCI_READ_SIMPLE_PAIRING_MODE, 0, hcibuf);
 }
