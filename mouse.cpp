@@ -35,11 +35,15 @@ void MouseController::init()
 hidclaim_t MouseController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
 {
 	// only claim Desktop/Mouse
+	//USBHDBGSerial.printf("MouseController::claim_collection(%p) Driver:%p(%u %u) Dev:%p Top:%x\n", this, driver, 
+	//	driver->interfaceSubClass(), driver->interfaceProtocol(), dev, topusage);
+
 	if ((topusage != 0x10002) && (topusage != 0x10001)) return CLAIM_NO;
 	// only claim from one physical device
 	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
 	mydevice = dev;
 	collections_claimed++;
+	//USBHDBGSerial.printf("\tMouseController claim collection\n");
 	return CLAIM_REPORT;
 }
 
@@ -107,19 +111,33 @@ void MouseController::mouseDataClear() {
 }
 
 
-bool MouseController::claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName) 
+hidclaim_t MouseController::claim_bluetooth(BluetoothConnection *btconnection, uint32_t bluetooth_class, uint8_t *remoteName, int type)
 {
 	// How to handle combo devices? 
 	USBHDBGSerial.printf("MouseController Controller::claim_bluetooth - Class %x\n", bluetooth_class);
 	// If we are already in use than don't grab another one.  Likewise don't grab if it is used as USB or HID object
-	if (btdevice && (btdevice != (Device_t*)driver)) return false;
-	if (mydevice != NULL) return false;
-	if ((((bluetooth_class & 0xff00) == 0x2500) || (((bluetooth_class & 0xff00) == 0x500))) && (bluetooth_class & 0x80)) {
-		USBHDBGSerial.printf("MouseController::claim_bluetooth TRUE\n");
-		btdevice = (Device_t*)driver;	// remember this way 
-		return true;
+	if (btconnect && (btconnection != btconnect)) return CLAIM_NO;
+	if (mydevice != NULL) return CLAIM_NO;
+
+	if ((bluetooth_class & 0x0f00) == 0x500) {
+		// This is a peripheral class
+
+		// So test for class of Mouse
+		if (bluetooth_class & 0x80) {
+			// We will claim this now
+			// Test to link in BT HID parser code
+			if (type == 1) {
+				// They are telling me to grab it now. SO say yes
+				USBHDBGSerial.printf("MouseController::claim_bluetooth TRUE\n");
+				btconnect = btconnection;
+				btdevice = (Device_t*)btconnect->btController_;	// remember this way 
+				btdriver_ = btconnect->btController_;
+				return CLAIM_INTERFACE;
+			}
+		}
+		return CLAIM_REPORT; // let them know we may be interested if there is a HID REport Descriptor
 	}
-	return false;
+	return CLAIM_NO;
 }
 
 bool MouseController::process_bluetooth_HID_data(const uint8_t *data, uint16_t length) 
@@ -163,4 +181,42 @@ bool MouseController::process_bluetooth_HID_data(const uint8_t *data, uint16_t l
 void MouseController::release_bluetooth() 
 {
 	btdevice = nullptr;
+}
+
+
+hidclaim_t MouseController::bt_claim_collection(BluetoothConnection *btconnection, uint32_t bluetooth_class, uint32_t topusage)
+{
+	USBHDBGSerial.printf("MouseController::bt_claim_collection(%p) Connection:%p class:%x Top:%x\n", this, btconnection, bluetooth_class, topusage);
+
+
+	if (mydevice != NULL) return CLAIM_NO;  // claimed by some other... 
+	if (btconnect && (btconnect != btconnection)) return CLAIM_NO;
+	// We will claim if BOOT Keyboard.
+
+	if ((topusage != 0x10002) && (topusage != 0x10001)) return CLAIM_NO;
+
+	USBHDBGSerial.printf("\tMouseController claim collection\n");
+	btconnect = btconnection;
+	btdevice = (Device_t*)btconnect->btController_;	// remember this way 
+	return CLAIM_REPORT;
+}
+
+void MouseController::bt_hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax)
+{
+	hid_input_begin(topusage, type, lgmin, lgmax);	
+}
+
+void MouseController::bt_hid_input_data(uint32_t usage, int32_t value)
+{
+	hid_input_data(usage, value);
+}
+
+void MouseController::bt_hid_input_end()
+{
+	hid_input_end();
+}
+
+void MouseController::bt_disconnect_collection(Device_t *dev)
+{
+	disconnect_collection(dev);
 }

@@ -39,7 +39,7 @@ typedef struct {
 typedef struct {
 	uint16_t	idVendor;		// vendor id of keyboard
 	uint16_t	idProduct;		// product id - 0 implies all of the ones from vendor; 
-} keyboard_force_boot_protocol_t;	// list of products to force into boot protocol
+} vid_pid_t;	// list of products to force into boot protocol
 
 #ifdef M
 #undef M
@@ -94,8 +94,22 @@ static const keycode_numlock_t keycode_numlock[] = {
 	{M(KEYPAD_PERIOD), 	0x80 | M(KEY_DELETE), '.'}
 };
 
-static const keyboard_force_boot_protocol_t keyboard_forceBootMode[] = {
+//============================================================
+// Items in the list we will try to force into Boot mode.
+//============================================================
+static const vid_pid_t keyboard_forceBootMode[] = {
 	{0x04D9, 0}
+};
+
+//============================================================
+// Items in the list allow HID Parser to claim
+//============================================================
+bool KeyboardController::s_forceHIDMode = false;
+
+static const vid_pid_t keyboard_use_hid_mode[] = {
+	{0x04D9, 0},
+
+	{0x046D, 0xC547}
 };
 
 
@@ -104,109 +118,23 @@ static const keyboard_force_boot_protocol_t keyboard_forceBootMode[] = {
 
 
 
-
 void KeyboardController::init()
 {
-	contribute_Pipes(mypipes, sizeof(mypipes)/sizeof(Pipe_t));
-	contribute_Transfers(mytransfers, sizeof(mytransfers)/sizeof(Transfer_t));
-	contribute_String_Buffers(mystring_bufs, sizeof(mystring_bufs)/sizeof(strbuf_t));
-	driver_ready_for_device(this);
 	USBHIDParser::driver_ready_for_hid_collection(this);
 	BluetoothController::driver_ready_for_bluetooth(this);
-	force_boot_protocol = false;	// start off assuming not
-}
-
-bool KeyboardController::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32_t len)
-{
-	println("KeyboardController claim this=", (uint32_t)this, HEX);
-
-	// only claim at interface level
-	if (type != 1) return false;
-	if (len < 9+9+7) return false;
-	print_hexbytes(descriptors, len);
-
-	uint32_t numendpoint = descriptors[4];
-	if (numendpoint < 1) return false;
-	if (descriptors[5] != 3) return false; // bInterfaceClass, 3 = HID
-	if (descriptors[6] != 1) return false; // bInterfaceSubClass, 1 = Boot Device
-	if (descriptors[7] != 1) return false; // bInterfaceProtocol, 1 = Keyboard
-	if (descriptors[9] != 9) return false;
-	if (descriptors[10] != 33) return false; // HID descriptor (ignored, Boot Protocol)
-	if (descriptors[18] != 7) return false;
-	if (descriptors[19] != 5) return false; // endpoint descriptor
-	uint32_t endpoint = descriptors[20];
-	println("ep = ", endpoint, HEX);
-	if ((endpoint & 0xF0) != 0x80) return false; // must be IN direction
-	endpoint &= 0x0F;
-	if (endpoint == 0) return false;
-	if (descriptors[21] != 3) return false; // must be interrupt type
-	uint32_t size = descriptors[22] | (descriptors[23] << 8);
-	println("packet size = ", size);
-	if ((size < 8) || (size > 64)) {
-		return false; // Keyboard Boot Protocol is 8 bytes, but maybe others have longer... 
-	}
-#ifdef USBHS_KEYBOARD_INTERVAL 
-	uint32_t interval = USBHS_KEYBOARD_INTERVAL;
-#else
-	uint32_t interval = descriptors[24];
-#endif
-	println("polling interval = ", interval);
-	datapipe = new_Pipe(dev, 3, endpoint, 1, 8, interval);
-	datapipe->callback_function = callback;
-	queue_Data_Transfer(datapipe, report, 8, this);
-
-	// see if this device in list of devices that need to be set in
-	// boot protocol mode
-	bool in_forceBoot_mode_list = false;
-	for (uint8_t i = 0; i < sizeof(keyboard_forceBootMode)/sizeof(keyboard_forceBootMode[0]); i++) {
-		if (dev->idVendor == keyboard_forceBootMode[i].idVendor) {
-			if ((dev->idProduct == keyboard_forceBootMode[i].idProduct) ||
-					(keyboard_forceBootMode[i].idProduct == 0)) {
-				in_forceBoot_mode_list = true;
-				break;
-			}
-		}
-	}
-	if (in_forceBoot_mode_list) {
-		println("SET_PROTOCOL Boot");
-		mk_setup(setup, 0x21, 11, 0, 0, 0); // 11=SET_PROTOCOL  BOOT
-	} else {
-		mk_setup(setup, 0x21, 10, 0, 0, 0); // 10=SET_IDLE
-	}
-	queue_Control_Transfer(dev, &setup, NULL, this);
-	control_queued = true;
-	return true;
-}
-
-void KeyboardController::control(const Transfer_t *transfer)
-{
-	println("control callback (keyboard)");
-	control_queued = false;
-	print_hexbytes(transfer->buffer, transfer->length);
-	// To decode hex dump to human readable HID report summary:
-	//   http://eleccelerator.com/usbdescreqparser/
-	uint32_t mesg = transfer->setup.word1;
-	println("  mesg = ", mesg, HEX);
-	if (mesg == 0x00B21 && transfer->length == 0) { // SET_PROTOCOL
-		mk_setup(setup, 0x21, 10, 0, 0, 0); // 10=SET_IDLE
-		control_queued = true;
-		queue_Control_Transfer(device, &setup, NULL, this);
-	} else if (force_boot_protocol) {
-		forceBootProtocol();	// lets setup to do the boot protocol
-		force_boot_protocol = false;	// turn back off
-	}
-}
-
-void KeyboardController::callback(const Transfer_t *transfer)
-{
-	//println("KeyboardController Callback (static)");
-	if (transfer->driver) {
-		((KeyboardController *)(transfer->driver))->new_data(transfer);
-	}
 }
 
 void KeyboardController::forceBootProtocol()
 {
+	// handle bluetooth connection
+	if (btdriver_) btdriver_->updateHIDProtocol(0x00);
+
+	if (driver_[0] != nullptr) {
+		// Only do it this way if we are a standard USB device
+	    driver_[0]->sendControlPacket(0x21, 11, 0, 0, 0, nullptr); // 11=SET_PROTOCOL  BOOT
+	}
+	
+#if 0
 	if (device && !control_queued) {
 		mk_setup(setup, 0x21, 11, 0, 0, 0); // 11=SET_PROTOCOL  BOOT
 		control_queued = true;
@@ -214,11 +142,13 @@ void KeyboardController::forceBootProtocol()
 	} else {
 		force_boot_protocol = true;	// let system know we want to force this.
 	}
+#endif
 }
 
-void KeyboardController::disconnect()
+void KeyboardController::forceHIDProtocol() 
 {
-	// TODO: free resources
+	if (btdriver_) btdriver_->updateHIDProtocol(0x01);
+
 }
 
 
@@ -238,53 +168,6 @@ static bool contains(uint8_t b, const uint8_t *data)
 	if (data[5] == b || data[6] == b || data[7] == b) return true;
 	return false;
 }
-
-void KeyboardController::new_data(const Transfer_t *transfer)
-{
-	println("KeyboardController Callback (member)");
-	print("  KB Data: ");
-	print_hexbytes(transfer->buffer, 8);
-	for (int i=2; i < 8; i++) {
-		uint32_t key = prev_report[i];
-		if (key >= 4 && !contains(key, report)) {
-			key_release(prev_report[0], key);
-			if (rawKeyReleasedFunction) {
-				rawKeyReleasedFunction(key);
-			}
-		}
-	}
-	if (rawKeyReleasedFunction) {
-		// each modifier key is represented by a bit in the first byte
-		for (int i = 0; i < 8; ++i)
-		{
-			uint8_t keybit = 1 << i;
-			if ((prev_report[0] & keybit) && !(report[0] & keybit)) {
-				rawKeyReleasedFunction(103 + i);
-			}
-		}
-	}
-	for (int i=2; i < 8; i++) {
-		uint32_t key = report[i];
-		if (key >= 4 && !contains(key, prev_report)) {
-			key_press(report[0], key);
-			if (rawKeyPressedFunction) {
-				rawKeyPressedFunction(key);
-			}
-		}
-	}
-	if (rawKeyPressedFunction) {
-		for (int i = 0; i < 8; ++i)
-		{
-			uint8_t keybit = 1 << i;
-			if (!(prev_report[0] & keybit) && (report[0] & keybit)) {
-				rawKeyPressedFunction(103 + i);
-			}
-		}
-	}
-	memcpy(prev_report, report, 8);
-	queue_Data_Transfer(datapipe, report, 8, this);
-}
-
 
 void KeyboardController::numLock(bool f) {
 	if (leds_.numLock != f) {
@@ -311,8 +194,9 @@ void KeyboardController::key_press(uint32_t mod, uint32_t key)
 {
 	// TODO: queue events, perform callback from Task
 	println("  press, key=", key);
-	modifiers = mod;
-	keyOEM = key;
+	//USBHDBGSerial.printf("key_press: %x %x\n", mod, key);
+	modifiers_ = mod;
+	keyOEM_ = key;
 	keyCode = convert_to_unicode(mod, key);
 	println("  unicode = ", keyCode);
 	if (keyPressedFunction) {
@@ -326,8 +210,8 @@ void KeyboardController::key_release(uint32_t mod, uint32_t key)
 {
 	// TODO: queue events, perform callback from Task
 	println("  release, key=", key);
-	modifiers = mod;
-	keyOEM = key;
+	modifiers_ = mod;
+	keyOEM_ = key;
 
 	// Look for modifier keys
 	if (key == M(KEY_NUM_LOCK)) {
@@ -409,13 +293,62 @@ void KeyboardController::LEDS(uint8_t leds) {
 
 void KeyboardController::updateLEDS() {
 	// Now lets tell keyboard new state.
-	if (device != nullptr) {
+	if (driver_[0] != nullptr) {
 		// Only do it this way if we are a standard USB device
-		mk_setup(setup, 0x21, 9, 0x200, 0, sizeof(leds_.byte)); // hopefully this sets leds
-		queue_Control_Transfer(device, &setup, &leds_.byte, this);
-	} else {
+	    driver_[0]->sendControlPacket(0x21, 9, 0x200, 0, sizeof(leds_.byte), (void*) &leds_.byte); 
+	} else if (btdriver_ != nullptr) {
 		// Bluetooth, need to setup back channel to Bluetooth controller. 
+        uint8_t packet[3];
+        packet[0] = 0xA2; // HID BT DATA_request (0xA0) | Report Type (Output 0x02)
+        packet[1] = 0x01; // Report ID
+        packet[2] = leds_.byte;
+        delay(1);
+     	btdriver_->sendL2CapCommand(packet, sizeof(packet), BluetoothController::INTERRUPT_SCID);
+
 	}
+}
+
+void KeyboardController::process_boot_keyboard_format(const uint8_t *report, bool process_mod_keys)
+{
+	//USBHDBGSerial.printf("** Process boot keyboard format **\n");
+	for (int i=2; i < 8; i++) {
+		uint32_t key = prev_report_[i];
+		if (key >= 4 && !contains(key, report)) {
+			key_release(prev_report_[0], key);
+			if (rawKeyReleasedFunction) {
+				rawKeyReleasedFunction(key);
+			}
+		}
+	}
+	if (process_mod_keys && rawKeyReleasedFunction) {
+		// each modifier key is represented by a bit in the first byte
+		for (int i = 0; i < 8; ++i)
+		{
+			uint8_t keybit = 1 << i;
+			if ((prev_report_[0] & keybit) && !(report[0] & keybit)) {
+				rawKeyReleasedFunction(103 + i);
+			}
+		}
+	}
+	for (int i=2; i < 8; i++) {
+		uint32_t key = report[i];
+		if (key >= 4 && !contains(key, prev_report_)) {
+			key_press(report[0], key);
+			if (rawKeyPressedFunction) {
+				rawKeyPressedFunction(key);
+			}
+		}
+	}
+	if (process_mod_keys && rawKeyPressedFunction) {
+		for (int i = 0; i < 8; ++i)
+		{
+			uint8_t keybit = 1 << i;
+			if (!(prev_report_[0] & keybit) && (report[0] & keybit)) {
+				rawKeyPressedFunction(103 + i);
+			}
+		}
+	}
+	memcpy(prev_report_, report, 8);
 }
 
 //=============================================================================
@@ -425,20 +358,49 @@ void KeyboardController::updateLEDS() {
 #define TOPUSAGE_SYS_CONTROL 	0x10080
 #define TOPUSAGE_CONSUMER_CONTROL	0x0c0001
 
+#define TOPUSAGE_KEYBOARD 0X10006
+
 hidclaim_t KeyboardController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
 {
 	// Lets try to claim a few specific Keyboard related collection/reports
-	//USBHDBGSerial.printf("KBH Claim %x\n", topusage);
-	if ((topusage != TOPUSAGE_SYS_CONTROL) 
-		&& (topusage != TOPUSAGE_CONSUMER_CONTROL)
-		) return CLAIM_NO;
+	//USBHDBGSerial.printf("KeyboardController::claim_collection(%p) Driver:%p(%u %u) Dev:%p Top:%x\n", this, driver, 
+	//	driver->interfaceSubClass(), driver->interfaceProtocol(), dev, topusage);
+	//USBHDBGSerial.printf("KeyboardController::claim_collection(%p) Driver:%p Dev:%p Top:%x\n", this, driver, dev, topusage);
+
 	// only claim from one physical device
-	//USBHDBGSerial.println("KeyboardController claim collection");
 	// Lets only claim if this is the same device as claimed Keyboard... 
-	if (dev != device) return CLAIM_NO;
+	//USBHDBGSerial.printf("\tdev=%p mydevice=%p\n", dev, mydevice);
+
 	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
+
+	// We will not claim mouse protocol
+
+	if (driver && (driver->interfaceProtocol() == 2)) return CLAIM_NO;
+
+	// We will claim if BOOT Keyboard.
+
+	if ((driver &&(driver->interfaceSubClass() == 1) && (driver->interfaceProtocol() == 1)) 
+		|| (topusage == TOPUSAGE_KEYBOARD))
+	{
+		// OK boot keyboard or what we think is top level keyboard.
+		// Note only set the driver 0 o
+		if (driver_[0] == nullptr) {
+			driver_[0] = driver;
+			//USBHDBGSerial.printf("\t$$Send SET_IDLE\n");
+	      	if (driver) driver_[0]->sendControlPacket(0x21, 10, 0, 0, 0, nullptr); //10=SET_IDLE
+		} 
+
+     } else if ((topusage == TOPUSAGE_CONSUMER_CONTROL) 
+			 || (topusage == TOPUSAGE_SYS_CONTROL) ) {
+
+		driver_[1] = driver;
+
+     } else {
+		return CLAIM_NO;
+	}
 	mydevice = dev;
 	collections_claimed_++;
+	//USBHDBGSerial.printf("\tKeyboardController claim collection\n");
 	return CLAIM_REPORT;
 }
 
@@ -446,13 +408,43 @@ void KeyboardController::disconnect_collection(Device_t *dev)
 {
 	if (--collections_claimed_ == 0) {
 		mydevice = NULL;
+		driver_[0] = NULL;
+		keyboard_uses_boot_format_ = false;
 	}
 }
+
+bool KeyboardController::hid_process_in_data(const Transfer_t *transfer)
+{
+	const uint8_t *buffer = (const uint8_t *)transfer->buffer;
+	/*
+	uint16_t len = transfer->length;
+	const uint8_t *p = buffer;
+	USBHDBGSerial.printf("HPID(%p, %u):", transfer->driver, len);
+	  if (len > 32) len = 32;
+	while (len--) USBHDBGSerial.printf(" %02X", *p++); */
+	// Probably need to do some more checking of the data, but
+	// first pass if length == 8 assume boot format:
+	// Hoped driver would be something I could check but...
+	if ((transfer->driver == driver_[0]) &&  (transfer->length == 8)) {
+		/*USBHDBGSerial.printf(" (boot)\n"); */
+		process_boot_keyboard_format(buffer, true);
+		keyboard_uses_boot_format_  = true;
+		return true;
+	}
+	//USBHDBGSerial.printf("\n");
+
+	return false;
+}
+
 
 void KeyboardController::hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax)
 {
 	//USBHDBGSerial.printf("KPC:hid_input_begin TUSE: %x TYPE: %x Range:%x %x\n", topusage, type, lgmin, lgmax);
 	topusage_ = topusage;	// remember which report we are processing. 
+	topusage_type_ = type;
+	lgmin_ = lgmin;
+	lgmax_ = lgmax;
+	topusage_index_ = 2;  // hack we ignore first two bytes	
 	hid_input_begin_ = true;
 	hid_input_data_ = false;
 }
@@ -460,16 +452,31 @@ void KeyboardController::hid_input_begin(uint32_t topusage, uint32_t type, int l
 void KeyboardController::hid_input_data(uint32_t usage, int32_t value)
 {
 	// Hack ignore 0xff00 high words as these are user values... 
+	USBHDBGSerial.printf("KeyboardController: topusage= %x usage=%X, value=%d\n", topusage_, usage, value);
 	if ((usage & 0xffff0000) == 0xff000000) return; 
-	//USBHDBGSerial.printf("KeyboardController: topusage= %x usage=%X, value=%d\n", topusage_, usage, value);
+	// If this is the TOPUSAGE_KEYBOARD do in it's own function
+	if (process_hid_keyboard_data(usage, value))
+		return;
+
+	// Special case if this is a battery level message
+	if ((topusage_ == 0xc0000) && (usage == 0x60020)) {
+		battery_level_ = map (value, lgmin_, lgmax_, 0, 100);
+		USBHDBGSerial.printf("\tBattery level: %d min: %u max: %u percent: %u\n", value, lgmin_, lgmax_, battery_level_);
+
+		return;
+	}
+
 
 	// See if the value is in our keys_down list
 	usage &= 0xffff;		// only keep the actual key
 	if (usage == 0) return;	// lets not process 0, if only 0 happens, we will handle it on the end to remove existing pressed items.
 
+
+
 	// Remember if we have received any logical key up events.  Some keyboard appear to send them
 	// others do no...
 	hid_input_data_ = true;
+
 
 	uint8_t key_index;
 	for (key_index = 0; key_index < count_keys_down_; key_index++) {
@@ -498,13 +505,93 @@ void KeyboardController::hid_input_data(uint32_t usage, int32_t value)
 	}
 }
 
+
+
+bool KeyboardController::process_hid_keyboard_data(uint32_t usage, int32_t value)
+{
+	print("process_hid_keyboard_data Usage: ", usage, HEX);
+	println(" value: ", value);
+	//USBHDBGSerial.printf("process_hid_keyboard_data %x=%d\n", usage, value);
+
+	if ((topusage_ & 0xffff0000) != (TOPUSAGE_KEYBOARD & 0xffff0000)) {
+		//USBHDBGSerial.printf("\tNot TopUsage  %x %x\n", topusage_, TOPUSAGE_KEYBOARD);
+		return false;
+	}
+	// Lets first process modifier keys...
+	// usage=700E0, value=0 (Left Control)
+	// usage=700E1, value=0 (Left Shift)
+	// usage=700E2, value=0 (Left Alt)
+	// usage=700E3, value=0 (Left GUI)
+	// usage=700E4, value=0 (Right Control)
+	// usage=700E5, value=0 (Right Shift)
+	// usage=700E6, value=0 (Right Alt)
+	// usage=700E7, value=0 (Right GUI)
+	if ((usage >= 0x700E0) && (usage <= 0x700E7)) {
+		usage &= 7; 
+		uint8_t keybit = 1 << usage;
+		if (value) {
+			if (!(modifiers_ & keybit))  {
+				if (rawKeyPressedFunction) rawKeyPressedFunction(103 + usage);
+				modifiers_ |= keybit;
+			}
+
+		} else {
+			if (modifiers_ & keybit)  {
+				if (rawKeyReleasedFunction) rawKeyReleasedFunction(103 + usage);
+				modifiers_ &= ~keybit;
+			}
+		}
+
+		//USBHDBGSerial.printf("\tUpdated Modifer %x\n", modifiers_);
+		return true;
+	}
+
+
+	// normal keys to be processed here. 
+	// but two ways: for N key we receive an index per item
+	// with Boot, we get an array of these items:
+
+	if ((usage >= 0x70000) && (usage <= 0x70073)) {
+		usage &= 0xff; // only use the low byte
+		if (keyboard_uses_boot_format_ || (topusage_type_ & 0x2)) {
+			//normal variable - so use bitindex array to figure out what is new and what is old
+			uint8_t key_byte_index = usage >> 3; //which byte in key_states_.
+			uint8_t key_bit_mask = 1 << (usage & 0x7);
+
+			if (value) {
+				if (!(key_states_[key_byte_index] & key_bit_mask))  {
+					key_press(modifiers_, usage);
+					if (rawKeyPressedFunction) rawKeyPressedFunction(usage);
+					key_states_[key_byte_index] |= key_bit_mask;
+				}
+
+			} else {
+				if (key_states_[key_byte_index] & key_bit_mask)  {
+					key_release(modifiers_, usage);
+					if (rawKeyReleasedFunction) rawKeyReleasedFunction(usage);
+					key_states_[key_byte_index] &= ~key_bit_mask;
+				}
+			}
+		} else {
+			// So array, We only see what keys are down.
+			if (topusage_index_ < 8) {
+				report_[topusage_index_++] = usage;
+			}
+		}
+		return true;
+	}
+	return false;
+}
+
 void KeyboardController::hid_input_end()
 {
-	//USBHDBGSerial.println("KPC:hid_input_end");
+	//USBHDBGSerial.printf("KPC:hid_input_end %u %u\n", hid_input_begin_, hid_input_data_);
 	if (hid_input_begin_) {
-
-		// See if we received any data from parser if not, assume all keys released... 
-		if (!hid_input_data_ ) {
+		if (!keyboard_uses_boot_format_ && ((topusage_type_ & 0x2) == 0) && (topusage_index_ > 2)) {
+			// we have boot data.
+			process_boot_keyboard_format(report_, false);
+		}
+		else if (!hid_input_data_ ) {
 			if (extrasKeyReleasedFunction) {
 				while (count_keys_down_) {
 					count_keys_down_--;
@@ -518,26 +605,84 @@ void KeyboardController::hid_input_end()
 	}		
 }
 
-bool KeyboardController::claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName) 
+// now with connection type.
+hidclaim_t KeyboardController::claim_bluetooth(BluetoothConnection *btconnection, uint32_t bluetooth_class, uint8_t *remoteName, int type)
 {
 	USBHDBGSerial.printf("Keyboard Controller::claim_bluetooth - Class %x\n", bluetooth_class);
 	// If we are already in use than don't grab another one.  Likewise don't grab if it is used as USB or HID object
-	if (btdevice && (btdevice != (Device_t*)driver)) return false;
-	if (mydevice != NULL) return false;
-	if (device != nullptr) return false;
+	if (btconnect && (btconnection != btconnect)) return CLAIM_NO;
+	if (mydevice != NULL) return CLAIM_NO;
 
-	if ((((bluetooth_class & 0xff00) == 0x2500) || (((bluetooth_class & 0xff00) == 0x500))) && (bluetooth_class & 0x40)) {
+	if ((bluetooth_class & 0x0f00) == 0x500) {
+		// This is a peripheral class
+
+		// Special case out PS3
 		if (remoteName && (strncmp((const char *)remoteName, "PLAYSTATION(R)3", 15) == 0)) {
-			USBHDBGSerial.printf("KeyboardController::claim_bluetooth Reject PS3 hack\n");
+			//USBHDBGSerial.printf("KeyboardController::claim_bluetooth Reject PS3 hack\n");
 			btdevice = nullptr;	// remember this way 
 
-			return false;
+			return CLAIM_NO;
 		}
-		USBHDBGSerial.printf("KeyboardController::claim_bluetooth TRUE\n");
-		btdevice = (Device_t*)driver;	// remember this way 
-		return true;
+		
+		if (bluetooth_class & 0x40) {
+
+			// We will claim this now
+			// Test to link in BT HID parser code
+			btconnection->useHIDProtocol(true);
+			if (type == 1) {
+				// They are telling me to grab it now. SO say yes
+				USBHDBGSerial.printf("KeyboardController::claim_bluetooth TRUE\n");
+				btconnect = btconnection;
+				btdevice = (Device_t*)btconnect->btController_;	// remember this way 
+				btdriver_ = btconnect->btController_;
+				return CLAIM_INTERFACE;
+			}
+		}
+		return CLAIM_REPORT; // let them know we may be interested if there is a HID REport Descriptor
 	}
-	return false;
+	return CLAIM_NO;
+}
+
+hidclaim_t KeyboardController::bt_claim_collection(BluetoothConnection *btconnection, uint32_t bluetooth_class, uint32_t topusage)
+{
+	USBHDBGSerial.printf("KeyboardController::bt_claim_collection(%p) Connection:%p class:%x Top:%x\n", this, btconnection, bluetooth_class, topusage);
+
+
+	if (mydevice != NULL) return CLAIM_NO;  // claimed by some other... 
+	if (btconnect && (btconnect != btconnection)) return CLAIM_NO;
+	// We will claim if BOOT Keyboard.
+
+	switch (topusage) {
+		case TOPUSAGE_KEYBOARD:
+		case TOPUSAGE_CONSUMER_CONTROL:
+		case TOPUSAGE_SYS_CONTROL:
+			collections_claimed_++;
+			USBHDBGSerial.printf("\tKeyboardController claim collection\n");
+			btconnect = btconnection;
+			btdevice = (Device_t*)btconnect->btController_;	// remember this way 
+			return CLAIM_REPORT;
+	}
+	return CLAIM_NO;
+}
+
+void KeyboardController::bt_hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax)
+{
+	hid_input_begin(topusage, type, lgmin, lgmax);	
+}
+
+void KeyboardController::bt_hid_input_data(uint32_t usage, int32_t value)
+{
+	hid_input_data(usage, value);
+}
+
+void KeyboardController::bt_hid_input_end()
+{
+	hid_input_end();
+}
+
+void KeyboardController::bt_disconnect_collection(Device_t *dev)
+{
+	disconnect_collection(dev);
 }
 
 bool KeyboardController::remoteNameComplete(const uint8_t *remoteName) 
@@ -562,24 +707,21 @@ bool KeyboardController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 4 0 0 0 0 0 
 	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 0 0 0 0 0 0 
 	// So Len=9 passed in data starting at report ID=1... 
-	USBHDBGSerial.printf("KeyboardController::process_bluetooth_HID_data\n");
+	USBHDBGSerial.printf("KBD::process_bluetooth_HID_data: ");
+
+	for (uint8_t i = 0; i < length; i++) USBHDBGSerial.printf(" %02X", data[i]); 
+	USBHDBGSerial.printf("\n");
+
+	// BUGBUG - assume boot format
+	keyboard_uses_boot_format_  = true;
+
+	//if (bthids_.process_bluetooth_HID_data(data, length)) return true;
+
+
 	if (data[0] != 1) return false;
-	print("  KB Data: ");
-	print_hexbytes(data, length);
-	for (int i=2; i < length; i++) {
-		uint32_t key = prev_report[i];
-		if (key >= 4 && !contains(key, report)) {
-			key_release(prev_report[0], key);
-		}
-	}
-	for (int i=2; i < 8; i++) {
-		uint32_t key = data[i];
-		if (key >= 4 && !contains(key, prev_report)) {
-			key_press(data[1], key);
-		}
-	}
-	// Save away the data.. But shift down one byte... Don't need the report number
-	memcpy(prev_report, &data[1], 8);
+
+	// See if we can simply use our boot format code to process skip the report ID.
+	process_boot_keyboard_format(&data[1], true);
 	return true;
 }
 
@@ -588,13 +730,33 @@ void KeyboardController::release_bluetooth()
 	btdevice = nullptr;
 }
 
+
+//=============================================================================
+// More bluetooth stuff!
+//=============================================================================
+void KeyboardController::connectionComplete(void)
+{
+  // here is where I am going to try to get data...
+  println("\n$$$ connectionComplete" );
+  //connection_complete_ = true;
+//  if (bthids_.startRetrieveHIDReportDescriptor())
+//  	println("*** Loaded Bluetooth Report Descriptor ***");
+}
+
+void KeyboardController::sdp_command_completed (bool success) {
+//  if (bthids_.completeSDPRequest(success))
+//  	println("*** Loaded Bluetooth Report Descriptor ***");
+//  else
+//  	println("*** Failed Bluetooth Report Descriptor ***");
+
+}
+
 //*****************************************************************************
 // Some simple query functions depend on which interface we are using...
 //*****************************************************************************
 
 uint16_t KeyboardController::idVendor() 
 {
-	if (device != nullptr) return device->idVendor;
 	if (mydevice != nullptr) return mydevice->idVendor;
 	if (btdevice != nullptr) return btdevice->idVendor;
 	return 0;
@@ -602,7 +764,6 @@ uint16_t KeyboardController::idVendor()
 
 uint16_t KeyboardController::idProduct() 
 {
-	if (device != nullptr) return device->idProduct;
 	if (mydevice != nullptr) return mydevice->idProduct;
 	if (btdevice != nullptr) return btdevice->idProduct;
 	return 0;
@@ -610,7 +771,6 @@ uint16_t KeyboardController::idProduct()
 
 const uint8_t *KeyboardController::manufacturer()
 {
-	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_MAN]];
 	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; 
 	if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_MAN]]; 
 	return nullptr;
@@ -618,7 +778,6 @@ const uint8_t *KeyboardController::manufacturer()
 
 const uint8_t *KeyboardController::product()
 {
-	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_PROD]];
 	if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; 
 	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_PROD]]; 
 	return nullptr;
@@ -626,7 +785,6 @@ const uint8_t *KeyboardController::product()
 
 const uint8_t *KeyboardController::serialNumber()
 {
-	if ((device != nullptr) && (device->strbuf != nullptr)) return &device->strbuf->buffer[device->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]];
 	if ((mydevice != nullptr) && (mydevice->strbuf != nullptr)) return &mydevice->strbuf->buffer[mydevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; 
 	if ((btdevice != nullptr) && (btdevice->strbuf != nullptr)) return &btdevice->strbuf->buffer[btdevice->strbuf->iStrings[strbuf_t::STR_ID_SERIAL]]; 
 	return nullptr;

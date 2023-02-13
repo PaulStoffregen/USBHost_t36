@@ -59,9 +59,6 @@ bool USBHIDParser::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 	println(" bInterfaceClass =    ", descriptors[5]);
 	println(" bInterfaceSubClass = ", descriptors[6]);
 	println(" bInterfaceProtocol = ", descriptors[7]);
-	// do not claim boot protocol keyboards
-	if (descriptors[6] == 1 && descriptors[7] == 1) return false;
-
 	print("HID Parser Claim: ");
 	print_hexbytes(descriptors, len);
 
@@ -150,6 +147,9 @@ bool USBHIDParser::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 	}
 	// request the HID report descriptor
 	bInterfaceNumber = descriptors[2];	// save away the interface number; 
+	bInterfaceSubClass = descriptors[6]; // likewise sub type and protocol.
+	bInterfaceProtocol = descriptors[7];
+	
 	mk_setup(setup, 0x81, 6, 0x2200, descriptors[2], descsize); // get report desc
 	queue_Control_Transfer(dev, &setup, descriptor, this);
 	return true;
@@ -218,7 +218,7 @@ void USBHIDParser::in_data(const Transfer_t *transfer)
 	/*USBHDBGSerial.printf("HID: ");
 	uint8_t *pb = (uint8_t*)transfer->buffer;
 	for (uint8_t i = 0; i < transfer->length; i++) {
-		USBHDBGSerial.printf("%x ",pb[i]);
+		USBHDBGSerial.printf("%02x ",pb[i]);
 	}
 	USBHDBGSerial.printf("\n"); */
 
@@ -250,7 +250,7 @@ void USBHIDParser::in_data(const Transfer_t *transfer)
 
 void USBHIDParser::out_data(const Transfer_t *transfer)
 {
-	Serial.printf(">>>USBHIDParser::out_data\n");
+	//Serial.printf(">>>USBHIDParser::out_data\n");
 	println("USBHIDParser:out_data called (instance)");
 	// A packet completed. lets mark it as done and call back
 	// to top reports handler.  We unmark our checkmark to
@@ -310,10 +310,10 @@ bool USBHIDParser::sendControlPacket(uint32_t bmRequestType, uint32_t bRequest,
 			uint32_t wValue, uint32_t wIndex, uint32_t wLength, void *buf)
 {
 	// Use setup structure to build packet 
-	Serial.printf(">>> SendControlPacket: %x %x %x %x %d", bmRequestType, bRequest, wValue, wIndex, wLength);
+	//USBHDBGSerial.printf(">>> SendControlPacket: %x %x %x %x %d", bmRequestType, bRequest, wValue, wIndex, wLength);
 	mk_setup(setup, bmRequestType, bRequest, wValue, wIndex, wLength); // ps3 tell to send report 1?
 	bool fReturn =  queue_Control_Transfer(device, &setup, buf, this);
-	Serial.printf(" return: %u\n", fReturn);
+	//USBHDBGSerial.printf(" return: %u\n", fReturn);
 	return fReturn;
 }
 
@@ -338,7 +338,7 @@ void USBHIDParser::parse()
 			p += *p + 3;
 			continue;
 		}
-		uint32_t val;
+		uint32_t val = 0;
 		switch (tag & 0x03) { // Short Item data
 		  case 0: val = 0;
 			p++;
@@ -483,6 +483,8 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 	uint8_t collection_level = 0;
 	uint16_t usage[USAGE_LIST_LEN] = {0, 0};
 	uint8_t usage_count = 0;
+	uint8_t usage_min_max_count = 0;
+	uint8_t usage_min_max_mask = 0;
 	uint8_t report_id = 0;
 	uint16_t report_size = 0;
 	uint16_t report_count = 0;
@@ -498,7 +500,7 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 			p += p[1] + 3;
 			continue;
 		}
-		uint32_t val;
+		uint32_t val = 0;
 		switch (tag & 0x03) { // Short Item data
 		  case 0: val = 0;
 			p++;
@@ -544,12 +546,31 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 			}
 			break;
 		  case 0x18: // Usage Minimum (local)
-			usage[0] = val;
-			usage_count = 255;
+		  	// Note: Found a report with multiple min/max
+		  	if (usage_count != 255) {
+				usage_count = 255;
+			  	usage_min_max_count = 0;
+				usage_min_max_mask = 0;
+			}
+			usage[usage_min_max_count * 2] = val;
+			usage_min_max_mask |= 1;
+			if (usage_min_max_mask == 3) {
+		  		usage_min_max_count++;
+				usage_min_max_mask = 0;					
+		  	}
 			break;
 		  case 0x28: // Usage Maximum (local)
-			usage[1] = val;
-			usage_count = 255;
+		  	if (usage_count != 255) {
+				usage_count = 255;
+			  	usage_min_max_count = 0;
+				usage_min_max_mask = 0;
+			}
+			usage[usage_min_max_count * 2 + 1] = val;
+			usage_min_max_mask |= 2;
+			if (usage_min_max_mask == 3) {
+		  		usage_min_max_count++;
+				usage_min_max_mask = 0;					
+		  	}
 			break;
 		  case 0xA0: // Collection
 			if (collection_level == 0) {
@@ -590,6 +611,8 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 				println("       max=  ", logical_max);
 				println("       reportcount=", report_count);
 				println("       usage count=", usage_count);
+				println("       usage min max count=", usage_min_max_count);
+
 				driver->hid_input_begin(topusage, val, logical_min, logical_max);
 				println("Input, total bits=", report_count * report_size);
 				if ((val & 2)) {
@@ -597,6 +620,7 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 					uint32_t uindex = 0;
 					uint32_t uindex_max = 0xffff;	// assume no MAX
 					bool uminmax = false;
+					uint8_t uminmax_index = 0;
 					if (usage_count > USAGE_LIST_LEN) {
 						// usage numbers by min/max, not from list
 						uindex = usage[0];
@@ -620,6 +644,12 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 						if (uminmax) {
 							u = uindex;
 							if (uindex < uindex_max) uindex++;
+							else if (uminmax_index < usage_min_max_count) {
+								uminmax_index++;
+								uindex = usage[uminmax_index * 2];
+								uindex_max = usage[uminmax_index * 2 + 1];
+								//USBHDBGSerial.printf("$$ next min/max pair: %u %u %u\n", uminmax_index, uindex, uindex_max);
+							}
 						} else {
 							u = usage[uindex++];
 							if (uindex >= USAGE_LIST_LEN-1) {
@@ -643,20 +673,53 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 					}
 				} else {
 					// array format, each item is a usage number
-					for (uint32_t i=0; i < report_count; i++) {
-						uint32_t u = bitfield(data, bitindex, report_size);
-						int n = u;
-						if (n >= logical_min && n <= logical_max) {
+					// maybe act like the 2 case...
+					if (usage_min_max_count && (report_size == 1)) {
+						uint32_t uindex = usage[0];
+						uint32_t uindex_max = usage[1];
+						uint8_t uminmax_index = 0;
+						uint32_t u;
+
+						for (uint32_t i=0; i < report_count; i++) {
+							u = uindex;
+							if (uindex < uindex_max) uindex++;
+							else if (uminmax_index < usage_min_max_count) {
+								uminmax_index++;
+								uindex = usage[uminmax_index * 2];
+								uindex_max = usage[uminmax_index * 2 + 1];
+								//USBHDBGSerial.printf("$$ next min/max pair: %u %u %u\n", uminmax_index, uindex, uindex_max);
+							}
+
 							u |= (uint32_t)usage_page << 16;
-							print("  usage = ", u, HEX);
-							println("  data = 1");
-							driver->hid_input_data(u, 1);
-						} else {
-							print ("  usage =", u, HEX);
-							print(" out of range: ", logical_min, HEX);
-							println(" ", logical_max, HEX);
+							uint32_t n = bitfield(data, bitindex, report_size);
+							if (logical_min >= 0) {
+								println("  data = ", n);
+								driver->hid_input_data(u, n);
+							} else {
+								int32_t sn = signext(n, report_size);
+								println("  sdata = ", sn);
+								driver->hid_input_data(u, sn);
+							}
+
+							bitindex += report_size;
 						}
-						bitindex += report_size;
+
+					} else {
+						for (uint32_t i=0; i < report_count; i++) {
+							uint32_t u = bitfield(data, bitindex, report_size);
+							int n = u;
+							if (n >= logical_min && n <= logical_max) {
+								u |= (uint32_t)usage_page << 16;
+								print("  usage = ", u, HEX);
+								println("  data = 1");
+								driver->hid_input_data(u, 1);
+							} else {
+								print ("  usage =", u, HEX);
+								print(" out of range: ", logical_min, HEX);
+								println(" ", logical_max, HEX);
+							}
+							bitindex += report_size;
+						}
 					}
 				}
 			}
@@ -692,6 +755,7 @@ void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint3
 		}
 		if (reset_local) {
 			usage_count = 0;
+			usage_min_max_count = 0;
 			usage[0] = 0;
 			usage[1] = 0;
 		}

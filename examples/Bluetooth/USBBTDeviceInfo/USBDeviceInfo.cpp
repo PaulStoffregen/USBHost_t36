@@ -26,8 +26,7 @@
 #include <Arduino.h>
 #include <USBHost_t36.h>
 #include "USBDeviceInfo.h"
-
-extern void dump_hexbytes(const void *ptr, uint32_t len, uint32_t indent);
+#include "BTHIDDumper.h"
 
 static void println(const char *title, uint32_t val, uint8_t b = DEC) {
 	Serial.print(title);
@@ -59,13 +58,13 @@ bool USBDeviceInfo::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 		println("  bDeviceClass = ", dev->bDeviceClass);
 	   	println("  bDeviceSubClass = ", dev->bDeviceSubClass);
 	   	println("  bDeviceProtocol = ", dev->bDeviceProtocol);
-		dump_hexbytes(descriptors, len, 0);
+		BTHIDDumpController::dump_hexbytes(descriptors, len, 0);
 		return false;
 	}
 	// only claim at interface level
 	Serial.println("\n****************************************");
 	Serial.println("** Interface Level **");
-	dump_hexbytes(descriptors, len, 0);
+	BTHIDDumpController::dump_hexbytes(descriptors, len, 0);
 	if (len < 9+9+7) return false;
 
 	// interface descriptor

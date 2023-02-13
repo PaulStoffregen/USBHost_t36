@@ -153,11 +153,11 @@ typedef struct
 
 // MSC Drive status/info struct
 typedef struct {
-	bool connected   = false; // Device is connected
-	bool initialized = false; // Device is initialized
-	bool mounted     = false; // Device is mounted
-	const char * drvName = 0;
-	uint32_t bufferSize = 0;
+	bool connected;    // Device is connected
+	bool initialized;  // Device is initialized
+	bool mounted;      // Device is mounted
+	const char * drvName;
+	uint32_t bufferSize;
 	uint8_t hubNumber;
 	uint8_t hubPort;
 	uint8_t deviceAddress;

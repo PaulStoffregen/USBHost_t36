@@ -1,3 +1,5 @@
+#include "elapsedMillis.h"
+#include <MemoryHexDump.h>
 /* USB EHCI Host for Teensy 3.6
    Copyright 2017 Paul Stoffregen (paul@pjrc.com)
 
@@ -20,59 +22,487 @@
    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
-#include "HIDDumper.h"
-bool HIDDumpController::show_raw_data = true;
-bool HIDDumpController::show_formated_data = true;
-bool HIDDumpController::changed_data_only = false;
+#include "BTHIDDumper.h"
 
-void HIDDumpController::init() {
+// Uncomment for HID PARSER DEBUG OUTPUT
+//#define DEBUG_HID_PARSE
+
+class PDBGSerial_class : public Print {
+  virtual size_t write(uint8_t b) {
+#ifdef DEBUG_HID_PARSE
+    Serial.write(b);
+#endif
+    return 1;
+  }
+};
+
+static PDBGSerial_class PDBGSerial;
+
+
+bool BTHIDDumpController::show_raw_data = true;
+bool BTHIDDumpController::show_formated_data = true;
+bool BTHIDDumpController::changed_data_only = false;
+
+void BTHIDDumpController::init() {
   USBHost::contribute_Transfers(mytransfers, sizeof(mytransfers) / sizeof(Transfer_t));
-  USBHIDParser::driver_ready_for_hid_collection(this);
+  BluetoothController::driver_ready_for_bluetooth(this);
 }
 
-hidclaim_t HIDDumpController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage) {
-  // only claim RAWHID devices currently: 16c0:0486
-  Serial.printf("HIDDumpController(%u : %p : %p) Claim: %x:%x usage: %x", index_, this, driver, dev->idVendor, dev->idProduct, topusage);
-  Serial.printf(" SubClass: %x Protcol: %x",  driver->interfaceSubClass(), driver->interfaceProtocol());
-  if (mydevice != NULL && dev != mydevice) {
-    Serial.println("- NO (Device)");
-    return CLAIM_NO;
+hidclaim_t BTHIDDumpController::claim_bluetooth(BluetoothConnection *btconnection, uint32_t bluetooth_class, uint8_t *remoteName, int type)
+//bool BTHIDDumpController::claim_bluetooth(BluetoothController *driver, uint32_t bluetooth_class, uint8_t *remoteName)
+{
+  // How to handle combo devices?
+  Serial.printf("BTHIDDumpController Controller::claim_bluetooth - Class %x\n", bluetooth_class);
+  // start off only claiming HID type devices.
+  // If we are already in use than don't grab another one.  Likewise don't grab if it is used as USB or HID object
+  if (btconnect && (btconnection != btconnect)) return CLAIM_NO;
+  if (((bluetooth_class & 0xff00) == 0x2500) || ((bluetooth_class & 0xff00) == 0x500)) {
+    Serial.printf("BTHIDDumpController::claim_bluetooth TRUE\n");
+    btconnect = btconnection;
+    btdevice = (Device_t *)btconnect->btController_;  // remember this way
+    btdriver_ = btconnect->btController_;
+    btconnect_ = btconnect;
+
+    bluetooth_class_low_byte_ = bluetooth_class & 0xff;  // remember which HID type...
+    // experiment if we want to allow the device to stay in HID mode
+    //driver->useHIDProtocol(true);
+    return CLAIM_INTERFACE;
   }
-  if (usage_ && (usage_ != topusage)) {
-    Serial.printf(" - NO (Usage: %x)\n", usage_);
-    return CLAIM_NO;  // Only claim one
+  return CLAIM_NO;
+}
+bool BTHIDDumpController::process_bluetooth_HID_data(const uint8_t *data, uint16_t length) {
+  Serial.printf("(BTHID(%p, %u): ", data, length);
+  dump_hexbytes(data, length, 16);
+  if (decode_input_boot_data_) {
+    if (data[0] == 0x01) return decode_boot_report1(data + 1, length - 1);
   }
-
-  bool dump_hid_info = (usage_ == 0);
-
-
-  mydevice = dev;
-  collections_claimed++;
-  usage_ = topusage;
-  driver_ = driver;  // remember the driver.
-  Serial.println(" - Yes");
-
-  // if Boot Mouse - then set idle
-  if ((driver->interfaceSubClass() == 1) && (driver->interfaceProtocol() == 1)) {
-    USBHDBGSerial.printf(">> Boot Keyboard - Send SET_IDLE <<\n");
-    driver->sendControlPacket(0x21, 10, 0, 0, 0, nullptr); //10=SET_IDLE
-
-  }
-
-  // Lets try to dump the whole HID Report descriptor only the first time
-  if (dump_hid_info) dumpHIDReportDescriptor(driver);
-  
-  return CLAIM_INTERFACE;  // We want
+  parse(0x0100 | data[0], data + 1, length - 1);
+  return false;
+}
+void BTHIDDumpController::release_bluetooth() {
+  Serial.println("BTHIDDumpController Controller::release_bluetooth");
+  btdevice = nullptr;
+  connection_complete_ = true;
+  driver_ = nullptr;
+  btdriver_ = nullptr;
+  btconnect_ = nullptr;
+  decode_input_boot_data_ = false;
 }
 
-void HIDDumpController::disconnect_collection(Device_t *dev) {
-  if (--collections_claimed == 0) {
-    mydevice = NULL;
-    usage_ = 0;
+bool BTHIDDumpController::remoteNameComplete(const uint8_t *remoteName) {
+  // From Joystick.  Lets see if we need to do some special connecting...
+  if (strncmp((const char *)remoteName, "Wireless Controller", 19) == 0) {
+    Serial.printf("  (%s)PS4 Try special connection order\n", remoteName);
+    //special_process_required = SP_NEED_CONNECT;
+  }
+
+  return true;
+}
+
+
+void BTHIDDumpController::connectionComplete(void) {
+  // here is where I am going to try to get data...
+  Serial.println("\n$$$ connectionComplete");
+  connection_complete_ = true;
+}
+
+bool BTHIDDumpController::decode_boot_report1(const uint8_t *data, uint16_t length) {
+  // Lets see if keyboard type:
+  // lets look through the bits for the modifier keys and print out the information.
+  if (bluetooth_class_low_byte_ & 0x40) {
+    Serial.println("Boot Mode Keyboard update:");
+    uint8_t mask = 0x01;
+    uint32_t usage;
+    for (usage = 0x700E0; mask; usage++) {
+      if (data[0] & mask) {
+        Serial.printf("usage=%X, value=1 ", usage);
+        printUsageInfo(usage >> 16, usage & 0xffff);
+        Serial.println();
+      }
+      mask <<= 1;  // shift to next bit
+    }
+
+    for (uint16_t i = 2; i < length; i++) {
+      if (data[i] != 0) {
+        Serial.printf("usage=%X, value=1 ", 0x70000 + data[i]);
+        printUsageInfo(0x7, data[i]);
+        Serial.println();
+      }
+    }
+
+  } else if ((bluetooth_class_low_byte_ == 0x4) || (bluetooth_class_low_byte_ == 0x8) || (bluetooth_class_low_byte_ == 0xc)) {
+    // Joystick, or gamepad or remote control
+    Serial.println("Joystick RPT1 update: ");
+    dump_hexbytes(data, length, 22);
+  }
+  return true;
+}
+
+//BUGBUG: move to class or ...
+DMAMEM uint8_t sdp_buffer[4096];
+
+int BTHIDDumpController::extract_next_SDP_Token(uint8_t *pbElement, int cb_left, sdp_element_t &sdpe) {
+  uint8_t element = *pbElement;  // first byte is type of element
+  sdpe.element_type = element >> 3;
+  sdpe.element_size = element & 7;
+  sdpe.data.luw = 0;  // start off 0
+
+  switch (element) {
+    case 0:  // nil
+      sdpe.dtype = DNIL;
+      return 1;  // one byte used.
+
+    case 0x08:  // unsigned one byte
+    case 0x18:  // UUID one byte
+    case 0x28:  // bool one byte
+      sdpe.dtype = DU32;
+      sdpe.data.uw = pbElement[1];
+      return 2;
+
+    case 0x09:  // unsigned 2  byte
+    case 0x19:  // uuid 2  byte
+      sdpe.dtype = DU32;
+      sdpe.data.uw = (pbElement[1] << 8) + pbElement[2];
+      return 3;
+    case 0x0A:  // unsigned 4  byte
+    case 0x1A:  // UUID 4  byte
+      sdpe.dtype = DU32;
+      sdpe.data.uw = (uint32_t)(pbElement[1] << 24) + (uint32_t)(pbElement[2] << 16) + (pbElement[3] << 8) + pbElement[4];
+      return 5;
+    case 0x0B:  // unsigned 8  byte
+      sdpe.dtype = DU64;
+      sdpe.data.luw = ((uint64_t)pbElement[1] << 52) + ((uint64_t)pbElement[2] << 48) + ((uint64_t)pbElement[3] << 40) + ((uint64_t)pbElement[4] << 32) + (uint32_t)(pbElement[5] << 24) + (uint32_t)(pbElement[6] << 16) + (pbElement[7] << 8) + pbElement[8];
+      return 9;
+
+    // type = 2 signed
+    case 0x10:  // unsigned one byte
+      sdpe.dtype = DS32;
+      sdpe.data.sw = (int8_t)pbElement[1];
+      return 2;
+    case 0x11:  // unsigned 2  byte
+      sdpe.dtype = DS32;
+      sdpe.data.sw = (int16_t)((pbElement[1] << 8) + pbElement[2]);
+      return 3;
+
+    case 0x12:  // unsigned 4  byte
+      sdpe.dtype = DS32;
+      sdpe.data.sw = (int32_t)((uint32_t)(pbElement[1] << 24) + (uint32_t)(pbElement[2] << 16) + (pbElement[3] << 8) + pbElement[4]);
+      return 5;
+    case 0x13:  //
+      sdpe.dtype = DS64;
+      sdpe.data.lsw = (int64_t)(((uint64_t)pbElement[1] << 52) + ((uint64_t)pbElement[2] << 48) + ((uint64_t)pbElement[3] << 40) + ((uint64_t)pbElement[4] << 32) + (uint32_t)(pbElement[5] << 24) + (uint32_t)(pbElement[6] << 16) + (pbElement[7] << 8) + pbElement[8]);
+      return 9;
+
+    // string one byte size.
+    case 0x25:
+      sdpe.dtype = DPB;
+      sdpe.element_size = pbElement[1];
+      sdpe.data.pb = &pbElement[2];
+      return sdpe.element_size + 2;
+
+    case 0x26:
+      sdpe.dtype = DPB;
+      sdpe.element_size = (pbElement[1] << 8) + pbElement[2];
+      sdpe.data.pb = &pbElement[3];
+      return sdpe.element_size + 3;
+
+    // type = 7 Data element sequence
+    case 0x35:  //
+    case 0x3D:  //
+      sdpe.dtype = DLVL;
+      sdpe.element_size = pbElement[1];
+      sdpe.data.pb = &pbElement[2];
+      return 2;
+    case 0x36:  //
+    case 0x3E:  //
+      sdpe.dtype = DLVL;
+      sdpe.element_size = (pbElement[1] << 8) + pbElement[2];
+      sdpe.data.pb = &pbElement[3];
+      return 3;
+    case 0x37:  //
+    case 0x3F:  //
+      sdpe.dtype = DLVL;
+      sdpe.element_size = (uint32_t)(pbElement[1] << 24) + (uint32_t)(pbElement[2] << 16) + (pbElement[3] << 8) + pbElement[4];
+      sdpe.data.pb = &pbElement[3];
+      return 5;
+    default:
+      Serial.printf("### DECODE failed %x ###\n", element);
+      return -1;
   }
 }
 
-void dump_hexbytes(const void *ptr, uint32_t len, uint32_t indent) {
+void BTHIDDumpController::print_sdpe_val(sdp_element_t &sdpe, bool verbose) {
+  switch (sdpe.dtype) {
+    case DNIL: break;
+    case DU32: Serial.printf(" %u(0x%X)", sdpe.data.uw, sdpe.data.uw); break;
+    case DS32: Serial.printf(" %d(0x%X)", sdpe.data.sw, sdpe.data.sw); break;
+    case DU64: Serial.printf(" %llu(0x%llX)", sdpe.data.luw, sdpe.data.luw); break;
+    case DS64: Serial.printf(" %lld(0x%llX", sdpe.data.lsw, sdpe.data.lsw); break;
+    case DPB:
+      {
+        // two pass, see if it looks like the data is text string:
+        bool printable = true;
+        for (uint16_t i = 0; i < sdpe.element_size; i++) {
+          if ((sdpe.data.pb[i] < ' ') || (sdpe.data.pb[i] > '~')) {
+            printable = false;
+            break;
+          }
+        }
+        if (printable) {
+          Serial.print(" '");
+          Serial.write(sdpe.data.pb, sdpe.element_size);
+          Serial.print("'");
+        } else {
+          if (verbose) {
+            Serial.println();
+            MemoryHexDump(Serial, sdpe.data.pb, sdpe.element_size, true);
+          } else {
+            Serial.printf(" (%u)<", sdpe.element_size);
+            for (uint16_t i = 0; i < sdpe.element_size; i++) {
+              if (i == 16) {
+                Serial.print("...");
+                break;
+              } else Serial.printf(" %02X", sdpe.data.pb[i]);
+            }
+            Serial.print(">");
+          }
+        }
+      }
+      break;
+    case DLVL:
+      if (verbose) Serial.printf("%u", sdpe.element_size);
+      else Serial.print(" {");
+      break;
+  }
+}
+
+void BTHIDDumpController::decode_SDP_buffer(bool verbose_output) {
+
+  uint32_t cb_buffer_used = btconnect_->SDPRequestBufferUsed();
+
+  Serial.printf("SDP Data returned: %u bytes\n", cb_buffer_used);
+  if (verbose_output) MemoryHexDump(Serial, sdp_buffer, cb_buffer_used, true);
+
+  int cb_left = cb_buffer_used;
+  uint8_t *pb = &sdp_buffer[0];  // start at second byte;
+  int level_bytes_left[10];
+  int count_levels = 0;
+  bool next_is_attribute_num = true;
+
+  sdp_element_t sdpe;
+  while (cb_left > 0) {
+    int cb = extract_next_SDP_Token(pb, cb_left, sdpe);
+    if (cb < 0) break;
+
+    for (int i = 0; i < count_levels; i++) {
+      level_bytes_left[i] -= cb;
+    }
+
+    if (verbose_output) {
+      // Decrement counts of byes left in levels
+      for (int i = 0; i < count_levels; i++) {
+        Serial.print("  ");
+      }
+      switch (sdpe.element_type) {
+        case 0: Serial.print("NIL"); break;
+        case 1: Serial.print("UINT:"); break;
+        case 2: Serial.print("INT:"); break;
+        case 3: Serial.print("UUID:"); break;
+        case 4: Serial.print("St:"); break;
+        case 5: Serial.print("Bool:"); break;
+        case 6: Serial.print("{s:"); break;
+        case 7: Serial.print("{a:"); break;
+        case 8: Serial.print("URL:"); break;
+      }
+
+      // print out the value
+      print_sdpe_val(sdpe, true);
+      if (sdpe.dtype == DLVL) level_bytes_left[count_levels++] = sdpe.element_size;
+
+      for (int i = count_levels - 1; i >= 0; i--) {
+        if (level_bytes_left[i] <= 0) {
+          Serial.print(" }");
+          count_levels--;
+        }
+      }
+      Serial.println();
+    } else {
+      //---------------------------------------
+      // Lets see if we can do this structured:
+      //---------------------------------------
+      // levels 0=whole, 1=Record?, 2=attribute (attribute number ) (attribute value)
+      if (next_is_attribute_num) {
+        // this should be Attribute number
+        if (count_levels == 2) {
+          Serial.print("Attribute:");
+          next_is_attribute_num = false;
+          print_sdpe_val(sdpe, false);
+          int attribute_id = -1;
+          switch (sdpe.dtype) {
+            case DU32: attribute_id = (int)sdpe.data.uw; break;
+            case DS32: attribute_id = (int)sdpe.data.sw; break;
+          }
+          switch (attribute_id) {
+            case 0x0000: Serial.print("(ServiceRecordHandle)"); break;
+            case 0x0001: Serial.print("(ServiceClassIDList)"); break;
+            case 0x0002: Serial.print("(ServiceRecordState)"); break;
+            case 0x0003: Serial.print("(ServiceID)"); break;
+            case 0x0004: Serial.print("(ProtocolDescriptorList)"); break;
+            case 0x0005: Serial.print("(BrowseGroupList)"); break;
+            case 0x0006: Serial.print("(LanguageBaseAttributeIDList)"); break;
+            case 0x0007: Serial.print("(ServiceInfoTimeToLive)"); break;
+            case 0x0008: Serial.print("(ServiceAvailability)"); break;
+            case 0x0009: Serial.print("(BluetoothProfileDescriptorList)"); break;
+            case 0x000A: Serial.print("(DocumentationURL)"); break;
+            case 0x000B: Serial.print("(ClientExecutableURL)"); break;
+            case 0x000C: Serial.print("(IconURL)"); break;
+            case 0x000D: Serial.print("(AdditionalProtocolDescriptorLists)"); break;
+            case 0x0100: Serial.print("(ServiceName)"); break;
+            case 0x0101: Serial.print("(ServiceDescription)"); break;
+            case 0x0102: Serial.print("(ProviderName)"); break;
+            case 0x0200: Serial.print("(HIDDeviceReleaseNumber (Deprecated))"); break;
+            case 0x0201: Serial.print("(HIDParserVersion)"); break;
+            case 0x0202: Serial.print("(HIDDeviceSubclass)"); break;
+            case 0x0203: Serial.print("(HIDCountryCode)"); break;
+            case 0x0204: Serial.print("(HIDVirtualCable)"); break;
+            case 0x0205: Serial.print("(HIDReconnectInitiate)"); break;
+            case 0x0206: Serial.print("(HIDDescriptorList)"); break;
+            case 0x0207: Serial.print("(HIDLANGIDBaseList)"); break;
+            case 0x0208: Serial.print("(HIDSDPDisable (Deprecated))"); break;
+            case 0x0209: Serial.print("(HIDBatteryPower)"); break;
+            case 0x020A: Serial.print("(HIDRemoteWake)"); break;
+            case 0x020B: Serial.print("(HIDProfileVersion)"); break;
+            case 0x020C: Serial.print("(HIDSupervisionTimeout)"); break;
+            case 0x020D: Serial.print("(HIDNormallyConnectable)"); break;
+            case 0x200E: Serial.print("(HIDBootDevice)"); break;
+            case 0x200F: Serial.print("(HIDSSRHostMaxLatency)"); break;
+            case 0x2010: Serial.print("(HIDSSRHostMinTimeout)"); break;
+          }
+          Serial.print(" value:");
+        } else if (sdpe.dtype == DLVL) level_bytes_left[count_levels++] = sdpe.element_size;
+        else {
+          Serial.printf("<order issue?>");
+          print_sdpe_val(sdpe, false);
+        }
+
+        for (int i = count_levels - 1; i >= 0; i--) {
+          if (level_bytes_left[i] <= 0) {
+            count_levels--;
+          }
+        }
+
+      } else {
+        switch (sdpe.element_type) {
+          case 3: Serial.print("UUID:"); break;
+          case 5: Serial.print("Bool:"); break;
+          case 8: Serial.print("URL:"); break;
+        }
+        print_sdpe_val(sdpe, false);
+        if (sdpe.dtype == DLVL) level_bytes_left[count_levels++] = sdpe.element_size;
+        for (int i = count_levels - 1; i >= 0; i--) {
+          if (level_bytes_left[i] <= 0) {
+            Serial.print(" }");
+            count_levels--;
+          }
+        }
+        if (count_levels == 2) next_is_attribute_num = true;
+        if (count_levels <= 2) Serial.println();
+      }
+    }
+    cb_left -= cb;
+    pb += cb;
+  }
+}
+
+void BTHIDDumpController::decode_SDP_Data(bool by_user_command) {
+  // Start the search.
+  // Maybe try setting to HID
+  //return;
+  if (!by_user_command) {
+    if (bluetooth_class_low_byte_ && 0xc0) {
+      Serial.println("Try force into HID mode");
+      btdriver_->updateHIDProtocol(0x01);
+    }
+    // give it a little time
+    delay(10);
+    USBHost::Task();
+  }
+
+  Serial.println("Start Deecode SDP Data - Full Range.");
+  elapsedMillis em;
+
+  bool sdp_attributeSearch_started = btconnect_->startSDP_ServiceSearchAttributeRequest(0x00, 0xffff, sdp_buffer, sizeof(sdp_buffer));
+  if (!sdp_attributeSearch_started && by_user_command) {
+    Serial.println("*** SDP_ServiceSearchAttributeRequest failed try to do connect to SDP again");
+    btconnect_->connectToSDP();  // see if we can try to startup SDP after
+    for (uint8_t i = 0; i < 10; i++) {
+      USBHost::Task();
+      delay(2);
+    }
+    sdp_attributeSearch_started = btconnect_->startSDP_ServiceSearchAttributeRequest(0x00, 0xffff, sdp_buffer, sizeof(sdp_buffer));
+  }
+
+
+  if (sdp_attributeSearch_started) {
+    while ((em < 2000) && !btconnect_->SDPRequestCompleted()) {
+      USBHost::Task();
+      delay(10);
+    }
+    if (!btconnect_->SDPRequestCompleted()) {
+      Serial.println("Error: Decide SDP Data timed out");
+    }
+    Serial.println("\n=========================== Verbose ==========================");
+    decode_SDP_buffer(true);
+    Serial.println("\n=========================== Structured ==========================");
+    decode_SDP_buffer(false);
+  } else {
+    Serial.println("Error: request failed");
+    decode_input_boot_data_ = true;
+  }
+  Serial.println("\nStart Deecode SDP Data - Just Report desciptor.");
+  em = 0;
+
+  if (btconnect_->startSDP_ServiceSearchAttributeRequest(0x206, 0x206, sdp_buffer, sizeof(sdp_buffer))) {
+    while ((em < 2000) && !btconnect_->SDPRequestCompleted()) {
+      USBHost::Task();
+      delay(10);
+    }
+    if (!btconnect_->SDPRequestCompleted()) {
+      Serial.println("Error: Decide SDP Data timed out");
+    }
+
+    Serial.println("\n=========================== Verbose ==========================");
+    decode_SDP_buffer(true);
+    Serial.println("\n=========================== Structured ==========================");
+    decode_SDP_buffer(false);
+  } else {
+    Serial.println("Error: request failed");
+  }
+
+  // Now real hack:
+  // Lets see if we can now print out the report descriptor.
+  uint32_t cb_left = btconnect_->SDPRequestBufferUsed();
+  uint8_t *pb = &sdp_buffer[0];  // start at second byte;
+
+  sdp_element_t sdpe;
+  while (cb_left > 0) {
+    int cb = extract_next_SDP_Token(pb, cb_left, sdpe);
+    if (cb < 0) break;
+    // Should do a lot more validation, but ...
+    if ((sdpe.element_type == 4) && (sdpe.dtype == DPB)) {
+      descsize = sdpe.element_size;
+      memcpy(descriptor, sdpe.data.pb, descsize);
+      dumpHIDReportDescriptor(descriptor, descsize);
+    }
+
+    cb_left -= cb;
+    pb += cb;
+  }
+}
+
+
+
+void BTHIDDumpController::dump_hexbytes(const void *ptr, uint32_t len, uint32_t indent) {
   if (ptr == NULL || len == 0) return;
   uint32_t count = 0;
   //  if (len > 64) len = 64; // don't go off deep end...
@@ -90,43 +520,35 @@ void dump_hexbytes(const void *ptr, uint32_t len, uint32_t indent) {
   Serial.println();
 }
 
-bool HIDDumpController::hid_process_in_data(const Transfer_t *transfer) {
-  // return true if we are not showing formated data...
-  hid_input_begin_level_ = 0;     // always make sure we reset to 0
-  count_usages_ = index_usages_;  // remember how many we output for this one
-  index_usages_ = 0;              // reset the index back to zero
-
-  Serial.printf("HID(%u : %x)", index_, usage_);
-  if (show_raw_data) {
-    Serial.print(": ");
-    dump_hexbytes(transfer->buffer, transfer->length, 16);
-  } else
-    Serial.println();
-
-  return !show_formated_data;
-}
-
-bool HIDDumpController::hid_process_out_data(const Transfer_t *transfer) {
-  Serial.printf("HIDDumpController::hid_process_out_data: %x\n", usage_);
-  return true;
-}
 
 void indent_level(int level) {
   if ((level > 5) || (level < 0)) return;  // bail if something is off...
   while (level--) Serial.print("  ");
 }
 
-void HIDDumpController::hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax) {
+void BTHIDDumpController::hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax) {
   // Lets do simplified data for changed only
   if (changed_data_only) return;
 
   indent_level(hid_input_begin_level_);
-  Serial.printf("Begin topusage:%x type:%x min:%d max:%d\n", topusage, type, lgmin, lgmax);
+  Serial.printf("Begin topusage:%x type:%x min:%d max:%d indent:%u\n", topusage, type, lgmin, lgmax, hid_input_begin_level_);
   if (hid_input_begin_level_ < 2)
     hid_input_begin_level_++;
 }
 
-void HIDDumpController::hid_input_data(uint32_t usage, int32_t value) {
+void BTHIDDumpController::hid_input_end() {
+  // Lets do simplified data for changed only
+  if (changed_data_only) return;
+  if (hid_input_begin_level_) {
+    // right now we are calling too many times
+    hid_input_begin_level_--;
+    indent_level(hid_input_begin_level_);
+    Serial.println("END:");
+  }
+}
+
+
+void BTHIDDumpController::hid_input_data(uint32_t usage, int32_t value) {
 
   bool output_data = !changed_data_only;
 
@@ -161,13 +583,17 @@ void HIDDumpController::hid_input_data(uint32_t usage, int32_t value) {
   }
 }
 
-void HIDDumpController::printUsageInfo(uint8_t usage_page, uint16_t usage) {
+
+void BTHIDDumpController::printUsageInfo(uint8_t usage_page, uint16_t usage) {
   switch (usage_page) {
     case 1:  // Generic Desktop control:
       switch (usage) {
+        case 0x01: Serial.print("(Pointer)"); break;
         case 0x02: Serial.print("(Mouse)"); break;
         case 0x04: Serial.print("(Joystick)"); break;
+        case 0x05: Serial.print("(Gamepad)"); break;
         case 0x06: Serial.print("(Keyboard)"); break;
+        case 0x07: Serial.print("(Keypad)"); break;
 
         case 0x30: Serial.print("(X)"); break;
         case 0x31: Serial.print("(Y)"); break;
@@ -212,7 +638,7 @@ void HIDDumpController::printUsageInfo(uint8_t usage_page, uint16_t usage) {
         default: Serial.print("(?)"); break;
       }
       break;
-    case 7: // keyboard/keycode
+    case 7:  // keyboard/keycode
       switch (usage) {
         case 0x04: Serial.print("(a and A)"); break;
         case 0x05: Serial.print("(b and B)"); break;
@@ -403,7 +829,7 @@ void HIDDumpController::printUsageInfo(uint8_t usage_page, uint16_t usage) {
         case 0xDB: Serial.print("(Keypad Octal)"); break;
         case 0xDC: Serial.print("(Keypad Decimal)"); break;
         case 0xDD: Serial.print("(Keypad Hexadecimal)"); break;
-        
+
         case 0xE0: Serial.print("(Left Control)"); break;
         case 0xE1: Serial.print("(Left Shift)"); break;
         case 0xE2: Serial.print("(Left Alt)"); break;
@@ -651,17 +1077,12 @@ void HIDDumpController::printUsageInfo(uint8_t usage_page, uint16_t usage) {
   }
 }
 
-void HIDDumpController::hid_input_end() {
-  // Lets do simplified data for changed only
-  if (changed_data_only) return;
-  hid_input_begin_level_--;
-  indent_level(hid_input_begin_level_);
-  Serial.println("END:");
-}
 
-void HIDDumpController::dumpHIDReportDescriptor(USBHIDParser *phidp) {
-  const uint8_t *p = phidp->getHIDReportDescriptor();
-  uint16_t report_size = phidp->getHIDReportDescriptorSize();
+void BTHIDDumpController::dumpHIDReportDescriptor(uint8_t *pb, uint16_t cb) {
+
+  const uint8_t *p = pb;
+  uint16_t report_size = cb;
+
   const uint8_t *pend = p + report_size;
   uint8_t collection_level = 0;
   uint16_t usage_page = 0;
@@ -721,9 +1142,9 @@ void HIDDumpController::dumpHIDReportDescriptor(USBHIDParser *phidp) {
             case 0x0C: Serial.print("Consumer"); break;
             case 0x0D:
             case 0xFF0D: Serial.print("Digitizer"); break;
-            default: 
+            default:
               if (usage_page >= 0xFF00) Serial.print("Vendor Defined");
-              else Serial.print("Other ?"); 
+              else Serial.print("Other ?");
               break;
           }
         }
@@ -824,15 +1245,370 @@ void HIDDumpController::dumpHIDReportDescriptor(USBHIDParser *phidp) {
   }
 }
 
-void HIDDumpController::print_input_output_feature_bits(uint8_t val) {
-  Serial.print((val & 0x01)? "Constant" : "Data");  
-  Serial.print((val & 0x02)? ", Variable" : ", Array");  
-  Serial.print((val & 0x04)? ", Relative" : ", Absolute");  
+void BTHIDDumpController::print_input_output_feature_bits(uint8_t val) {
+  Serial.print((val & 0x01) ? "Constant" : "Data");
+  Serial.print((val & 0x02) ? ", Variable" : ", Array");
+  Serial.print((val & 0x04) ? ", Relative" : ", Absolute");
   if (val & 0x08) Serial.print(", Wrap");
   if (val & 0x10) Serial.print(", Non Linear");
   if (val & 0x20) Serial.print(", No Preferred");
   if (val & 0x40) Serial.print(", Null State");
   if (val & 0x80) Serial.print(", Volatile");
   if (val & 0x100) Serial.print(", Buffered Bytes");
-  Serial.print(")");  
+  Serial.print(")");
+}
+
+//=============================================================================
+// Lets try copy of the HID Parse code and see what happens with with it.
+//=============================================================================
+
+// Extract 1 to 32 bits from the data array, starting at bitindex.
+static uint32_t bitfield(const uint8_t *data, uint32_t bitindex, uint32_t numbits) {
+  uint32_t output = 0;
+  uint32_t bitcount = 0;
+  data += (bitindex >> 3);
+  uint32_t offset = bitindex & 7;
+  if (offset) {
+    output = (*data++) >> offset;
+    bitcount = 8 - offset;
+  }
+  while (bitcount < numbits) {
+    output |= (uint32_t)(*data++) << bitcount;
+    bitcount += 8;
+  }
+  if (bitcount > numbits && numbits < 32) {
+    output &= ((1 << numbits) - 1);
+  }
+  return output;
+}
+
+// convert a number with the specified number of bits from unsigned to signed,
+// so the result is a proper 32 bit signed integer.
+static int32_t signext(uint32_t num, uint32_t bitcount) {
+  if (bitcount < 32 && bitcount > 0 && (num & (1 << (bitcount - 1)))) {
+    num |= ~((1 << bitcount) - 1);
+  }
+  return (int32_t)num;
+}
+
+// convert a tag's value to a signed integer.
+static int32_t signedval(uint32_t num, uint8_t tag) {
+  tag &= 3;
+  if (tag == 1) return (int8_t)num;
+  if (tag == 2) return (int16_t)num;
+  return (int32_t)num;
+}
+
+
+void BTHIDDumpController::parse(uint16_t type_and_report_id, const uint8_t *data, uint32_t len) {
+  const uint8_t *p = descriptor;
+  const uint8_t *end = p + descsize;
+  //USBHIDInput *driver = NULL;
+  BTHIDDumpController *driver = this;  // hack for now everything feeds back to us...
+  uint32_t topusage = 0;
+  //uint8_t topusage_index = 0;
+  uint8_t collection_level = 0;
+  uint16_t usage[USAGE_LIST_LEN] = { 0, 0 };
+  uint8_t usage_count = 0;
+  uint8_t usage_min_max_count = 0;
+  uint8_t usage_min_max_mask = 0;
+  uint8_t report_id = 0;
+  uint16_t report_size = 0;
+  uint16_t report_count = 0;
+  uint16_t usage_page = 0;
+  uint32_t last_usage = 0;
+  int32_t logical_min = 0;
+  int32_t logical_max = 0;
+  uint32_t bitindex = 0;
+
+  while (p < end) {
+    uint8_t tag = *p;
+    if (tag == 0xFE) {  // Long Item (unsupported)
+      p += p[1] + 3;
+      continue;
+    }
+    uint32_t val;
+    switch (tag & 0x03) {  // Short Item data
+      case 0:
+        val = 0;
+        p++;
+        break;
+      case 1:
+        val = p[1];
+        p += 2;
+        break;
+      case 2:
+        val = p[1] | (p[2] << 8);
+        p += 3;
+        break;
+      case 3:
+        val = p[1] | (p[2] << 8) | (p[3] << 16) | (p[4] << 24);
+        p += 5;
+        break;
+    }
+    if (p > end) break;
+    bool reset_local = false;
+    switch (tag & 0xFC) {
+      case 0x04:  // Usage Page (global)
+        usage_page = val;
+        break;
+      case 0x14:  // Logical Minimum (global)
+        logical_min = signedval(val, tag);
+        break;
+      case 0x24:  // Logical Maximum (global)
+        logical_max = signedval(val, tag);
+        break;
+      case 0x74:  // Report Size (global)
+        report_size = val;
+        break;
+      case 0x94:  // Report Count (global)
+        report_count = val;
+        break;
+      case 0x84:  // Report ID (global)
+        report_id = val;
+        break;
+      case 0x08:  // Usage (local)
+        if (usage_count < USAGE_LIST_LEN) {
+          // Usages: 0 is reserved 0x1-0x1f is sort of reserved for top level things like
+          // 0x1 - Pointer - A collection... So lets try ignoring these
+          if (val > 0x1f) {
+            usage[usage_count++] = val;
+          }
+        }
+        break;
+      case 0x18:  // Usage Minimum (local)
+        // Note: Found a report with multiple min/max
+        if (usage_count != 255) {
+          usage_count = 255;
+          usage_min_max_count = 0;
+          usage_min_max_mask = 0;
+        }
+        usage[usage_min_max_count * 2] = val;
+        usage_min_max_mask |= 1;
+        if (usage_min_max_mask == 3) {
+          usage_min_max_count++;
+          usage_min_max_mask = 0;
+        }
+        break;
+      case 0x28:  // Usage Maximum (local)
+        if (usage_count != 255) {
+          usage_count = 255;
+          usage_min_max_count = 0;
+          usage_min_max_mask = 0;
+        }
+        usage[usage_min_max_count * 2 + 1] = val;
+        usage_min_max_mask |= 2;
+        if (usage_min_max_mask == 3) {
+          usage_min_max_count++;
+          usage_min_max_mask = 0;
+        }
+        break;
+      case 0xA0:  // Collection
+        if (collection_level == 0) {
+          topusage = ((uint32_t)usage_page << 16) | usage[0];
+#if 0
+				driver = NULL;
+				if (topusage_index < TOPUSAGE_LIST_LEN) {
+					driver = topusage_drivers[topusage_index++];
+				}
+#endif
+        }
+        // discard collection info if not top level, hopefully that's ok?
+        collection_level++;
+        reset_local = true;
+        break;
+      case 0xC0:  // End Collection
+        if (collection_level > 0) {
+          collection_level--;
+          if (collection_level == 0 && driver != NULL) {
+            driver->hid_input_end();
+            //driver = NULL;
+          }
+        }
+        reset_local = true;
+        break;
+      case 0x80:  // Input
+        if (use_report_id && (report_id != (type_and_report_id & 0xFF))) {
+          // completely ignore and do not advance bitindex
+          // for descriptors of other report IDs
+          reset_local = true;
+          break;
+        }
+        if ((val & 1) || (driver == NULL)) {
+          // skip past constant fields or when no driver is listening
+          bitindex += report_count * report_size;
+        } else {
+          PDBGSerial.print("begin, usage=");
+          PDBGSerial.println(topusage, HEX);
+          PDBGSerial.print("       type= ");
+          PDBGSerial.println(val, HEX);
+          PDBGSerial.print("       min=  ");
+          PDBGSerial.println(logical_min);
+          PDBGSerial.print("       max=  ");
+          PDBGSerial.println(logical_max);
+          PDBGSerial.print("       reportcount=");
+          PDBGSerial.println(report_count);
+          PDBGSerial.print("       usage count=");
+          PDBGSerial.println(usage_count);
+          PDBGSerial.print("       usage min max count=");
+          PDBGSerial.println(usage_min_max_count);
+
+          driver->hid_input_begin(topusage, val, logical_min, logical_max);
+          PDBGSerial.print("Input, total bits=");
+          PDBGSerial.println(report_count * report_size);
+          if ((val & 2)) {
+            // ordinary variable format
+            uint32_t uindex = 0;
+            uint32_t uindex_max = 0xffff;  // assume no MAX
+            bool uminmax = false;
+            uint8_t uminmax_index = 0;
+            if (usage_count > USAGE_LIST_LEN) {
+              // usage numbers by min/max, not from list
+              uindex = usage[0];
+              uindex_max = usage[1];
+              uminmax = true;
+            } else if ((report_count > 1) && (usage_count <= 1)) {
+              // Special cases:  Either only one or no usages specified and there are more than one
+              // report counts .
+              if (usage_count == 1) {
+                uindex = usage[0];
+              } else {
+                // BUGBUG:: Not sure good place to start?  maybe round up from last usage to next higher group up of 0x100?
+                uindex = (last_usage & 0xff00) + 0x100;
+              }
+              uminmax = true;
+            }
+            //USBHDBGPDBGSerial.printf("TU:%x US:%x %x %d %d: C:%d, %d, MM:%d, %x %x\n", topusage, usage_page, val, logical_min, logical_max,
+            //			report_count, usage_count, uminmax, usage[0], usage[1]);
+            for (uint32_t i = 0; i < report_count; i++) {
+              uint32_t u;
+              if (uminmax) {
+                u = uindex;
+                if (uindex < uindex_max) uindex++;
+                else if (uminmax_index < usage_min_max_count) {
+                  uminmax_index++;
+                  uindex = usage[uminmax_index * 2];
+                  uindex_max = usage[uminmax_index * 2 + 1];
+                  //USBHDBGPDBGSerial.printf("$$ next min/max pair: %u %u %u\n", uminmax_index, uindex, uindex_max);
+                }
+              } else {
+                u = usage[uindex++];
+                if (uindex >= USAGE_LIST_LEN - 1) {
+                  uindex = USAGE_LIST_LEN - 1;
+                }
+              }
+              last_usage = u;  // remember the last one we used...
+              u |= (uint32_t)usage_page << 16;
+              PDBGSerial.print("  usage = ");
+              PDBGSerial.print(u, HEX);
+
+              uint32_t n = bitfield(data, bitindex, report_size);
+              if (logical_min >= 0) {
+                PDBGSerial.print("  data = ");
+                PDBGSerial.println(n);
+                driver->hid_input_data(u, n);
+              } else {
+                int32_t sn = signext(n, report_size);
+                PDBGSerial.print("  sdata = ");
+                PDBGSerial.println(sn);
+                driver->hid_input_data(u, sn);
+              }
+              bitindex += report_size;
+            }
+          } else {
+            // array format, each item is a usage number
+            // maybe act like the 2 case...
+            if (usage_min_max_count && (report_size == 1)) {
+              uint32_t uindex = usage[0];
+              uint32_t uindex_max = usage[1];
+              uint8_t uminmax_index = 0;
+              uint32_t u;
+
+              for (uint32_t i = 0; i < report_count; i++) {
+                u = uindex;
+                if (uindex < uindex_max) uindex++;
+                else if (uminmax_index < usage_min_max_count) {
+                  uminmax_index++;
+                  uindex = usage[uminmax_index * 2];
+                  uindex_max = usage[uminmax_index * 2 + 1];
+                  //USBHDBGPDBGSerial.printf("$$ next min/max pair: %u %u %u\n", uminmax_index, uindex, uindex_max);
+                }
+
+                u |= (uint32_t)usage_page << 16;
+                uint32_t n = bitfield(data, bitindex, report_size);
+                if (logical_min >= 0) {
+                  PDBGSerial.print("  data = ");
+                  PDBGSerial.println(n);
+                  driver->hid_input_data(u, n);
+                } else {
+                  int32_t sn = signext(n, report_size);
+                  PDBGSerial.print("  sdata = ");
+                  PDBGSerial.println(sn);
+                  driver->hid_input_data(u, sn);
+                }
+
+                bitindex += report_size;
+              }
+
+            } else {
+              for (uint32_t i = 0; i < report_count; i++) {
+                uint32_t u = bitfield(data, bitindex, report_size);
+                int n = u;
+                if (n >= logical_min && n <= logical_max) {
+                  u |= (uint32_t)usage_page << 16;
+                  PDBGSerial.print("  usage = ");
+                  PDBGSerial.print(u, HEX);
+                  PDBGSerial.println("  data = 1");
+                  driver->hid_input_data(u, 1);
+                } else {
+                  PDBGSerial.print("  usage =");
+                  PDBGSerial.print(u, HEX);
+                  PDBGSerial.print(" out of range: ");
+                  PDBGSerial.print(logical_min, HEX);
+                  PDBGSerial.print(" ");
+                  PDBGSerial.println(logical_max, HEX);
+                }
+                bitindex += report_size;
+              }
+            }
+          }
+        }
+        reset_local = true;
+        break;
+      case 0x90:  // Output
+        // TODO.....
+        reset_local = true;
+        break;
+      case 0xB0:  // Feature
+        // TODO.....
+        reset_local = true;
+        break;
+
+      case 0x34:  // Physical Minimum (global)
+      case 0x44:  // Physical Maximum (global)
+      case 0x54:  // Unit Exponent (global)
+      case 0x64:  // Unit (global)
+        break;    // Ignore these commonly used tags.  Hopefully not needed?
+
+      case 0xA4:  // Push (yikes! Hope nobody really uses this?!)
+      case 0xB4:  // Pop (yikes! Hope nobody really uses this?!)
+      case 0x38:  // Designator Index (local)
+      case 0x48:  // Designator Minimum (local)
+      case 0x58:  // Designator Maximum (local)
+      case 0x78:  // String Index (local)
+      case 0x88:  // String Minimum (local)
+      case 0x98:  // String Maximum (local)
+      case 0xA8:  // Delimiter (local)
+      default:
+        PDBGSerial.print("Ruh Roh, unsupported tag, not a good thing Scoob ");
+        PDBGSerial.println(tag, HEX);
+        break;
+    }
+    if (reset_local) {
+      usage_count = 0;
+      usage_min_max_count = 0;
+      usage[0] = 0;
+      usage[1] = 0;
+    }
+  }
 }
