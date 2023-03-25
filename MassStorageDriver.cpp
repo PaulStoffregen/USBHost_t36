@@ -123,7 +123,13 @@ bool USBDrive::claim(Device_t *dev, int type, const uint8_t *descriptors, uint32
 	println("polling intervalIn = ", intervalIn);
 	println("polling intervalOut = ", intervalOut);
 	datapipeIn = new_Pipe(dev, 2, endpointIn, 1, packetSizeIn, intervalIn);
+	if (!datapipeIn) return false;
+	
 	datapipeOut = new_Pipe(dev, 2, endpointOut, 0, packetSizeOut, intervalOut);
+	
+	//do we need to clean up datapipeIn here?
+	if (!datapipeOut) return false;
+	
 	datapipeIn->callback_function = callbackIn;
 	datapipeOut->callback_function = callbackOut;
 
