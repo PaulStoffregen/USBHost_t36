@@ -273,8 +273,11 @@ uint8_t USBDrive::mscInit(void) {
 		}
 		yield();
 	} while(!available());
-  
-	msReset();
+
+// Uncommenting "msReset()" will cause certain USB flash drives to fail to init or read/write.
+// Several SanDisk devices have been proven to fail.
+// Possibly due to clearing default power on settings.
+//	msReset(); 
 	// delay(500); // Not needed any more.
 	maxLUN = msGetMaxLun();
 

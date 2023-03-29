@@ -72,8 +72,8 @@
 
 // These two defines are timeouts for detecting a connected drive
 // and waiting for it to be operational.
-#define MEDIA_READY_TIMEOUT	1000
-#define MSC_CONNECT_TIMEOUT 4000
+#define MEDIA_READY_TIMEOUT	5000 // 1000
+#define MSC_CONNECT_TIMEOUT	5000 // 4000
 
 // Command Block Wrapper Struct
 typedef struct
