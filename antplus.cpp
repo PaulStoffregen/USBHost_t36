@@ -181,6 +181,7 @@ size_t AntPlus::write(const void *data, const size_t size)
 		head = 0;
 	}
 	uint32_t avail;
+	uint8_t attempts = 100;
 	do {
 		uint32_t tail = txtail;
 		if (head > tail) {
@@ -188,7 +189,8 @@ size_t AntPlus::write(const void *data, const size_t size)
 		} else {
 			avail = tail - head;
 		}
-	} while (avail < size + 1); // wait for space in buffer
+		attempts--;
+	} while ((avail < size + 1) && attempts > 0 ); // wait for space in buffer
 	txbuffer[head] = size;
 	memcpy(txbuffer + head + 1, data, size);
 	txhead = head + size;
