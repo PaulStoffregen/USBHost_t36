@@ -20,11 +20,6 @@ void printAngles(){
 }
 
 void getCoords(uint16_t &xc, uint16_t &yc, uint8_t &isTouch){
-
-  //uint8_t finger = 0;  //only getting finger 1
-  uint8_t Id = 0;
-
-
   // Trackpad touch 1: id, active, x, y
   xc = ((psAxis[37] & 0x0f) << 8) | psAxis[36];
   yc = psAxis[38] << 4 | ((psAxis[37] & 0xf0) >> 4),
