@@ -742,13 +742,21 @@ bool USBHost::queue_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBD
 	uint8_t *p = (uint8_t *)buffer;
 	uint32_t count;
 	bool last = false;
+	
+	// We always want to do this while the interrupt is disabled. 
+	// But only re-enable if it was enabled coming in. 
+	bool irq_was_enabled = NVIC_IS_ENABLED(IRQ_USBHS);
+	NVIC_DISABLE_IRQ(IRQ_USBHS);
 
 	// TODO: option for zero length packet?  Maybe in Pipe_t fields?
 
 	//println("new_Data_Transfer");
 	// allocate qTDs
 	transfer = allocate_Transfer();
-	if (!transfer) return false;
+	if (!transfer) {
+		if (irq_was_enabled) NVIC_ENABLE_IRQ(IRQ_USBHS);
+		return false;
+	}
 	data = transfer;
 	for (count=((len-1) >> 14); count; count--) {
 		next = allocate_Transfer();
@@ -760,8 +768,9 @@ bool USBHost::queue_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBD
 				if (transfer == data) break;
 				transfer = next;
 			}
-                        return false;
-                }
+			if (irq_was_enabled) NVIC_ENABLE_IRQ(IRQ_USBHS);
+            return false;
+        }
 		data->qtd.next = (uint32_t)next;
 		data = next;
 	}
@@ -788,7 +797,9 @@ bool USBHost::queue_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBD
 		len -= count;
 		data = (Transfer_t *)(data->qtd.next);
 	}
-	return queue_Transfer(pipe, transfer);
+	bool return_value = queue_Transfer(pipe, transfer);
+	if (irq_was_enabled) NVIC_ENABLE_IRQ(IRQ_USBHS);
+	return return_value;
 }
 
 
