@@ -80,7 +80,7 @@ void setup()
   Serial.println("\nWaiting for Drive to initialize...");
 
   // Wait for the drive to start.
-  while (!myDrive) {
+  while (!myFiles) {
     myusb.Task();
   }
 
