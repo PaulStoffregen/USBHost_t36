@@ -202,7 +202,7 @@ bool USBSerialBase::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 		}
 		txstate = 0;
 		txpipe->callback_function = tx_callback;
-		baudrate = 115200;
+		//baudrate = 115200;  - use last begins setting or initial value of 115200
 		// Wish I could just call Control to do the output... Maybe can defer until the user calls begin()
 		// control requires that device is setup which is not until this call completes...
 #if 0
@@ -225,16 +225,25 @@ bool USBSerialBase::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 	// Else lets see if this is a PID/VID we know something about.
 	// See if the vendor_id:product_id is in our list of products.
 	sertype = UNKNOWN;
-	for (uint8_t i = 0; i < (sizeof(pid_vid_mapping)/sizeof(pid_vid_mapping[0])); i++) {
-		if ((dev->idVendor == pid_vid_mapping[i].idVendor) && (dev->idProduct == pid_vid_mapping[i].idProduct)) {
-			sertype = pid_vid_mapping[i].sertype;
-			if (pid_vid_mapping[i].claim_at_type != type) {
-				println("Serial device wants to map at interface level");
-				return false;
-			}
-			break;
+	// first see if the VID/PID is equal to the optional parameters specified in the Serial object constructor
+	if ((dev->idVendor == _vid_to_claim) && (dev->idProduct == _pid_to_claim)) {
+		if (_vid_pid_claim_at_type) {
+			println("Serial device wants to map at interface level");
+			return false;
 		}
-	}  
+		sertype =_vid_pid_sertype;
+	} else {
+		for (uint8_t i = 0; i < (sizeof(pid_vid_mapping)/sizeof(pid_vid_mapping[0])); i++) {
+			if ((dev->idVendor == pid_vid_mapping[i].idVendor) && (dev->idProduct == pid_vid_mapping[i].idProduct)) {
+				sertype = pid_vid_mapping[i].sertype;
+				if (pid_vid_mapping[i].claim_at_type != type) {
+					println("Serial device wants to map at interface level");
+					return false;
+				}
+				break;
+			}
+		}  
+	}
 	if (sertype == UNKNOWN) {
 		// Not in our list see if CDCACM type...
 		// only at the Interface level

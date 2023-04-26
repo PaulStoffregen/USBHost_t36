@@ -1530,14 +1530,24 @@ public:
     // FIXME: need different USBSerial, with bigger buffers for 480 Mbit & faster speed
     enum { BUFFER_SIZE = 648 }; // must hold at least 6 max size packets, plus 2 extra bytes
     enum { DEFAULT_WRITE_TIMEOUT = 3500};
+    // The current know serial device types
+    typedef enum { UNKNOWN = 0, CDCACM, FTDI, PL2303, CH341, CP210X } sertype_t;
 
     USBSerialBase(USBHost &host, uint32_t *big_buffer, uint16_t buffer_size,
-                  uint16_t min_pipe_rxtx, uint16_t max_pipe_rxtx) :
+                  uint16_t min_pipe_rxtx, uint16_t max_pipe_rxtx,
+                  uint16_t vid_to_claim, uint16_t pid_to_claim, 
+                  sertype_t vid_pid_sertype, int vid_pid_claim_at_type
+                ) :
         txtimer(this),
         _bigBuffer(big_buffer),
         _big_buffer_size(buffer_size),
         _min_rxtx(min_pipe_rxtx),
-        _max_rxtx(max_pipe_rxtx)
+        _max_rxtx(max_pipe_rxtx),
+        _vid_to_claim(vid_to_claim), 
+        _pid_to_claim(pid_to_claim), 
+        _vid_pid_sertype(vid_pid_sertype), 
+        _vid_pid_claim_at_type(vid_pid_claim_at_type)
+
     {
 
         init();
@@ -1557,11 +1567,15 @@ public:
     bool setDTR(bool fSet);
     bool setRTS(bool fSet);
     using Print::write;
+
 protected:
     virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
     virtual void control(const Transfer_t *transfer);
     virtual void disconnect();
     virtual void timer_event(USBDriverTimer *whichTimer);
+
+
+
 private:
     static void rx_callback(const Transfer_t *transfer);
     static void tx_callback(const Transfer_t *transfer);
@@ -1582,11 +1596,18 @@ private:
     uint16_t  _min_rxtx;
     uint16_t _max_rxtx;
 
+    // allow sketch to specify a VID/PID/Type setting that this instance can use
+    // good for new or oddball devices
+    uint16_t _vid_to_claim;
+    uint16_t _pid_to_claim;
+    sertype_t _vid_pid_sertype;  // what it should map to.
+    int _vid_pid_claim_at_type;  // how we should claim it 0 - interface 1 - whole device
+
 
     setup_t setup;
     uint8_t setupdata[16]; //
-    uint32_t baudrate;
-    uint32_t format_;
+    uint32_t baudrate = 115200;  // lets give it a default in case begin is not called
+    uint32_t format_  = USBHOST_SERIAL_8N1; 
     uint32_t write_timeout_ = DEFAULT_WRITE_TIMEOUT;
     Pipe_t *rxpipe;
     Pipe_t *txpipe;
@@ -1611,7 +1632,6 @@ private:
     uint8_t interface;
     uint8_t dtr_rts_;       // save logical state for the two of them.
     volatile bool   control_queued; // Is there already a queued control messaged
-    typedef enum { UNKNOWN = 0, CDCACM, FTDI, PL2303, CH341, CP210X } sertype_t;
 
     sertype_t sertype;
 
@@ -1625,11 +1645,19 @@ private:
 
 };
 
+// USBSerial class - is setup to handle most USB to serial devices that work at USB Full speed with max of 64 byte packets
 class USBSerial : public USBSerialBase {
 public:
-    USBSerial(USBHost &host) :
+    // Constructor
+    // typically you just need to pass in the reference to the host object,
+    // However optionally you can also pass in a Vendor ID, Product ID, Type, and claim at interface or object level
+    // This hopefully allows you to easily try out some vendor specific devices that underlying it uses one of our known
+    // usb interface chips
+    USBSerial(USBHost &host,
+              uint16_t vid_to_claim = 0, uint16_t pid_to_claim = 0, 
+              sertype_t vid_pid_sertype = USBSerial::UNKNOWN, int vid_pid_claim_at_type = 0) :
         // hard code the normal one to 1 and 64 bytes for most likely most are 64
-        USBSerialBase(host, bigbuffer, sizeof(bigbuffer), 1, 64) {};
+        USBSerialBase(host, bigbuffer, sizeof(bigbuffer), 1, 64, vid_to_claim, pid_to_claim, vid_pid_sertype, vid_pid_claim_at_type) {};
 private:
     enum { BUFFER_SIZE = 648 }; // must hold at least 6 max size packets, plus 2 extra bytes
     uint32_t bigbuffer[(BUFFER_SIZE + 3) / 4];
@@ -1637,10 +1665,18 @@ private:
 
 class USBSerial_BigBuffer: public USBSerialBase {
 public:
-    // Default to larger than can be handled by other serial, but can overide
-    USBSerial_BigBuffer(USBHost &host, uint16_t min_rxtx = 65) :
-        // hard code the normal one to 1 and 64 bytes for most likely most are 64
-        USBSerialBase(host, bigbuffer, sizeof(bigbuffer), min_rxtx, 512) {};
+    // USBSerial_BigBuffer: handles devices that run at USB highspeed and can read and/or write up to 512 bytes per packet,
+    // Parameters:
+    //  host - reference to the main USB object
+    //  min_rxtx - defaults to 65, set to 1 if you wish for it to also handle all USB to Serial objects
+    //  vid_to_claim - Vendor ID Normally 0, but if you have device that is not supported you might specify it here.
+    //  pid_to_claim - Product ID - only used with VID above
+    //  vid_pid_sertype - Again not normally used unless pid, vid - then one of the following FTDI, PL2303, CH341, CP210X
+    // void_pid_claim_at_type = like above but 0 if claim at interface (default)  or 1 claim whole device
+    USBSerial_BigBuffer(USBHost &host, uint16_t min_rxtx = 65,
+              uint16_t vid_to_claim = 0, uint16_t pid_to_claim = 0, 
+              sertype_t vid_pid_sertype = USBSerial::UNKNOWN, int vid_pid_claim_at_type = 0) :
+        USBSerialBase(host, bigbuffer, sizeof(bigbuffer), min_rxtx, 512, vid_to_claim, pid_to_claim, vid_pid_sertype, vid_pid_claim_at_type) {};
 private:
     enum { BUFFER_SIZE = 4096 }; // must hold at least 6 max size packets, plus 2 extra bytes
     uint32_t bigbuffer[(BUFFER_SIZE + 3) / 4];
