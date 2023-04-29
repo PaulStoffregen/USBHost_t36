@@ -1941,6 +1941,11 @@ public:
     USBSerialEmu(USBHost &host) { init(); }
     uint32_t usage(void) {return usage_;}
 
+    // begin method added to make sketch code easier to swap with real searila objects
+    void begin(uint32_t baud, uint32_t format = USBHOST_SERIAL_8N1) {}
+    void end(void) {};
+
+
     // Stream stuff.
     uint32_t writeTimeout() {return write_timeout_;}
     void writeTimeOut(uint32_t write_timeout) {write_timeout_ = write_timeout;} // Will not impact current ones.
