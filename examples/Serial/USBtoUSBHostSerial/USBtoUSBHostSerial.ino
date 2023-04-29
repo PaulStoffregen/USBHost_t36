@@ -9,10 +9,24 @@
 //=============================================================================
 
 #include <USBHost_t36.h>
+
+//=============================================================================
+// Options
+//=============================================================================
+// uncomment the line below to output debug information
+//#define DEBUG_OUTPUT
+
+// Uncomment the line below to print out information about the USB devices that attach.
+#define PRINT_DEVICE_INFO
 #define USBBAUD 1000000 //115200
+
 uint32_t baud = USBBAUD;
 uint32_t format = USBHOST_SERIAL_8N1;
 USBHost myusb;
+
+//=============================================================================
+// USB Objects
+//=============================================================================
 
 // Optional if you use are possibly going to plug your USB Serial device
 // into a USB Hub, you should include one or more USB Hub objects. 
@@ -29,13 +43,22 @@ USBHub hub1(myusb);
 // But there are now new devices that support larger transfer like 512 bytes.  This for example
 // includes the Teensy 4.x boards.  For these we need the big buffer version. 
 // uncomment one of the following defines for userial
-USBSerial userial(myusb);  // works only for those Serial devices who transfer <=64 bytes (like T3.x, FTDI...)
-//USBSerial_BigBuffer userial(myusb, 1); // Handles anything up to 512 bytes
+//USBSerial userial(myusb);  // works only for those Serial devices who transfer <=64 bytes (like T3.x, FTDI...)
+USBSerial_BigBuffer userial(myusb, 1); // Handles anything up to 512 bytes
 //USBSerial_BigBuffer userial(myusb); // Handles up to 512 but by default only for those > 64 bytesUSBHost myusb;
 // We also now have an optional set of parameters for the constructor that allows you to pass in a Vendor ID,
 // product ID, what it maps to and the like, to handle USB objects which have underlying USB to serial converters, 
 // that are known, but not in our list. 
 //USBSerial_BigBuffer userial(myusb, 1, 0x10c4, 0xea60, USBSerialBase::CP210X, 0); // Handles anything up to 512 bytes
+//
+// Although not the Serial class, this sketch can also handle forwarding of the Teensy Serial Emulation object (SEREMU)
+// may need multpile HID Parser objects depending on what other USB types the object supports.
+//#define USERIAL_IS_SEREMU   // SEREMU is not a top level device, so we need to update device tables for this
+#ifdef USERIAL_IS_SEREMU
+USBHIDParser hid1(myusb);
+USBHIDParser hid2(myusb);
+USBSerialEmu userial(myusb);
+#endif
 
 
 // Define the buffer to use to copy between the two devices
@@ -44,19 +67,9 @@ USBSerial userial(myusb);  // works only for those Serial devices who transfer <
 char buffer[512];
 uint32_t led_on_time=0;
 
-// This sketch can optionally print out when some of these devices are inserted and removed. 
-// Comment out this define if you do nowant this.
-#define PRINT_DEVICE_INFO
-#ifdef PRINT_DEVICE_INFO
-// If you add devices you may want to extend these structures to include them as well.
-USBDriver *drivers[] = {&userial, &hub1};
-#define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[0]))
-const char * driver_names[CNT_DEVICES] = {"USERIAL1", "Hub1"};
-bool driver_active[CNT_DEVICES] = {false, false};
-#endif
-
-// Optional Debug output uncomment the next line to enable debug prints
-//#define DEBUG_OUTPUT
+//=============================================================================
+// optional debug stuff
+//=============================================================================
 #ifdef DEBUG_OUTPUT
 #define DBGPrintf Serial.printf
 #else
@@ -64,6 +77,31 @@ bool driver_active[CNT_DEVICES] = {false, false};
 inline void DBGPrintf(...) {
 }
 #endif
+
+// This sketch can optionally print out when some of these devices are inserted and removed. 
+#ifdef PRINT_DEVICE_INFO
+// If you add devices you may want to extend these structures to include them as well.
+#ifndef USERIAL_IS_SEREMU
+USBDriver *drivers[] = {&userial, &hub1};
+#define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[0]))
+const char * driver_names[CNT_DEVICES] = {"USERIAL", "Hub1"};
+bool driver_active[CNT_DEVICES] = {false, false};
+
+#else
+// For SEREMU
+USBDriver *drivers[] = {&hid1, &hid2, &hub1};
+#define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[0]))
+const char * driver_names[CNT_DEVICES] = {"HID1", "HID2", "Hub1"};
+bool driver_active[CNT_DEVICES] = {false, false, false};
+// Lets also look at HID Input devices
+USBHIDInput *hiddrivers[] = {&userial };
+#define CNT_HIDDEVICES (sizeof(hiddrivers) / sizeof(hiddrivers[0]))
+const char *hid_driver_names[CNT_DEVICES] = { "USERIAL" };
+bool hid_driver_active[CNT_DEVICES] = { false };
+#endif  // USERIAL_IS_SEREMU
+
+#endif
+
 
 
 //=============================================================================
@@ -188,12 +226,41 @@ void check_for_usbhost_device_changes() {
         if (psz && *psz) Serial.printf("  product: %s\n", psz);
         psz = drivers[i]->serialNumber();
         if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
+        #ifndef USERIAL_IS_SEREMU
         if (drivers[i] == &userial) {
           userial.begin(baud);
         }
+        #endif
       }
     }
   }
+#ifdef USERIAL_IS_SEREMU
+
+  for (uint8_t i = 0; i < CNT_HIDDEVICES; i++) {
+    if (*hiddrivers[i] != hid_driver_active[i]) {
+      if (hid_driver_active[i]) {
+        Serial.printf("*** HID Device %s - disconnected ***\n", hid_driver_names[i]);
+        hid_driver_active[i] = false;
+      } else {
+        Serial.printf("*** HID Device %s %x:%x - connected ***\n", hid_driver_names[i], hiddrivers[i]->idVendor(), hiddrivers[i]->idProduct());
+        hid_driver_active[i] = true;
+
+        const uint8_t *psz = hiddrivers[i]->manufacturer();
+        if (psz && *psz) Serial.printf("  manufacturer: %s\n", psz);
+        psz = hiddrivers[i]->product();
+        if (psz && *psz) Serial.printf("  product: %s\n", psz);
+        psz = hiddrivers[i]->serialNumber();
+        if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
+        //        if (hiddrivers[i] == &seremu) {
+        //          Serial.printf("   RX Size:%u TX Size:%u\n", seremu.rxSize(), seremu.txSize());
+        //        }
+        //        if (hiddrivers[i] == &rawhid1) {
+        //          Serial.printf("   RX Size:%u TX Size:%u\n", rawhid1.rxSize(), rawhid1.txSize());
+        //        }
+      }
+    }
+  }
+#endif
 
 }
 #endif
