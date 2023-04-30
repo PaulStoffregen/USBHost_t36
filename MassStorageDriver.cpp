@@ -175,6 +175,7 @@ void USBDrive::disconnect()
 	msDriveInfo.connected = false;
 	msDriveInfo.initialized = false;
 	memset(&msDriveInfo, 0, sizeof(msDriveInfo_t));
+	m_errorCode = MS_NO_MEDIA_ERR; // Added 04-30-23
 
 #ifdef DBGprint
 	print("   connected ");
