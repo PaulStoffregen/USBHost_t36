@@ -690,8 +690,13 @@ class USBHIDParser : public USBDriver {
 public:
     USBHIDParser(USBHost &host) : hidTimer(this) { init(); }
     static void driver_ready_for_hid_collection(USBHIDInput *driver);
-    bool sendPacket(const uint8_t *buffer, int cb = -1);
-    void setTXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb);
+	bool sendPacket(const uint8_t *buffer, int cb=-1);
+	void setTXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb, 
+		// extended to optionaly allow more buffers. 
+		uint8_t *buffer3=nullptr, uint8_t* buffer4=nullptr);
+	void setRXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb,
+		// extended to optionaly allow more buffers. 
+		uint8_t *buffer3=nullptr, uint8_t* buffer4=nullptr);
 
     bool sendControlPacket(uint32_t bmRequestType, uint32_t bRequest,
                            uint32_t wValue, uint32_t wIndex, uint32_t wLength, void *buf);
@@ -725,7 +730,7 @@ protected:
     void init();
 
 
-    uint8_t activeSendMask(void) {return txstate;}
+	uint8_t activeSendMask(void) {return _tx_state;} 
 
 private:
     Pipe_t *in_pipe;
@@ -746,11 +751,18 @@ private:
     Pipe_t mypipes[3] __attribute__ ((aligned(32)));
     Transfer_t mytransfers[5] __attribute__ ((aligned(32)));
     strbuf_t mystring_bufs[1];
-    uint8_t txstate = 0;
-    uint8_t *tx1 = nullptr;
-    uint8_t *tx2 = nullptr;
+	uint8_t *_rx1 = nullptr;
+	uint8_t *_rx2 = nullptr;
+	uint8_t *_rx3 = nullptr;
+	uint8_t *_rx4 = nullptr;
+	uint8_t *_tx[4] = {nullptr, nullptr, nullptr, nullptr};
+	uint8_t _tx_state = 0;
+	uint8_t _tx_mask = 3;
     bool hid_driver_claimed_control_ = false;
     USBDriverTimer hidTimer;
+	uint8_t _bigBuffer[800 + 64+64];
+	uint8_t *_bigBufferEnd = _bigBuffer + sizeof(_bigBuffer);
+	uint16_t _big_buffer_size = sizeof(_bigBuffer);
     uint8_t bInterfaceNumber = 0;
 };
 
@@ -1907,10 +1919,13 @@ private:
 
 class RawHIDController : public USBHIDInput {
 public:
-    RawHIDController(USBHost &host, uint32_t usage = 0) : fixed_usage_(usage) { init(); }
+	RawHIDController(USBHost &host, uint32_t usage = 0, uint8_t *rx_tx_buffers=nullptr, uint16_t rx_tx_buffer_size = 0) : 
+			fixed_usage_(usage), rx_tx_buffers_(rx_tx_buffers), rx_tx_buffer_size_(rx_tx_buffer_size) { init(); }
     uint32_t usage(void) {return usage_;}
     void attachReceive(bool (*f)(uint32_t usage, const uint8_t *data, uint32_t len)) {receiveCB = f;}
-    bool sendPacket(const uint8_t *buffer);
+	bool sendPacket(const uint8_t *buffer, int cb = -1);
+	uint16_t rxSize() { return rx_pipe_size_;}
+	uint16_t txSize() { return tx_pipe_size_;}// size of transmit circular buffer
 protected:
     virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
     virtual bool hid_process_in_data(const Transfer_t *transfer);
@@ -1928,9 +1943,13 @@ private:
     //volatile bool hid_input_begin_ = false;
     uint32_t fixed_usage_;
     uint32_t usage_ = 0;
+	uint16_t rx_pipe_size_;// size of receive circular buffer
+	uint16_t tx_pipe_size_;// size of transmit circular buffer
+	uint8_t  *rx_tx_buffers_;
+	uint16_t rx_tx_buffer_size_; 
 
     // See if we can contribute transfers
-    Transfer_t mytransfers[2] __attribute__ ((aligned(32)));
+	Transfer_t mytransfers[4] __attribute__ ((aligned(32)));
 
 };
 
