@@ -433,18 +433,45 @@ void USBHost::isr()
 	}
 	if (stat & USBHS_USBSTS_TI1) { // timer 1 - used for USBDriverTimer
 		//println("timer1");
+		USBDriverTimer *list = NULL, *last = NULL;
 		USBDriverTimer *timer = active_timers;
-		if (timer) {
+		while (timer) {
 			USBDriverTimer *next = timer->next;
 			active_timers = next;
-			if (next) {
-				// more timers scheduled
-				next->prev = NULL;
+			// create a list of all timer_event() callbacks to do
+			if (list == NULL) {
+				list = timer;
+				last = timer;
+			} else {
+				last->next = timer;
+				last = timer;
+			}
+			timer->next = NULL;
+			if (!next) break;
+			next->prev = NULL;
+			if (next->usec >= 5) { // TODO: is 5us a safe minimum?
 				USBHS_GPTIMER1LD = next->usec - 1;
 				USBHS_GPTIMER1CTL = USBHS_GPTIMERCTL_RST | USBHS_GPTIMERCTL_RUN;
+				break;
+			} else {
+				// next timer will be too soon for the hardware timer, so
+				// allow the next loop iteration to add it to the list
+				if (next->usec > 0 && next->next != NULL) {
+					// when we "lose" microseconds by calling early,
+					// adjust future timers so errors don't accumulate
+					next->next->usec += next->usec;
+				}
+				timer = next;
 			}
-			// TODO: call multiple timers if 0 elapsed between them?
-			timer->driver->timer_event(timer); // call driver's timer()
+		}
+		// do all callbacks after hardware timer is started, so time spent by
+		// the callback functions can't delay starting the hardware timer
+		while (list) {
+			USBDriverTimer *next = list->next;
+			list->prev = NULL;
+			list->next = NULL;
+			list->driver->timer_event(list);
+			list = next;
 		}
 	}
 }
