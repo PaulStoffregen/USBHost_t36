@@ -407,6 +407,7 @@ bool MIDIDeviceBase::read(uint8_t channel)
 		if (avail >= (uint32_t)(rx_size>>2)) {
 			__disable_irq();
 			queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
+			rx_packet_queued = true;
 			__enable_irq();
 		}
 	}
