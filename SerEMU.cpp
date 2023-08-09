@@ -25,6 +25,14 @@
 #include "USBHost_t36.h"  // Read this header first for key info
 
 //#define  SEREMU_PRINT_DEBUG
+#ifdef SEREMU_PRINT_DEBUG
+#define DBGPrintf USBHDBGSerial.printf
+#else
+// not debug have it do nothing
+inline void DBGPrintf(...) {
+}
+#endif
+
 
 
 void USBSerialEmu::init()
@@ -36,9 +44,7 @@ void USBSerialEmu::init()
 hidclaim_t USBSerialEmu::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage)
 {
 	// only claim SerEMU devices currently: 16c0:0486
-#ifdef SEREMU_PRINT_DEBUG
-	USBHDBGSerial.printf("SerEMU Claim: %x:%x usage: %x\n", dev->idVendor, dev->idProduct, topusage);
-#endif
+	DBGPrintf("SerEMU Claim: %x:%x usage: %x\n", dev->idVendor, dev->idProduct, topusage);
 
 	if (dev->idVendor != 0x16c0) return CLAIM_NO;  //  NOT PJRC
 	if (mydevice != NULL && dev != mydevice) return CLAIM_NO;
@@ -81,30 +87,39 @@ bool USBSerialEmu::hid_process_in_data(const Transfer_t *transfer)
 {
 	uint16_t len = transfer->length;
 	const uint8_t *buffer = (const uint8_t *)transfer->buffer;
-#ifdef SEREMU_PRINT_DEBUG
-	USBHDBGSerial.printf("USBSerialEmu::hid_process_in_data: %x %d: %x %x %x\n", usage_, len, buffer[0], buffer[1], buffer[2]);
-#endif
-	const uint8_t *buffer_end = buffer + len -1;
-	while ((buffer_end > buffer) && (*buffer_end == 0))buffer_end--;
-	// lets trim off the trailing null characters.
+	DBGPrintf("USBSerialEmu::hid_process_in_data: %x %d: %x %x %x\n", usage_, len, buffer[0], buffer[1], buffer[2]);
+	// try using version like serial that uses memcpy.
+	while ((len > 0) && (buffer[len-1] == 0)) len--; // find out the length
+	// Copy data from packet buffer to circular buffer.
+	uint32_t head = rx_head_;
+	uint32_t tail = rx_tail_;
+	uint32_t buffer_free;
+	if (head >= tail) buffer_free =  RX_BUFFER_SIZE - (head - tail);
+	else buffer_free =  head - tail;
 
-	// Now lets move the bytes onto our queue. 
-	uint16_t tail = rx_tail_;
-	while (buffer <= buffer_end) {
-		uint16_t new_head = rx_head_ + 1;
-		if (new_head == RX_BUFFER_SIZE) new_head = 0;
-		if (new_head == tail) break; // we don't have room so bail out. 
-		rx_buffer_[rx_head_] = *buffer++;
-		rx_head_ = new_head;	// point off to the new next head.
+	if (++head >= RX_BUFFER_SIZE) head = 0;
+
+	if (len > 0) {
+		DBGPrintf("\tH:%u T:%u A:%u L:%u\n", head, tail, buffer_free, len);
+		if (buffer_free > len) buffer_free = len;
+		memcpy(rx_buffer_ + head, buffer, buffer_free);
+		if (len <= buffer_free) {
+			head += buffer_free - 1;
+			if (head >= RX_BUFFER_SIZE) head = 0;
+		} else {
+			head = len - buffer_free - 1;
+			memcpy(rx_buffer_, buffer + RX_BUFFER_SIZE, head + 1);
+		}
+		rx_head_ = head;
+		DBGPrintf("\tNH:%u T:%u\n", rx_head_, rx_tail_);
 	}
+
 	return true;
 }
 
 bool USBSerialEmu::hid_process_out_data(const Transfer_t *transfer) 
 {
-#ifdef SEREMU_PRINT_DEBUG
-	USBHDBGSerial.printf("USBSerialEmu::hid_process_out_data: %x\n", usage_);
-#endif
+	DBGPrintf("USBSerialEmu::hid_process_out_data: %x\n", usage_);
 	if (tx_out_data_pending_) {
 		tx_out_data_pending_--;
 
@@ -114,7 +129,7 @@ bool USBSerialEmu::hid_process_out_data(const Transfer_t *transfer)
 
 bool USBSerialEmu::sendPacket() 
 {
-	USBHDBGSerial.printf("SEMU: SendPacket\n");
+	DBGPrintf("SEMU: SendPacket\n");
 
 	if (!driver_) return false;
 	if (!driver_->sendPacket(tx_buffer_)) return false;
@@ -161,9 +176,10 @@ int USBSerialEmu::availableForWrite()
 size_t USBSerialEmu::write(uint8_t c)
 {
 	// Single buffer, as our HID device has double buffers. 
-	if (c >= ' ') USBHDBGSerial.printf("SEMU: %c\n", c);
-	else USBHDBGSerial.printf("SEMU: 0x%x\n", c);
-
+	#ifdef SEREMU_PRINT_DEBUG
+	if (c >= ' ') DBGPrintf("SEMU: %c\n", c);
+	else DBGPrintf("SEMU: 0x%x\n", c);
+	#endif
 
 	if (!driver_) return 0;
 
@@ -183,7 +199,7 @@ void USBSerialEmu::flush(void)
 {
 	if (!driver_) return;
 
-	USBHDBGSerial.printf("SEMU: flush\n");
+	DBGPrintf("SEMU: flush\n");
 	driver_->stopTimer();  		// Stop longer timer.
 	driver_->startTimer(100);		// Start a mimimal timeout
 	if (tx_head_) sendPacket();
@@ -195,7 +211,7 @@ void USBSerialEmu::flush(void)
 
 void USBSerialEmu::hid_timer_event(USBDriverTimer *whichTimer)
 {
-	USBHDBGSerial.printf("SEMU: Timer\n");
+	DBGPrintf("SEMU: Timer\n");
 	if (!driver_) return;
 	driver_->stopTimer();
 	if (tx_head_) {
@@ -208,9 +224,7 @@ void USBSerialEmu::hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, 
 {
 	// These should not be called as we are claiming the whole interface and not
 	// allowing the parse to happen
-#ifdef SEREMU_PRINT_DEBUG
-	USBHDBGSerial.printf("SerEMU::hid_input_begin %x %x %x %x\n", topusage, type, lgmin, lgmax);
-#endif
+	DBGPrintf("SerEMU::hid_input_begin %x %x %x %x\n", topusage, type, lgmin, lgmax);
 	//hid_input_begin_ = true;
 }
 
@@ -219,8 +233,8 @@ void USBSerialEmu::hid_input_data(uint32_t usage, int32_t value)
 	// These should not be called as we are claiming the whole interface and not
 	// allowing the parse to happen
 #ifdef SEREMU_PRINT_DEBUG
-	USBHDBGSerial.printf("SerEMU: usage=%X, value=%d", usage, value);
-	if ((value >= ' ') && (value <='~')) USBHDBGSerial.printf("(%c)", value);
+	DBGPrintf("SerEMU: usage=%X, value=%d", usage, value);
+	if ((value >= ' ') && (value <='~')) DBGPrintf("(%c)", value);
 	USBHDBGSerial.println();
 #endif
 }
