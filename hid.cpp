@@ -80,7 +80,7 @@ bool USBHIDParser::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 		i++;
 		if (i >= descriptors[14]) return false;
 	}
-	if (descsize > sizeof(descriptor)) return false; // can't fit the report descriptor
+	if (descsize > _big_buffer_size) return false; // can't fit the report descriptor
 
 	// endpoint descriptor(s)
 	uint32_t offset = 9 + hidlen;
@@ -151,7 +151,7 @@ bool USBHIDParser::claim(Device_t *dev, int type, const uint8_t *descriptors, ui
 	bInterfaceProtocol = descriptors[7];
 	
 	mk_setup(setup, 0x81, 6, 0x2200, descriptors[2], descsize); // get report desc
-	queue_Control_Transfer(dev, &setup, descriptor, this);
+	queue_Control_Transfer(dev, &setup, _bigBuffer, this);
 	return true;
 }
 
@@ -172,8 +172,18 @@ void USBHIDParser::control(const Transfer_t *transfer)
 	if (mesg == 0x22000681 && transfer->length == descsize) { // HID report descriptor
 		println("  got report descriptor");
 		parse();
-		queue_Data_Transfer(in_pipe, report, in_size, this);
-		queue_Data_Transfer(in_pipe, report2, in_size, this);
+		// We need to setup the buffer pointers. 
+		if (_rx1 == nullptr) {
+			_rx1 = _bigBufferEnd - in_size;
+			_rx2 = _rx1 - in_size;
+			_bigBufferEnd = _rx2;
+		}
+
+		queue_Data_Transfer(in_pipe, _rx1, in_size, this);
+		if (_rx2) queue_Data_Transfer(in_pipe, _rx2, in_size, this);
+		if (_rx3) queue_Data_Transfer(in_pipe, _rx3, in_size, this);
+		if (_rx4) queue_Data_Transfer(in_pipe, _rx4, in_size, this);
+
 		if (device->idVendor == 0x054C && 
 				((device->idProduct == 0x0268) || (device->idProduct == 0x042F)/* || (device->idProduct == 0x03D5)*/)) {
 			println("send special PS3 feature command");
@@ -243,8 +253,10 @@ void USBHIDParser::in_data(const Transfer_t *transfer)
 			}
 		}
 	}
-	if (buf == report2) queue_Data_Transfer(in_pipe, report2, in_size, this);
-	else queue_Data_Transfer(in_pipe, report, in_size, this);
+	#if defined(__IMXRT1062__) // Teensy 4.x
+    if ((uint32_t)buf >= 0x20200000u) arm_dcache_flush_delete((void*)buf, in_size);
+	#endif
+	queue_Data_Transfer(in_pipe, (void*)buf, in_size, this);
 }
 
 
@@ -255,8 +267,15 @@ void USBHIDParser::out_data(const Transfer_t *transfer)
 	// A packet completed. lets mark it as done and call back
 	// to top reports handler.  We unmark our checkmark to
 	// handle case where they may want to queue up another one. 
-	if (transfer->buffer == tx1) txstate &= ~1;
-	if (transfer->buffer == tx2) txstate &= ~2;
+	uint8_t mask = 1;
+	const uint8_t *buffer = (const uint8_t *)transfer->buffer;
+	for(uint8_t i = 0; i < 4; i++) {
+		if (buffer == _tx[i]) {
+			_tx_state &= ~mask;
+			break;
+		}
+		mask <<= 1;
+	}
 	if (topusage_drivers[0]) {
 		topusage_drivers[0]->hid_process_out_data(transfer);
 	}
@@ -272,38 +291,66 @@ void USBHIDParser::timer_event(USBDriverTimer *whichTimer)
 
 bool USBHIDParser::sendPacket(const uint8_t *buffer, int cb) {
 	if (!out_size || !out_pipe) return false;	
-	if (!tx1) {
+	if (!_tx[0]) {
 		// Was not init before, for now lets put it at end of descriptor
 		// TODO: should verify that either don't exceed overlap descsize
 		//       Or that we have taken over this device
-		tx1 = &descriptor[sizeof(descriptor) - out_size];
-		tx2 = tx1 - out_size;
+		_tx[0] = _bigBufferEnd - out_size;
+		_tx[1] = _tx[0] - out_size;
+		_bigBufferEnd = _tx[1];
+		_tx_mask = 3;
 	}
-	if ((txstate & 3) == 3) return false; 	// both transmit buffers are full
+	if ((_tx_state & _tx_mask) == _tx_mask) return false; 	// both transmit buffers are full
 	if (cb == -1)
 		cb = out_size;
-	uint8_t *p = tx1;
-	if ((txstate & 1) == 0) {
-		txstate |= 1;
-	} else {
-		if (!tx2) 
-			return false; // only one buffer
-		txstate |= 2;
-		p = tx2;
+	uint8_t mask = 0x1;
+	uint8_t *p = _tx[0];
+	for (uint8_t i = 0; i < 4; i++ ) {
+		if ((mask & _tx_mask ) == 0) return false; // none found
+		if ((mask & _tx_state) == 0) {
+			_tx_state |= mask;
+			p = _tx[i];
+			break;
+		}
+		mask <<=1;
 	}
 	// copy the users data into our out going buffer
 	memcpy(p, buffer, cb);	
+
+#if defined(__IMXRT1062__) // Teensy 4.x
+    if ((uint32_t)p >= 0x20200000u) arm_dcache_flush_delete(p, cb);
+#endif
 	println("USBHIDParser Send packet");
 	print_hexbytes(buffer, cb);
-	queue_Data_Transfer(out_pipe, p, cb, this);
-	println("    Queue_data transfer returned");
-	return true;
+	bool fReturn = queue_Data_Transfer(out_pipe, p, cb, this);
+	println("    Queue_data transfer returned:", fReturn, DEC);
+	return fReturn;
 }
 
-void USBHIDParser::setTXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb)
+void USBHIDParser::setTXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb,
+	uint8_t *buffer3, uint8_t* buffer4)
 {
-	tx1 = buffer1;
-	tx2 = buffer2;
+	uint8_t index = 0;
+	if (buffer1) _tx[index++] = buffer1;
+	if (buffer2) _tx[index++] = buffer2;
+	if (buffer3) _tx[index++] = buffer3;
+	if (buffer4) _tx[index++] = buffer4;
+	_tx_mask = (1 << index) - 1; // 2 by default 1<< 2 =4 -1 = 3...
+}
+
+void USBHIDParser::setRXBuffers(uint8_t *buffer1, uint8_t *buffer2, uint8_t cb,
+	uint8_t *buffer3, uint8_t* buffer4)
+{
+	_rx1 = buffer1;
+	_rx2 = buffer2;
+	_rx3 = buffer3;
+	_rx4 = buffer4;
+	#if defined(__IMXRT1062__) // Teensy 4.x
+    if ((uint32_t)_rx1 >= 0x20200000u) arm_dcache_flush_delete(_rx1, in_size);
+    if ((uint32_t)_rx2 >= 0x20200000u) arm_dcache_flush_delete(_rx2, in_size);
+    if ((uint32_t)_rx3 >= 0x20200000u) arm_dcache_flush_delete(_rx3, in_size);
+    if ((uint32_t)_rx4 >= 0x20200000u) arm_dcache_flush_delete(_rx4, in_size);
+	#endif
 }
 
 bool USBHIDParser::sendControlPacket(uint32_t bmRequestType, uint32_t bRequest,
@@ -324,7 +371,7 @@ bool USBHIDParser::sendControlPacket(uint32_t bmRequestType, uint32_t bRequest,
 // learn whether the reports will or will not use a Report ID byte.
 void USBHIDParser::parse()
 {
-	const uint8_t *p = descriptor;
+	const uint8_t *p = _bigBuffer;
 	const uint8_t *end = p + descsize;
 	uint16_t usage_page = 0;
 	uint16_t usage = 0;
@@ -475,7 +522,7 @@ static int32_t signedval(uint32_t num, uint8_t tag)
 // to the drivers which have claimed its top level collections
 void USBHIDParser::parse(uint16_t type_and_report_id, const uint8_t *data, uint32_t len)
 {
-	const uint8_t *p = descriptor;
+	const uint8_t *p = _bigBuffer;
 	const uint8_t *end = p + descsize;
 	USBHIDInput *driver = NULL;
 	uint32_t topusage = 0;

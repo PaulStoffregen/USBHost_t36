@@ -45,6 +45,28 @@ hidclaim_t RawHIDController::claim_collection(USBHIDParser *driver, Device_t *de
 		if (fixed_usage_ != topusage) return CLAIM_NO; 		// See if we want specific one and if so is it this one
 	} else if (dev->idProduct != 0x486) return CLAIM_NO;	// otherwise mainly used for RAWHID Serial type.
 
+	rx_pipe_size_ = driver->inSize();
+	tx_pipe_size_ = driver->outSize();
+	if (rx_pipe_size_ > 64 && (rx_tx_buffers_ == nullptr)) return CLAIM_NO;  // not big enough
+
+	if (rx_tx_buffers_) {
+		uint8_t count_buffers = min(4, rx_tx_buffer_size_ / (rx_pipe_size_ + tx_pipe_size_));
+		if (count_buffers == 0) return CLAIM_NO; // Not enough for one... so bail
+
+		uint8_t *tx_buffer[4] = {nullptr, nullptr, nullptr, nullptr};
+		uint8_t *rx_buffer[4] = {nullptr, nullptr, nullptr, nullptr};
+		uint8_t *rx_start = rx_tx_buffers_ + (tx_pipe_size_ * count_buffers); 
+		for (uint8_t i = 0; i < count_buffers; i++) {
+			tx_buffer[i] = rx_tx_buffers_ + (tx_pipe_size_ * i);
+			rx_buffer[i] = rx_start + (rx_pipe_size_ * i);
+		}
+		driver->setTXBuffers(tx_buffer[0], tx_buffer[1], tx_pipe_size_, tx_buffer[2], tx_buffer[3]);
+		driver->setRXBuffers(rx_buffer[0], rx_buffer[1], rx_pipe_size_, rx_buffer[2], rx_buffer[3]);
+//#ifdef USBHOST_PRINT_DEBUG
+		USBHDBGSerial.printf("    >> setTXBuffers: %x %x %x %x\n", (uint32_t)tx_buffer[0], (uint32_t)tx_buffer[1], (uint32_t)tx_buffer[2], (uint32_t)tx_buffer[3]);
+		USBHDBGSerial.printf("    >> setRXBuffers: %x %x %x %x\n", (uint32_t)rx_buffer[0], (uint32_t)rx_buffer[1], (uint32_t)rx_buffer[2], (uint32_t)rx_buffer[3]);
+//#endif
+	}
 	mydevice = dev;
 	collections_claimed++;
 	usage_ = topusage;
@@ -80,10 +102,10 @@ bool RawHIDController::hid_process_out_data(const Transfer_t *transfer)
 	return true;
 }
 
-bool RawHIDController::sendPacket(const uint8_t *buffer) 
+bool RawHIDController::sendPacket(const uint8_t *buffer, int cb) 
 {
 	if (!driver_) return false;
-	return driver_->sendPacket(buffer);
+	return driver_->sendPacket(buffer, cb);
 }
 
 
