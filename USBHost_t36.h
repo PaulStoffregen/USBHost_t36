@@ -1462,7 +1462,7 @@ private:
     uint16_t tx_size;
     //uint32_t rx_queue[RX_QUEUE_SIZE];
     uint32_t * const rx_queue;
-    bool rx_packet_queued;
+    volatile bool rx_packet_queued;
     const uint16_t max_packet_size;
     const uint16_t rx_queue_size;
     uint16_t rx_head;
