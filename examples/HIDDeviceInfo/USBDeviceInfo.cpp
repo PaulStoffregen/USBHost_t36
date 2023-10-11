@@ -75,7 +75,7 @@ bool USBDeviceInfo::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 	println(" bInterfaceClass =    ", descriptors[5]);
 	println(" bInterfaceSubClass = ", descriptors[6]);
 	switch (descriptors[5]) {
-		case 2: Serial.println("    Communicatons and CDC"); break;
+		case 2: Serial.println("    Communications and CDC"); break;
 		case 3:
 			if (descriptors[6] == 1) Serial.println("    HID (BOOT)");
 			else Serial.println("    HID"); 
