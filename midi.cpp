@@ -395,20 +395,20 @@ void MIDIDeviceBase::send_sysex_add_term_bytes(const uint8_t *data, uint32_t len
 bool MIDIDeviceBase::read(uint8_t channel)
 {
 	uint32_t n, head, tail, avail, ch, type1, type2, b1;
-
+	__disable_irq();
+	bool packet_queued = rx_packet_queued;
 	head = rx_head;
 	tail = rx_tail;
+	__enable_irq();
 	if (head == tail) return false;
 	if (++tail >= rx_queue_size) tail = 0;
 	n = rx_queue[tail];
 	rx_tail = tail;
-	if (!rx_packet_queued && rxpipe) {
+	if (!packet_queued && rxpipe) {
 	        avail = (head < tail) ? tail - head - 1 : rx_queue_size - 1 - head + tail;
 		if (avail >= (uint32_t)(rx_size>>2)) {
-			__disable_irq();
-			queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
 			rx_packet_queued = true;
-			__enable_irq();
+			queue_Data_Transfer(rxpipe, rx_buffer, rx_size, this);
 		}
 	}
 	println("read: ", n, HEX);
