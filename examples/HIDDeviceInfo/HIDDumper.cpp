@@ -5,7 +5,7 @@
    copy of this software and associated documentation files (the
    "Software"), to deal in the Software without restriction, including
    without limitation the rights to use, copy, modify, merge, publish,
-   distribute, shiublicense, and/or sell copies of the Software, and to
+   distribute, license, and/or sell copies of the Software, and to
    permit persons to whom the Software is furnished to do so, subject to
    the following conditions:
 
@@ -33,7 +33,7 @@ void HIDDumpController::init() {
 hidclaim_t HIDDumpController::claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage) {
   // only claim RAWHID devices currently: 16c0:0486
   Serial.printf("HIDDumpController(%u : %p : %p) Claim: %x:%x usage: %x", index_, this, driver, dev->idVendor, dev->idProduct, topusage);
-  Serial.printf(" SubClass: %x Protcol: %x",  driver->interfaceSubClass(), driver->interfaceProtocol());
+  Serial.printf(" SubClass: %x Protocol: %x",  driver->interfaceSubClass(), driver->interfaceProtocol());
   if (mydevice != NULL && dev != mydevice) {
     Serial.println("- NO (Device)");
     return CLAIM_NO;
@@ -420,7 +420,7 @@ void HIDDumpController::printUsageInfo(uint8_t usage_page, uint16_t usage) {
     case 9:  // Button
       Serial.printf(" (BUTTON %d)", usage);
       break;
-    case 0xC:  // Consummer page
+    case 0xC:  // Consumer page
       switch (usage) {
         case 0x01: Serial.print("(Consumer Controls)"); break;
         case 0x20: Serial.print("(+10)"); break;
@@ -434,7 +434,7 @@ void HIDDumpController::printUsageInfo(uint8_t usage_page, uint16_t usage) {
         case 0x35: Serial.print("(Illumination)"); break;
         case 0x36: Serial.print("(Function Buttons)"); break;
         case 0x40: Serial.print("(Menu)"); break;
-        case 0x41: Serial.print("(Menu  Pick)"); break;
+        case 0x41: Serial.print("(Menu Pick)"); break;
         case 0x42: Serial.print("(Menu Up)"); break;
         case 0x43: Serial.print("(Menu Down)"); break;
         case 0x44: Serial.print("(Menu Left)"); break;
