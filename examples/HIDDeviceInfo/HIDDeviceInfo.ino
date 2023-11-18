@@ -99,10 +99,10 @@ void loop()
       if (HIDDumpController::show_formated_data) {
         HIDDumpController::show_formated_data = false;
         HIDDumpController::show_raw_data = true;  // At least make sure raw raw data is output
-        Serial.println("\n*** Turn off formatted output formated HID data is on ***\n");
+        Serial.println("\n*** Turn off formatted output formatted HID data is on ***\n");
       } else {
         HIDDumpController::show_formated_data = true;
-        Serial.println("\n*** Turn on formated output ***\n");
+        Serial.println("\n*** Turn on formatted output ***\n");
       }
     }
   }

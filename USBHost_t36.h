@@ -710,7 +710,7 @@ public:
     void startTimer(uint32_t microseconds) {hidTimer.start(microseconds);}
     void stopTimer() {hidTimer.stop();}
     uint8_t interfaceNumber() { return bInterfaceNumber;}
-    const uint8_t * getHIDReportDescriptor() {return descriptor;}
+    const uint8_t * getHIDReportDescriptor() {return _bigBuffer;}
     uint16_t getHIDReportDescriptorSize() { return descsize;}
 protected:
     enum { TOPUSAGE_LIST_LEN = 6 };
@@ -743,7 +743,6 @@ private:
     uint8_t bInterfaceSubClass;
     uint8_t bInterfaceProtocol;
     setup_t setup;
-    uint8_t descriptor[800];
     uint8_t report[64];
     uint8_t report2[64];
     uint16_t descsize;
