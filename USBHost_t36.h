@@ -532,14 +532,14 @@ public:
 
 
 private:
-    virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
+    virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage) = 0;
     virtual bool hid_process_in_data(const Transfer_t *transfer) {return false;}
     virtual bool hid_process_out_data(const Transfer_t *transfer) {return false;}
     virtual bool hid_process_control(const Transfer_t *transfer) {return false;}
-    virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
-    virtual void hid_input_data(uint32_t usage, int32_t value);
-    virtual void hid_input_end();
-    virtual void disconnect_collection(Device_t *dev);
+    virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax) { }
+    virtual void hid_input_data(uint32_t usage, int32_t value) { }
+    virtual void hid_input_end() { }
+    virtual void disconnect_collection(Device_t *dev) { }
     virtual void hid_timer_event(USBDriverTimer *whichTimer) { }
     USBHIDInput *next = NULL;
     friend class USBHIDParser;
