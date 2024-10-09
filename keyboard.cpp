@@ -452,7 +452,7 @@ void KeyboardController::hid_input_begin(uint32_t topusage, uint32_t type, int l
 void KeyboardController::hid_input_data(uint32_t usage, int32_t value)
 {
 	// Hack ignore 0xff00 high words as these are user values... 
-	USBHDBGSerial.printf("KeyboardController: topusage= %x usage=%X, value=%d\n", topusage_, usage, value);
+	//USBHDBGSerial.printf("KeyboardController: topusage= %x usage=%X, value=%d\n", topusage_, usage, value);
 	if ((usage & 0xffff0000) == 0xff000000) return; 
 	// If this is the TOPUSAGE_KEYBOARD do in it's own function
 	if (process_hid_keyboard_data(usage, value))
@@ -461,7 +461,7 @@ void KeyboardController::hid_input_data(uint32_t usage, int32_t value)
 	// Special case if this is a battery level message
 	if ((topusage_ == 0xc0000) && (usage == 0x60020)) {
 		battery_level_ = map (value, lgmin_, lgmax_, 0, 100);
-		USBHDBGSerial.printf("\tBattery level: %d min: %u max: %u percent: %u\n", value, lgmin_, lgmax_, battery_level_);
+		//USBHDBGSerial.printf("\tBattery level: %d min: %u max: %u percent: %u\n", value, lgmin_, lgmax_, battery_level_);
 
 		return;
 	}
@@ -608,7 +608,7 @@ void KeyboardController::hid_input_end()
 // now with connection type.
 hidclaim_t KeyboardController::claim_bluetooth(BluetoothConnection *btconnection, uint32_t bluetooth_class, uint8_t *remoteName, int type)
 {
-	USBHDBGSerial.printf("Keyboard Controller::claim_bluetooth - Class %x\n", bluetooth_class);
+	//USBHDBGSerial.printf("Keyboard Controller::claim_bluetooth - Class %x\n", bluetooth_class);
 	// If we are already in use than don't grab another one.  Likewise don't grab if it is used as USB or HID object
 	if (btconnect && (btconnection != btconnect)) return CLAIM_NO;
 	if (mydevice != NULL) return CLAIM_NO;
@@ -631,7 +631,7 @@ hidclaim_t KeyboardController::claim_bluetooth(BluetoothConnection *btconnection
 			btconnection->useHIDProtocol(true);
 			if (type == 1) {
 				// They are telling me to grab it now. SO say yes
-				USBHDBGSerial.printf("KeyboardController::claim_bluetooth TRUE\n");
+				//USBHDBGSerial.printf("KeyboardController::claim_bluetooth TRUE\n");
 				btconnect = btconnection;
 				btdevice = (Device_t*)btconnect->btController_;	// remember this way 
 				btdriver_ = btconnect->btController_;
@@ -645,7 +645,7 @@ hidclaim_t KeyboardController::claim_bluetooth(BluetoothConnection *btconnection
 
 hidclaim_t KeyboardController::bt_claim_collection(BluetoothConnection *btconnection, uint32_t bluetooth_class, uint32_t topusage)
 {
-	USBHDBGSerial.printf("KeyboardController::bt_claim_collection(%p) Connection:%p class:%x Top:%x\n", this, btconnection, bluetooth_class, topusage);
+	//USBHDBGSerial.printf("KeyboardController::bt_claim_collection(%p) Connection:%p class:%x Top:%x\n", this, btconnection, bluetooth_class, topusage);
 
 
 	if (mydevice != NULL) return CLAIM_NO;  // claimed by some other... 
@@ -657,7 +657,7 @@ hidclaim_t KeyboardController::bt_claim_collection(BluetoothConnection *btconnec
 		case TOPUSAGE_CONSUMER_CONTROL:
 		case TOPUSAGE_SYS_CONTROL:
 			collections_claimed_++;
-			USBHDBGSerial.printf("\tKeyboardController claim collection\n");
+			//USBHDBGSerial.printf("\tKeyboardController claim collection\n");
 			btconnect = btconnection;
 			btdevice = (Device_t*)btconnect->btController_;	// remember this way 
 			return CLAIM_REPORT;
@@ -689,7 +689,7 @@ bool KeyboardController::remoteNameComplete(const uint8_t *remoteName)
 {
 	// Real Hack some PS3 controllers bluetoot class is keyboard... 
 	if (strncmp((const char *)remoteName, "PLAYSTATION(R)3", 15) == 0) {
-		USBHDBGSerial.printf("  KeyboardController::remoteNameComplete %s - Oops PS3 unclaim\n", remoteName);
+		//USBHDBGSerial.printf("  KeyboardController::remoteNameComplete %s - Oops PS3 unclaim\n", remoteName);
 		return false;
 	}
 	return true;
@@ -707,10 +707,10 @@ bool KeyboardController::process_bluetooth_HID_data(const uint8_t *data, uint16_
 	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 4 0 0 0 0 0 
 	//BT rx2_data(18): 48 20 e 0 a 0 70 0 a1 1 2 0 0 0 0 0 0 0 
 	// So Len=9 passed in data starting at report ID=1... 
-	USBHDBGSerial.printf("KBD::process_bluetooth_HID_data: ");
+	//USBHDBGSerial.printf("KBD::process_bluetooth_HID_data: ");
 
-	for (uint8_t i = 0; i < length; i++) USBHDBGSerial.printf(" %02X", data[i]); 
-	USBHDBGSerial.printf("\n");
+	//for (uint8_t i = 0; i < length; i++) USBHDBGSerial.printf(" %02X", data[i]); 
+	//USBHDBGSerial.printf("\n");
 
 	// BUGBUG - assume boot format
 	keyboard_uses_boot_format_  = true;
