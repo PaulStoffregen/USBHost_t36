@@ -2818,6 +2818,7 @@ public:
         USBDrive *dev = *(USBDrive * volatile *)&device;
         return dev != nullptr;
     }
+    bool mediaPresent() { return *this; }
 
     // will remove soon, older versions to detect formatted.
     inline bool changed() {return _state_changed == USBFS_STATE_CHANGE_FORMAT;;}
