@@ -1493,6 +1493,7 @@ bool USBFilesystem::claimPartition(USBDrive *pdevice, int part,int voltype, int 
 		device = pdevice;
 		partition = part;
 		partitionType = type;
+		volumeLabel[0] = 0xFF;
 		_state_changed = USBFS_STATE_CHANGE_CONNECTION;
 		s_any_fs_changed_state = true;
 		DBGPrintf("+ Claimed\n");
@@ -1541,6 +1542,7 @@ bool USBFilesystem::format(int type, char progressChar, Print& pr) {
 		partitionType = type;
 		ret = mscfs.begin(device, true, firstSector, numSectors);
 		pr.printf("\tbegin return: %u\n", ret);
+		volumeLabel[0] = 0xFF;
 		_state_changed = USBFS_STATE_CHANGE_FORMAT;
 		s_any_fs_changed_state = true;
 	}
