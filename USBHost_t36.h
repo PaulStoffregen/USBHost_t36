@@ -1166,7 +1166,61 @@ private:
 
 //--------------------------------------------------------------------------
 
-class MIDIDeviceBase : public USBDriver {
+class LowLevelMIDIDeviceBase : public USBDriver {
+public:
+	LowLevelMIDIDeviceBase(USBHost &host, uint32_t *rx, uint32_t *tx1, uint32_t *tx2,
+		uint16_t bufsize, uint32_t *rqueue, uint16_t qsize) :
+			txtimer(this), rx_buffer(rx), tx_buffer1(tx1), tx_buffer2(tx2),
+			rx_queue(rqueue), max_packet_size(bufsize), rx_queue_size(qsize) {
+				init();
+		}
+
+	void write_packed(uint32_t data);
+	uint32_t read_packed();
+	void send_now(void) __attribute__((always_inline)) {}
+
+protected:
+	virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
+	virtual void disconnect();
+	virtual void timer_event(USBDriverTimer *timer);
+	static void rx_callback(const Transfer_t *transfer);
+	static void tx_callback(const Transfer_t *transfer);
+	void rx_data(const Transfer_t *transfer);
+	void tx_data(const Transfer_t *transfer);
+	void init();
+private:
+	Pipe_t *rxpipe;
+	Pipe_t *txpipe;
+	USBDriverTimer txtimer;
+	//enum { MAX_PACKET_SIZE = 64 };
+	//enum { RX_QUEUE_SIZE = 80 }; // must be more than MAX_PACKET_SIZE/4
+	//uint32_t rx_buffer[MAX_PACKET_SIZE/4];
+	//uint32_t tx_buffer1[MAX_PACKET_SIZE/4];
+	//uint32_t tx_buffer2[MAX_PACKET_SIZE/4];
+	uint32_t * const rx_buffer;
+	uint32_t * const tx_buffer1;
+	uint32_t * const tx_buffer2;
+	uint16_t rx_size;
+	uint16_t tx_size;
+	//uint32_t rx_queue[RX_QUEUE_SIZE];
+	uint32_t * const rx_queue;
+	bool rx_packet_queued;
+	const uint16_t max_packet_size;
+	const uint16_t rx_queue_size;
+	uint16_t rx_head;
+	uint16_t rx_tail;
+	volatile uint8_t tx1_count;
+	volatile uint8_t tx2_count;
+	uint8_t rx_ep;
+	uint8_t tx_ep;
+	uint8_t rx_ep_type;
+	uint8_t tx_ep_type;
+	Pipe_t mypipes[3] __attribute__ ((aligned(32)));
+	Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
+	strbuf_t mystring_bufs[1];
+};
+
+class MIDIDeviceBase : protected LowLevelMIDIDeviceBase {
 public:
     enum { SYSEX_MAX_LEN = 290 };
 
@@ -1192,12 +1246,7 @@ public:
         ActiveSensing         = 0xFE, // System Real Time - Active Sensing
         SystemReset           = 0xFF, // System Real Time - System Reset
     };
-    MIDIDeviceBase(USBHost &host, uint32_t *rx, uint32_t *tx1, uint32_t *tx2,
-                   uint16_t bufsize, uint32_t *rqueue, uint16_t qsize) :
-        txtimer(this), rx_buffer(rx), tx_buffer1(tx1), tx_buffer2(tx2),
-        rx_queue(rqueue), max_packet_size(bufsize), rx_queue_size(qsize) {
-        init();
-    }
+    using LowLevelMIDIDeviceBase::LowLevelMIDIDeviceBase;
     void sendNoteOff(uint8_t note, uint8_t velocity, uint8_t channel, uint8_t cable = 0) {
         send(0x80, note, velocity, channel, cable);
     }
@@ -1316,8 +1365,7 @@ public:
                          | ((data1 & 0x7F) << 16) | ((data2 & 0x7F) << 24));
         }
     }
-    void send_now(void) __attribute__((always_inline)) {
-    }
+    using LowLevelMIDIDeviceBase::send_now;
     bool read(uint8_t channel = 0);
     uint8_t getType(void) {
         return msg_type;
@@ -1433,75 +1481,37 @@ public:
         handleRealTimeSystem = fptr;
     }
 protected:
-    virtual bool claim(Device_t *device, int type, const uint8_t *descriptors, uint32_t len);
-    virtual void disconnect();
-    virtual void timer_event(USBDriverTimer *timer);
-    static void rx_callback(const Transfer_t *transfer);
-    static void tx_callback(const Transfer_t *transfer);
-    void rx_data(const Transfer_t *transfer);
-    void tx_data(const Transfer_t *transfer);
-    void init();
-    void write_packed(uint32_t data);
     void send_sysex_buffer_has_term(const uint8_t *data, uint32_t length, uint8_t cable);
     void send_sysex_add_term_bytes(const uint8_t *data, uint32_t length, uint8_t cable);
     void sysex_byte(uint8_t b);
 private:
-    Pipe_t *rxpipe;
-    Pipe_t *txpipe;
-    USBDriverTimer txtimer;
-    //enum { MAX_PACKET_SIZE = 64 };
-    //enum { RX_QUEUE_SIZE = 80 }; // must be more than MAX_PACKET_SIZE/4
-    //uint32_t rx_buffer[MAX_PACKET_SIZE/4];
-    //uint32_t tx_buffer1[MAX_PACKET_SIZE/4];
-    //uint32_t tx_buffer2[MAX_PACKET_SIZE/4];
-    uint32_t * const rx_buffer;
-    uint32_t * const tx_buffer1;
-    uint32_t * const tx_buffer2;
-    uint16_t rx_size;
-    uint16_t tx_size;
-    //uint32_t rx_queue[RX_QUEUE_SIZE];
-    uint32_t * const rx_queue;
-    volatile bool rx_packet_queued;
-    const uint16_t max_packet_size;
-    const uint16_t rx_queue_size;
-    uint16_t rx_head;
-    uint16_t rx_tail;
-    volatile uint8_t tx1_count;
-    volatile uint8_t tx2_count;
-    uint8_t rx_ep;
-    uint8_t tx_ep;
-    uint8_t rx_ep_type;
-    uint8_t tx_ep_type;
     uint8_t msg_cable;
     uint8_t msg_channel;
     uint8_t msg_type;
     uint8_t msg_data1;
     uint8_t msg_data2;
     uint8_t msg_sysex[SYSEX_MAX_LEN];
-    uint16_t msg_sysex_len;
-    void (*handleNoteOff)(uint8_t ch, uint8_t note, uint8_t vel);
-    void (*handleNoteOn)(uint8_t ch, uint8_t note, uint8_t vel);
-    void (*handleVelocityChange)(uint8_t ch, uint8_t note, uint8_t vel);
-    void (*handleControlChange)(uint8_t ch, uint8_t control, uint8_t value);
-    void (*handleProgramChange)(uint8_t ch, uint8_t program);
-    void (*handleAfterTouch)(uint8_t ch, uint8_t pressure);
-    void (*handlePitchChange)(uint8_t ch, int pitch);
-    void (*handleSysExPartial)(const uint8_t *data, uint16_t length, uint8_t complete);
-    void (*handleSysExComplete)(uint8_t *data, unsigned int size);
-    void (*handleTimeCodeQuarterFrame)(uint8_t data);
-    void (*handleSongPosition)(uint16_t beats);
-    void (*handleSongSelect)(uint8_t songnumber);
-    void (*handleTuneRequest)(void);
-    void (*handleClock)(void);
-    void (*handleStart)(void);
-    void (*handleContinue)(void);
-    void (*handleStop)(void);
-    void (*handleActiveSensing)(void);
-    void (*handleSystemReset)(void);
-    void (*handleRealTimeSystem)(uint8_t rtb);
-    Pipe_t mypipes[3] __attribute__ ((aligned(32)));
-    Transfer_t mytransfers[7] __attribute__ ((aligned(32)));
-    strbuf_t mystring_bufs[1];
+    uint16_t msg_sysex_len = 0;
+    void (*handleNoteOff)(uint8_t ch, uint8_t note, uint8_t vel) = nullptr;
+    void (*handleNoteOn)(uint8_t ch, uint8_t note, uint8_t vel) = nullptr;
+    void (*handleVelocityChange)(uint8_t ch, uint8_t note, uint8_t vel) = nullptr;
+    void (*handleControlChange)(uint8_t ch, uint8_t control, uint8_t value) = nullptr;
+    void (*handleProgramChange)(uint8_t ch, uint8_t program) = nullptr;
+    void (*handleAfterTouch)(uint8_t ch, uint8_t pressure) = nullptr;
+    void (*handlePitchChange)(uint8_t ch, int pitch) = nullptr;
+    void (*handleSysExPartial)(const uint8_t *data, uint16_t length, uint8_t complete) = nullptr;
+    void (*handleSysExComplete)(uint8_t *data, unsigned int size) = nullptr;
+    void (*handleTimeCodeQuarterFrame)(uint8_t data) = nullptr;
+    void (*handleSongPosition)(uint16_t beats) = nullptr;
+    void (*handleSongSelect)(uint8_t songnumber) = nullptr;
+    void (*handleTuneRequest)(void) = nullptr;
+    void (*handleClock)(void) = nullptr;
+    void (*handleStart)(void) = nullptr;
+    void (*handleContinue)(void) = nullptr;
+    void (*handleStop)(void) = nullptr;
+    void (*handleActiveSensing)(void) = nullptr;
+    void (*handleSystemReset)(void) = nullptr;
+    void (*handleRealTimeSystem)(uint8_t rtb) = nullptr;
 };
 
 class MIDIDevice : public MIDIDeviceBase {
