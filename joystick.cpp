@@ -666,7 +666,7 @@ void JoystickController::hid_input_data(uint32_t usage, int32_t value)
                 anychange = true;
             }
         }
-    } else if (usage_page == 1 && usage >= 0x30 && usage <= 0x39) {
+    } else if (usage_page == 1 && usage >= 0x30 && usage <= 0x38) {
         // TODO: need scaling of value to consistent API, 16 bit signed?
         // TODO: many joysticks repeat slider usage.  Detect & map to axis?
         uint32_t i = usage - 0x30;
@@ -696,6 +696,16 @@ void JoystickController::hid_input_data(uint32_t usage, int32_t value)
             //DBGPrintf("UB: index=%x value=%x\n", usage_index, value);
         }
 
+    } else if (usage_page == 1 && usage == 0x39) { // 0x39 is the hat switch usage
+        if (hat_switch != value) {
+            hat_switch = value; // Store the current value of the hat switch
+            anychange = true; // Indicate that something has changed
+
+            hat_direction = value;
+
+
+            DBGPrintf("Hat switch value changed: %d (mapped to direction: %d)\n", value, hat_direction);
+        }
     } else {
         DBGPrintf("UP: usage_page=%x usage=%x add: %x %x %d\n", usage_page, usage, additional_axis_usage_page_, additional_axis_usage_start_, additional_axis_usage_count_);
 

@@ -1012,6 +1012,10 @@ public:
     // Returns the specified axis value
     int     getAxis(uint32_t index) { return (index < (sizeof(axis) / sizeof(axis[0]))) ? axis[index] : 0; }
 
+    // Return hat switch state
+    int32_t getHatSwitchRaw() { return hat_switch; }
+    int8_t getHatSwitchDirection() { return hat_direction; }
+
     // Retuns bit mask showing which axis are defined for the current joystick
     uint64_t axisMask() {return axis_mask_;}
 
@@ -1114,6 +1118,9 @@ private:
     uint64_t axis_mask_ = 0;    // which axis have valid data
     uint64_t axis_changed_mask_ = 0;
     uint64_t axis_change_notify_mask_ = 0x3ff;  // assume the low 10 values only.
+
+    int32_t hat_switch = -1;  // Raw hat switch value (-1 = centered, others map to direction)
+    int8_t hat_direction = -1; // Simplified direction (0 = up, 1 = up-right, etc.)
 
     uint16_t additional_axis_usage_page_ = 0;
     uint16_t additional_axis_usage_start_ = 0;
