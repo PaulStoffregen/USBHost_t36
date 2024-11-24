@@ -653,17 +653,32 @@ void JoystickController::hid_input_data(uint32_t usage, int32_t value)
     DBGPrintf("Joystick: usage=%X, value=%d\n", usage, value);
     uint32_t usage_page = usage >> 16;
     usage &= 0xFFFF;
-    if (usage_page == 9 && usage >= 1 && usage <= 32) {
-        uint32_t bit = 1 << (usage - 1);
-        if (value == 0) {
-            if (buttons & bit) {
-                buttons &= ~bit;
-                anychange = true;
+    if (usage_page == 9) { // Button usage page
+        if (usage >= 1 && usage <= 32) { // Buttons 1-32
+            uint32_t bit = 1 << (usage - 1);
+            if (value == 0) {
+                if (buttons & bit) {
+                    buttons &= ~bit;
+                    anychange = true;
+                }
+            } else {
+                if (!(buttons & bit)) {
+                    buttons |= bit;
+                    anychange = true;
+                }
             }
-        } else {
-            if (!(buttons & bit)) {
-                buttons |= bit;
-                anychange = true;
+        } else if (usage >= 33 && usage <= 64) { // Extra buttons 33-64
+            uint32_t bit = 1 << (usage - 33);
+            if (value == 0) {
+                if (extra_buttons & bit) {
+                    extra_buttons &= ~bit;
+                    anychange = true;
+                }
+            } else {
+                if (!(extra_buttons & bit)) {
+                    extra_buttons |= bit;
+                    anychange = true;
+                }
             }
         }
     } else if (usage_page == 1 && usage >= 0x30 && usage <= 0x38) {
@@ -697,21 +712,15 @@ void JoystickController::hid_input_data(uint32_t usage, int32_t value)
         }
 
     } else if (usage_page == 1 && usage == 0x39) { // 0x39 is the hat switch usage
-        if (hat_switch != value) {
-            hat_switch = value; // Store the current value of the hat switch
-            anychange = true; // Indicate that something has changed
+        hat_switch = value; // Store the current value of the hat switch
+        anychange = true; // Indicate that something has changed
 
-            hat_direction = value;
+        DBGPrintf("Hat switch value changed: %d (mapped to direction: %d)\n", value, hat_direction);
 
-
-            DBGPrintf("Hat switch value changed: %d (mapped to direction: %d)\n", value, hat_direction);
-        }
     } else {
         DBGPrintf("UP: usage_page=%x usage=%x add: %x %x %d\n", usage_page, usage, additional_axis_usage_page_, additional_axis_usage_start_, additional_axis_usage_count_);
 
     }
-    // TODO: hat switch?
-
 }
 
 void JoystickController::hid_input_end()
