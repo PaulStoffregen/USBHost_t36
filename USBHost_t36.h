@@ -532,14 +532,14 @@ public:
 
 
 private:
-    virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage);
+    virtual hidclaim_t claim_collection(USBHIDParser *driver, Device_t *dev, uint32_t topusage) = 0;
     virtual bool hid_process_in_data(const Transfer_t *transfer) {return false;}
     virtual bool hid_process_out_data(const Transfer_t *transfer) {return false;}
     virtual bool hid_process_control(const Transfer_t *transfer) {return false;}
-    virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax);
-    virtual void hid_input_data(uint32_t usage, int32_t value);
-    virtual void hid_input_end();
-    virtual void disconnect_collection(Device_t *dev);
+    virtual void hid_input_begin(uint32_t topusage, uint32_t type, int lgmin, int lgmax) { }
+    virtual void hid_input_data(uint32_t usage, int32_t value) { }
+    virtual void hid_input_end() { }
+    virtual void disconnect_collection(Device_t *dev) { }
     virtual void hid_timer_event(USBDriverTimer *whichTimer) { }
     USBHIDInput *next = NULL;
     friend class USBHIDParser;
@@ -2818,6 +2818,15 @@ public:
         USBDrive *dev = *(USBDrive * volatile *)&device;
         return dev != nullptr;
     }
+    bool mediaPresent() { return *this; }
+    const char *name() {
+      if (volumeLabel[0] == 0xFF) { // 0xFF = volume label not yet read
+        if (!getVolumeLabel(volumeLabel, sizeof(volumeLabel))) {
+          volumeLabel[0] = 0; // 0x00 = volume label undefined
+        }
+      }
+      return volumeLabel;
+    }
 
     // will remove soon, older versions to detect formatted.
     inline bool changed() {return _state_changed == USBFS_STATE_CHANGE_FORMAT;;}
@@ -2865,6 +2874,7 @@ protected:
     virtual void releasePartition();
     bool check_voltype_guid(int voltype, uint8_t *guid);
     bool changed_ = false;
+    char volumeLabel[12] = {0xFF};
 
 public:
     FsVolume mscfs;      // SdFat API
