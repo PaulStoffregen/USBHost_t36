@@ -2818,6 +2818,15 @@ public:
         USBDrive *dev = *(USBDrive * volatile *)&device;
         return dev != nullptr;
     }
+    bool mediaPresent() { return *this; }
+    const char *name() {
+      if (volumeLabel[0] == 0xFF) { // 0xFF = volume label not yet read
+        if (!getVolumeLabel(volumeLabel, sizeof(volumeLabel))) {
+          volumeLabel[0] = 0; // 0x00 = volume label undefined
+        }
+      }
+      return volumeLabel;
+    }
 
     // will remove soon, older versions to detect formatted.
     inline bool changed() {return _state_changed == USBFS_STATE_CHANGE_FORMAT;;}
@@ -2865,6 +2874,7 @@ protected:
     virtual void releasePartition();
     bool check_voltype_guid(int voltype, uint8_t *guid);
     bool changed_ = false;
+    char volumeLabel[12] = {0xFF};
 
 public:
     FsVolume mscfs;      // SdFat API
