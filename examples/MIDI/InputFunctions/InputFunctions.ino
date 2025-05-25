@@ -10,8 +10,6 @@
    Use the Arduino Serial Monitor to view the messages
    as Teensy receives them by USB MIDI
 
-   You must select MIDI from the "Tools > USB Type" menu
-
    This example code is in the public domain.
 */
 
