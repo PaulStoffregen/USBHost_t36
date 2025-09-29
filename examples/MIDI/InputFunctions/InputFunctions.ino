@@ -20,7 +20,7 @@
 USBHost myusb;
 USBHub hub1(myusb);
 USBHub hub2(myusb);
-MIDIDevice midi1(myusb);
+MIDIDevice_BigBuffer midi1(myusb);
 
 
 void setup() {

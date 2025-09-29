@@ -34,17 +34,17 @@ USBHub hub1(myusb);
 USBHub hub2(myusb);
 USBHub hub3(myusb);
 USBHub hub4(myusb);
-MIDIDevice midi01(myusb);
-MIDIDevice midi02(myusb);
-MIDIDevice midi03(myusb);
-MIDIDevice midi04(myusb);
-MIDIDevice midi05(myusb);
-MIDIDevice midi06(myusb);
-MIDIDevice midi07(myusb);
-MIDIDevice midi08(myusb);
-MIDIDevice midi09(myusb);
-MIDIDevice midi10(myusb);
-MIDIDevice * midilist[10] = {
+MIDIDevice_BigBuffer midi01(myusb);
+MIDIDevice_BigBuffer midi02(myusb);
+MIDIDevice_BigBuffer midi03(myusb);
+MIDIDevice_BigBuffer midi04(myusb);
+MIDIDevice_BigBuffer midi05(myusb);
+MIDIDevice_BigBuffer midi06(myusb);
+MIDIDevice_BigBuffer midi07(myusb);
+MIDIDevice_BigBuffer midi08(myusb);
+MIDIDevice_BigBuffer midi09(myusb);
+MIDIDevice_BigBuffer midi10(myusb);
+MIDIDevice_BigBuffer * midilist[10] = {
   &midi01, &midi02, &midi03, &midi04, &midi05, &midi06, &midi07, &midi08, &midi09, &midi10
 };
 
