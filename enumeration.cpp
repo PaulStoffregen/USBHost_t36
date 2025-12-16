@@ -155,10 +155,10 @@ void USBHost::enumeration(const Transfer_t *transfer)
 		return;
 	}
 
-	println("enumeration:");
 	//print_hexbytes(transfer->buffer, transfer->length);
 	//print(transfer);
 	dev = transfer->pipe->device;
+	println("enumeration, state ", dev->enum_state);
 
 	while (1) {
 		// Within this large switch/case, "break" means we've done
@@ -179,6 +179,7 @@ void USBHost::enumeration(const Transfer_t *transfer)
 			dev->address = enumsetup.wValue;
 			pipe_set_addr(dev->control_pipe, enumsetup.wValue);
 			mk_setup(enumsetup, 0x80, 6, 0x0100, 0, 18); // 6=GET_DESCRIPTOR
+			println("queuing get device descriptor");
 			queue_Control_Transfer(dev, &enumsetup, enumbuf, NULL);
 			dev->enum_state = 2;
 			return;

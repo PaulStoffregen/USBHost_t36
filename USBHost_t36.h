@@ -222,6 +222,7 @@ struct Pipe_struct {
     uint8_t  complete_mask;
     Pipe_t   *next;
     void     (*callback_function)(const Transfer_t *);
+    bool     (*error_callback_function)(const Transfer_t *);
     uint16_t periodic_interval;
     uint16_t periodic_offset;
     uint16_t bandwidth_interval;
@@ -233,7 +234,6 @@ struct Pipe_struct {
     uint32_t unused2;
     uint32_t unused3;
     uint32_t unused4;
-    uint32_t unused5;
 };
 
 // Transfer_t represents a single transaction on the USB bus.
