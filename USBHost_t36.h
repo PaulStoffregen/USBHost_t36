@@ -200,6 +200,7 @@ struct Device_struct {
     uint16_t idVendor;
     uint16_t idProduct;
     uint16_t LanguageID;
+    uint8_t  enum_error_count;
 };
 
 // Pipe_t holes all information about each USB endpoint/pipe
@@ -222,7 +223,7 @@ struct Pipe_struct {
     uint8_t  complete_mask;
     Pipe_t   *next;
     void     (*callback_function)(const Transfer_t *);
-    bool     (*error_callback_function)(const Transfer_t *);
+    void     (*error_callback_function)(const Transfer_t *);
     uint16_t periodic_interval;
     uint16_t periodic_offset;
     uint16_t bandwidth_interval;
@@ -285,7 +286,9 @@ protected:
                                     uint32_t len, USBDriver *driver);
     static Device_t * new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_port);
     static void disconnect_Device(Device_t *dev);
-    static void enumeration(const Transfer_t *transfer);
+    static void enumeration_transmit(Device_t *dev);
+    static void enumeration_receive(const Transfer_t *transfer);
+    static void enumeration_error(const Transfer_t *transfer);
     static void driver_ready_for_device(USBDriver *driver);
     static volatile bool enumeration_busy;
 public: // Maybe others may want/need to contribute memory example HID devices may want to add transfers.
