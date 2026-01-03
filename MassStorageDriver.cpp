@@ -175,6 +175,7 @@ void USBDrive::disconnect()
 	msDriveInfo.connected = false;
 	msDriveInfo.initialized = false;
 	memset(&msDriveInfo, 0, sizeof(msDriveInfo_t));
+	m_errorCode = MS_NO_MEDIA_ERR; // Added 04-30-23
 
 #ifdef DBGprint
 	print("   connected ");
@@ -1282,7 +1283,14 @@ int USBDrive::findPartition(int partition, int &type, uint32_t &firstSector, uin
 	if (partition >= 0 && partition <= 3) {
 		// Master Boot Record
 		pt = &sector.mbr.part[partition];
-        // try quick way through
+
+ 	// Added for EXT4 partition types
+	if(pt->type == 0x83) {
+		type = pt->type;
+		return EXT4_VOL; // EXT2/3/4 type.
+	}
+
+		// try quick way through
       	if (((pt->boot == 0) || (pt->boot == 0X80)) && (pt->type != 0) && (pt->type != 0xf)) {
 			type = pt->type;
 			firstSector = getLe32(pt->relativeSectors);
@@ -1488,6 +1496,19 @@ bool USBFilesystem::claimPartition(USBDrive *pdevice, int part,int voltype, int 
 
 	// For GUID file systems only continue if this is a guid to a type we know. 
 	if (!check_voltype_guid(voltype, guid)) return false; // not something we understand;
+
+	//-----------------------------------------------------
+	// Added for EXT4_VOL type.
+	//-----------------------------------------------------
+	if (type == 0x83) {
+		device = pdevice;
+		partition = part;
+		partitionType = type;
+		_state_changed = USBFS_STATE_CHANGE_CONNECTION;
+		s_any_fs_changed_state = true;
+		DBGPrintf("+ Claimed\n");
+		return true;
+	}
 
 	if (mscfs.begin(pdevice, true, firstSector, numSectors)) {
 		device = pdevice;
