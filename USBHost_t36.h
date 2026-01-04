@@ -729,7 +729,7 @@ protected:
     bool check_if_using_report_id();
     void parse();
     USBHIDInput * find_driver(uint32_t topusage);
-    void parse(uint16_t type_and_report_id, const uint8_t *data, uint32_t len);
+    virtual void parse(uint16_t type_and_report_id, const uint8_t *data, uint32_t len);
     void init();
 
 
