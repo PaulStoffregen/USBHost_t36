@@ -1008,12 +1008,16 @@ public:
 
     // Returns the currently pressed buttons on the joystick
     uint32_t getButtons() { return buttons; }
+    uint32_t getExtraButtons() { return extra_buttons; }
 
     // Returns the HID Report ID
     uint8_t getReportID() { return report_id_;}
 
     // Returns the specified axis value
     int     getAxis(uint32_t index) { return (index < (sizeof(axis) / sizeof(axis[0]))) ? axis[index] : 0; }
+
+    // Return hat switch state
+    int8_t getHatSwitch() { return hat_switch; }
 
     // Retuns bit mask showing which axis are defined for the current joystick
     uint64_t axisMask() {return axis_mask_;}
@@ -1113,10 +1117,13 @@ private:
     bool anychange = false;
     volatile bool joystickEvent = false;
     uint32_t buttons = 0;
+    uint32_t extra_buttons = 0;
     int axis[TOTAL_AXIS_COUNT] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     uint64_t axis_mask_ = 0;    // which axis have valid data
     uint64_t axis_changed_mask_ = 0;
     uint64_t axis_change_notify_mask_ = 0x3ff;  // assume the low 10 values only.
+
+    int8_t hat_switch = 0;
 
     uint16_t additional_axis_usage_page_ = 0;
     uint16_t additional_axis_usage_start_ = 0;
