@@ -2566,7 +2566,7 @@ public:
     void printExtendedPartition(MbrSector_t *mbr, uint8_t ipExt, Print &Serialx);
     uint32_t printGUIDPartitionTable(Print &Serialx);
 
-    enum {INVALID_VOL = 0, MBR_VOL, EXT_VOL, GPT_VOL}; // what type of volume did the mapping return
+    enum {INVALID_VOL = 0, MBR_VOL, EXT_VOL, GPT_VOL, EXT4_VOL, EXT4_VOL}; // what type of volume did the mapping return
     int findPartition(int partition, int &type, uint32_t &firstSector, uint32_t &numSectors,
                       uint32_t &mbrLBA, uint8_t &mbrPart, uint8_t *guid = nullptr);
 

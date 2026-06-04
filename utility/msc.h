@@ -69,6 +69,7 @@
 
 #define	MS_INIT_PASS 		0
 #define MAXLUNS				16
+#define MS_FSNR_ERROR		0x7F
 
 // These two defines are timeouts for detecting a connected drive
 // and waiting for it to be operational.

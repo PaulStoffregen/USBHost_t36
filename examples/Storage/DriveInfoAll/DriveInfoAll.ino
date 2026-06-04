@@ -92,7 +92,7 @@ void setup()
   }
 
   myusb.begin();
-  delay(500);  // give drives a little time to startup
+  delay(750);  // give drives a little time to startup
 }
 
 
