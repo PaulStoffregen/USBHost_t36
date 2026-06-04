@@ -58,7 +58,7 @@ USBSerialBase::product_vendor_mapping_t USBSerialBase::pid_vid_mapping[] = {
 
 	// Silex CP210...
 	{0x10c4, 0xea60, USBSerialBase::CP210X, 0 },
-	{0x10c4, 0xea70, USBSerialBase::CP210X, 0 }
+	{0x10c4, 0xea70, USBSerialBase::CP210X, 1 }
 };
 
 
@@ -271,6 +271,13 @@ bool USBSerialBase::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 	if (count_end_points < 2) return false; // not enough end points
 	if (len < 23) return false;
 	if (descriptors[0] != 9) return false; // length 9
+	if (descriptors[1] == 4) {
+		interface = descriptors[2];
+		println("interface = ", interface);
+	} else {
+		interface = 0;
+	}
+	_vid_pid_claim_at_type = type;
 
 	// Lets walk through end points and see if we 
 	// can find an RX and TX bulk transfer end point.
@@ -377,7 +384,7 @@ bool USBSerialBase::claim(Device_t *dev, int type, const uint8_t *descriptors, u
 		{
 			println("CP210X:  0x41, 0x11, 0, 0, 0 - reset port");
 			// Need to setup  the data the line coding data
-			mk_setup(setup, 0x41, 0x11, 0, 0, 0);  
+			mk_setup(setup, 0x41, 0x11, 0, interface, 0);
 			queue_Control_Transfer(dev, &setup, NULL, this); 
 			control_queued = true;
 			setup_state = 1; 	// We are at step one of setup... 
@@ -897,7 +904,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			// See if two stop bits
 			if (format_ & 0x100) cp210x_format |= 2;
 
-			mk_setup(setup, 0x41, 3, cp210x_format, 0, 0); // data format 8N1
+			mk_setup(setup, 0x41, 3, cp210x_format, interface, 0); // data format 8N1
 			println("CP210x setup, 0x41, 3, cp210x_format ",cp210x_format, HEX);
 			queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
@@ -910,7 +917,12 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			setupdata[1] = (baudrate >> 8) & 0xff;
 			setupdata[2] = (baudrate >> 16) & 0xff;
 			setupdata[3] = (baudrate >> 24) & 0xff;
-			mk_setup(setup, 0x40, 0x1e, 0, 0, 4);
+			if (_vid_pid_claim_at_type) {
+				mk_setup(setup, 0x41, 0x1e, 0, interface, 4);
+			} else {
+				// TODO: is 0x40 really correct, should it be 0x41??
+				mk_setup(setup, 0x40, 0x1e, 0, 0, 4);
+			}
 			println("CP210x Set Baud  0x40, 0x1e");
 			queue_Control_Transfer(device, &setup, setupdata, this);
 			control_queued = true;
@@ -921,7 +933,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			pending_control &= ~4;
 			memset(setupdata, 0, sizeof(setupdata));	// clear out the data
 			println("CP210x 0x41, 0, 1");
-			mk_setup(setup, 0x41, 0, 1, 0, 0);
+			mk_setup(setup, 0x41, 0, 1, interface, 0);
 			queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true; 
 			return;
@@ -930,7 +942,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 		// MHS_REQUEST
 		if (pending_control & 8) {
 			pending_control &= ~0x88;
-			mk_setup(setup, 0x41, 7, 0x0303, 0, 0);
+			mk_setup(setup, 0x41, 7, 0x0303, interface, 0);
 			queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			println("CP210x 0x41, 7, 0x0303");
@@ -942,7 +954,7 @@ void USBSerialBase::control(const Transfer_t *transfer)
 			pending_control &= ~0x80;
 			println("CP210x 0x41, 7, 0x0300");
 			// clear dtr
-			mk_setup(setup, 0x41, 7, 0x0300, 0, 0);
+			mk_setup(setup, 0x41, 7, 0x0300, interface, 0);
 			queue_Control_Transfer(device, &setup, NULL, this);
 			control_queued = true;
 			dtr_rts_ = 0;

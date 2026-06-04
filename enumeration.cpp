@@ -120,13 +120,12 @@ Device_t * USBHost::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_p
 		return NULL;
 	}
 	dev->strbuf = allocate_string_buffer();  // try to allocate a string buffer; 
-	dev->control_pipe->callback_function = &enumeration;
+	dev->control_pipe->callback_function = &enumeration_receive;
+	dev->control_pipe->error_callback_function = &enumeration_error;
 	dev->control_pipe->direction = 1; // 1=IN
 	// Here is where the enumeration process officially begins.
 	// Only a single device can enumerate at a time.
 	USBHost::enumeration_busy = true;
-	mk_setup(enumsetup, 0x80, 6, 0x0100, 0, 8); // 6=GET_DESCRIPTOR
-	queue_Control_Transfer(dev, &enumsetup, enumbuf, NULL);
 	if (devlist == NULL) {
 		devlist = dev;
 	} else {
@@ -134,9 +133,66 @@ Device_t * USBHost::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_p
 		for (p = devlist; p->next; p = p->next) ; // walk devlist
 		p->next = dev;
 	}
+	dev->enum_state = 0;
+	enumeration_transmit(dev);
 	return dev;
 }
 
+
+void USBHost::enumeration_transmit(Device_t *dev)
+{
+	println("enumeration_transmit, state ", dev->enum_state);
+	switch (dev->enum_state) {
+
+	case 0: // request first 8 bytes of device descriptor
+		mk_setup(enumsetup, 0x80, 6 /*6=GET_DESCRIPTOR*/, 0x0100, 0, 8);
+		queue_Control_Transfer(dev, &enumsetup, enumbuf, NULL);
+		return;
+	case 1: // send set address
+		mk_setup(enumsetup, 0, 5 /*5=SET_ADDRESS*/, assign_address(), 0, 0);
+		queue_Control_Transfer(dev, &enumsetup, NULL, NULL);
+		return;
+	case 2: // request all 18 bytes of device descriptor
+		mk_setup(enumsetup, 0x80, 6 /*6=GET_DESCRIPTOR*/, 0x0100, 0, 18);
+		println("queuing get device descriptor");
+		queue_Control_Transfer(dev, &enumsetup, enumbuf, NULL);
+		return;
+	case 3: // request Language ID
+		mk_setup(enumsetup, 0x80, 6 /*6=GET_DESCRIPTOR*/, 0x0300, 0,
+			sizeof(enumbuf) - 4);
+		queue_Control_Transfer(dev, &enumsetup, enumbuf + 4, NULL);
+		return;
+	case 4: // request Manufacturer string
+		mk_setup(enumsetup, 0x80, 6, 0x0300 | enumbuf[0], dev->LanguageID,
+			sizeof(enumbuf) - 4);
+		queue_Control_Transfer(dev, &enumsetup, enumbuf + 4, NULL);
+		return;
+	case 5: // request Product string
+		mk_setup(enumsetup, 0x80, 6, 0x0300 | enumbuf[1], dev->LanguageID,
+			sizeof(enumbuf) - 4);
+		queue_Control_Transfer(dev, &enumsetup, enumbuf + 4, NULL);
+		return;
+	case 6: // request Serial Number string
+		mk_setup(enumsetup, 0x80, 6, 0x0300 | enumbuf[2], dev->LanguageID,
+			sizeof(enumbuf) - 4);
+		queue_Control_Transfer(dev, &enumsetup, enumbuf + 4, NULL);
+		return;
+	case 7: // request first 9 bytes of config desc
+		mk_setup(enumsetup, 0x80, 6 /*6=GET_DESCRIPTOR*/, 0x0200, 0, 9);
+		queue_Control_Transfer(dev, &enumsetup, enumbuf, NULL);
+		return;
+	case 8: // request all of config desc
+		enumlen = enumbuf[2] | (enumbuf[3] << 8);
+		// TODO: is fetching enumlen this way really safe?
+		mk_setup(enumsetup, 0x80, 6 /*6=GET_DESCRIPTOR*/, 0x0200, 0, enumlen);
+		queue_Control_Transfer(dev, &enumsetup, enumbuf, NULL);
+		return;
+	case 9: // send set config
+		mk_setup(enumsetup, 0, 9 /*9=SET_CONFIGURATION*/, enumbuf[5], 0, 0);
+		queue_Control_Transfer(dev, &enumsetup, NULL, NULL);
+		return;
+	}
+}
 
 // Control transfer callback function.  ALL control transfers from all
 // devices call this function when they complete.  When control transfers
@@ -144,10 +200,9 @@ Device_t * USBHost::new_Device(uint32_t speed, uint32_t hub_addr, uint32_t hub_p
 // Otherwise, the control transfer is part of the enumeration process,
 // which is implemented here.
 //
-void USBHost::enumeration(const Transfer_t *transfer)
+void USBHost::enumeration_receive(const Transfer_t *transfer)
 {
-	Device_t *dev;
-	uint32_t len;
+	Device_t *dev = transfer->pipe->device;
 
 	// If a driver created this control transfer, allow it to process the result
 	if (transfer->driver) {
@@ -155,11 +210,11 @@ void USBHost::enumeration(const Transfer_t *transfer)
 		return;
 	}
 
-	println("enumeration:");
 	//print_hexbytes(transfer->buffer, transfer->length);
 	//print(transfer);
-	dev = transfer->pipe->device;
-
+	println("enumeration_receive, state ", dev->enum_state);
+	dev->enum_error_count = 0;
+#if 0
 	while (1) {
 		// Within this large switch/case, "break" means we've done
 		// some work, but more remains to be done in a different
@@ -168,131 +223,120 @@ void USBHost::enumeration(const Transfer_t *transfer)
 		// When completed, return is used.  Generally, return happens
 		// only after a new control transfer is queued, or when
 		// enumeration is complete and no more communication is needed.
-		switch (dev->enum_state) {
-		case 0: // read 8 bytes of device desc, set max packet, and send set address
-			pipe_set_maxlen(dev->control_pipe, enumbuf[7]);
-			mk_setup(enumsetup, 0, 5, assign_address(), 0, 0); // 5=SET_ADDRESS
-			queue_Control_Transfer(dev, &enumsetup, NULL, NULL);
-			dev->enum_state = 1;
-			return;
-		case 1: // request all 18 bytes of device descriptor
-			dev->address = enumsetup.wValue;
-			pipe_set_addr(dev->control_pipe, enumsetup.wValue);
-			mk_setup(enumsetup, 0x80, 6, 0x0100, 0, 18); // 6=GET_DESCRIPTOR
-			queue_Control_Transfer(dev, &enumsetup, enumbuf, NULL);
-			dev->enum_state = 2;
-			return;
-		case 2: // parse 18 device desc bytes
-			print_device_descriptor(enumbuf);
-			dev->bDeviceClass = enumbuf[4];
-			dev->bDeviceSubClass = enumbuf[5];
-			dev->bDeviceProtocol = enumbuf[6];
-			dev->idVendor = enumbuf[8] | (enumbuf[9] << 8);
-			dev->idProduct = enumbuf[10] | (enumbuf[11] << 8);
-			enumbuf[0] = enumbuf[14];
-			enumbuf[1] = enumbuf[15];
-			enumbuf[2] = enumbuf[16];
-			if ((enumbuf[0] | enumbuf[1] | enumbuf[2]) > 0) {
-				dev->enum_state = 3;
-			} else {
-				dev->enum_state = 11;
-			}
-			break;
-		case 3: // request Language ID
-			len = sizeof(enumbuf) - 4;
-			mk_setup(enumsetup, 0x80, 6, 0x0300, 0, len); // 6=GET_DESCRIPTOR
-			queue_Control_Transfer(dev, &enumsetup, enumbuf + 4, NULL);
-			dev->enum_state = 4;
-			return;
-		case 4: // parse Language ID
-			if (enumbuf[4] < 4 || enumbuf[5] != 3) {
-				dev->enum_state = 11;
-			} else {
-				dev->LanguageID = enumbuf[6] | (enumbuf[7] << 8);
-				if (enumbuf[0]) dev->enum_state = 5;
-				else if (enumbuf[1]) dev->enum_state = 7;
-				else if (enumbuf[2]) dev->enum_state = 9;
-				else dev->enum_state = 11;
-			}
-			break;
-		case 5: // request Manufacturer string
-			len = sizeof(enumbuf) - 4;
-			mk_setup(enumsetup, 0x80, 6, 0x0300 | enumbuf[0], dev->LanguageID, len);
-			queue_Control_Transfer(dev, &enumsetup, enumbuf + 4, NULL);
-			dev->enum_state = 6;
-			return;
-		case 6: // parse Manufacturer string
-			print_string_descriptor("Manufacturer: ", enumbuf + 4);
-			convertStringDescriptorToASCIIString(0, dev, transfer);
-			// TODO: receive the string...
-			if (enumbuf[1]) dev->enum_state = 7;
-			else if (enumbuf[2]) dev->enum_state = 9;
-			else dev->enum_state = 11;
-			break;
-		case 7: // request Product string
-			len = sizeof(enumbuf) - 4;
-			mk_setup(enumsetup, 0x80, 6, 0x0300 | enumbuf[1], dev->LanguageID, len);
-			queue_Control_Transfer(dev, &enumsetup, enumbuf + 4, NULL);
-			dev->enum_state = 8;
-			return;
-		case 8: // parse Product string
-			print_string_descriptor("Product: ", enumbuf + 4);
-			convertStringDescriptorToASCIIString(1, dev, transfer);
-			if (enumbuf[2]) dev->enum_state = 9;
-			else dev->enum_state = 11;
-			break;
-		case 9: // request Serial Number string
-			len = sizeof(enumbuf) - 4;
-			mk_setup(enumsetup, 0x80, 6, 0x0300 | enumbuf[2], dev->LanguageID, len);
-			queue_Control_Transfer(dev, &enumsetup, enumbuf + 4, NULL);
-			dev->enum_state = 10;
-			return;
-		case 10: // parse Serial Number string
-			print_string_descriptor("Serial Number: ", enumbuf + 4);
-			convertStringDescriptorToASCIIString(2, dev, transfer);
-			dev->enum_state = 11;
-			break;
-		case 11: // request first 9 bytes of config desc
-			mk_setup(enumsetup, 0x80, 6, 0x0200, 0, 9); // 6=GET_DESCRIPTOR
-			queue_Control_Transfer(dev, &enumsetup, enumbuf, NULL);
-			dev->enum_state = 12;
-			return;
-		case 12: // read 9 bytes, request all of config desc
-			enumlen = enumbuf[2] | (enumbuf[3] << 8);
-			println("Config data length = ", enumlen);
-			if (enumlen > sizeof(enumbuf)) {
-				enumlen = sizeof(enumbuf);
-				// TODO: how to handle device with too much config data
-			}
-			mk_setup(enumsetup, 0x80, 6, 0x0200, 0, enumlen); // 6=GET_DESCRIPTOR
-			queue_Control_Transfer(dev, &enumsetup, enumbuf, NULL);
-			dev->enum_state = 13;
-			return;
-		case 13: // read all config desc, send set config
-			print_config_descriptor(enumbuf, sizeof(enumbuf));
-			dev->bmAttributes = enumbuf[7];
-			dev->bMaxPower = enumbuf[8];
-			// TODO: actually do something with interface descriptor?
-			mk_setup(enumsetup, 0, 9, enumbuf[5], 0, 0); // 9=SET_CONFIGURATION
-			queue_Control_Transfer(dev, &enumsetup, NULL, NULL);
-			dev->enum_state = 14;
-			return;
-		case 14: // device is now configured
-			claim_drivers(dev);
-			dev->enum_state = 15;
-			// unlock exclusive access to enumeration process.  If any
-			// more devices are waiting, the hub driver is responsible
-			// for resetting their ports and starting their enumeration
-			// when the port enables.
-			USBHost::enumeration_busy = false;
-			return;
-		case 15: // control transfers for other stuff?
-			// TODO: handle other standard control: set/clear feature, etc
-		default:
-			return;
+#endif
+	switch (dev->enum_state) {
+	case 0: // receive 8 bytes of device desc, set max packet
+		pipe_set_maxlen(dev->control_pipe, enumbuf[7]);
+		dev->enum_state = 1;
+		break;
+	case 1: // device address sucessfully set
+		dev->address = enumsetup.wValue;
+		pipe_set_addr(dev->control_pipe, enumsetup.wValue);
+		println("queuing get device descriptor");
+		dev->enum_state = 2;
+		break;
+	case 2: // receive full 18 byte device descriptor
+		print_device_descriptor(enumbuf);
+		dev->bDeviceClass = enumbuf[4];
+		dev->bDeviceSubClass = enumbuf[5];
+		dev->bDeviceProtocol = enumbuf[6];
+		dev->idVendor = enumbuf[8] | (enumbuf[9] << 8);
+		dev->idProduct = enumbuf[10] | (enumbuf[11] << 8);
+		enumbuf[0] = enumbuf[14];
+		enumbuf[1] = enumbuf[15];
+		enumbuf[2] = enumbuf[16];
+		if ((enumbuf[0] | enumbuf[1] | enumbuf[2]) > 0) {
+			// device has strings, we we need to read Language ID
+			dev->enum_state = 3;
+		} else {
+			// no strings, get the config descriptor size
+			dev->enum_state = 7;
 		}
+		break;
+	case 3: // parse Language ID
+		if (enumbuf[4] < 4 || enumbuf[5] != 3) {
+			dev->enum_state = 7;
+		} else {
+			dev->LanguageID = enumbuf[6] | (enumbuf[7] << 8);
+			if (enumbuf[0]) dev->enum_state = 4;
+			else if (enumbuf[1]) dev->enum_state = 5;
+			else if (enumbuf[2]) dev->enum_state = 6;
+			else dev->enum_state = 7;
+		}
+		break;
+	case 4: // parse Manufacturer string
+		print_string_descriptor("Manufacturer: ", enumbuf + 4);
+		convertStringDescriptorToASCIIString(0, dev, transfer);
+		// TODO: receive the string...
+		if (enumbuf[1]) dev->enum_state = 5;
+		else if (enumbuf[2]) dev->enum_state = 6;
+		else dev->enum_state = 7;
+		break;
+	case 5: // parse Product string
+		print_string_descriptor("Product: ", enumbuf + 4);
+		convertStringDescriptorToASCIIString(1, dev, transfer);
+		if (enumbuf[2]) dev->enum_state = 6;
+		else dev->enum_state = 7;
+		break;
+	case 6: // parse Serial Number string
+		print_string_descriptor("Serial Number: ", enumbuf + 4);
+		convertStringDescriptorToASCIIString(2, dev, transfer);
+		dev->enum_state = 7;
+		break;
+	case 7: // parse first 9 bytes of config, to learn it's length
+		enumlen = enumbuf[2] | (enumbuf[3] << 8);
+		// TODO: should enumlen be stored in device state?
+		println("Config data length = ", enumlen);
+		if (enumlen > sizeof(enumbuf)) {
+			enumlen = sizeof(enumbuf);
+			// TODO: how to handle device with too much config data
+		}
+		dev->enum_state = 8;
+		break;
+	case 8: // parse config descriptor
+		print_config_descriptor(enumbuf, sizeof(enumbuf));
+		dev->bmAttributes = enumbuf[7];
+		dev->bMaxPower = enumbuf[8];
+		// TODO: actually do something with interface descriptor?
+		dev->enum_state = 9;
+		break;
+	case 9: // device is now configured
+		claim_drivers(dev);
+		dev->enum_state = 15;
+		// unlock exclusive access to enumeration process.  If any
+		// more devices are waiting, the hub driver is responsible
+		// for resetting their ports and starting their enumeration
+		// when the port enables.
+		dev->enum_state = 10;
+		USBHost::enumeration_busy = false;
+		return;
+	case 10: // control transfers for other stuff?
+		// TODO: handle other standard control: set/clear feature, etc
+		return;
+	default:
+		return;
+	}
+	enumeration_transmit(dev);
+}
+
+void USBHost::enumeration_error(const Transfer_t *transfer)
+{
+	Device_t *dev = transfer->pipe->device;
+
+	println("enumeration_error, state ", dev->enum_state);
+
+	if (++(dev->enum_error_count) < 25) {
+		println("retry enumeration communication");
+		// TODO: should we use a timer to delay retrying?
+		enumeration_transmit(dev);
+	} else {
+		println("too many errors, giving up enumeration");
+		USBHost::enumeration_busy = false;
 	}
 }
+
+
+
 
 void  USBHost::convertStringDescriptorToASCIIString(uint8_t string_index, Device_t *dev, const Transfer_t *transfer) {
 	strbuf_t *strbuf = dev->strbuf; 

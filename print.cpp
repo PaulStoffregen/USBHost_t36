@@ -35,14 +35,59 @@ void USBHost::print_(const Transfer_t *transfer)
 {
 	if (!((uint32_t)transfer & 0xFFFFFFE0)) return;
 	USBHDBGSerial.print("Transfer @ ");
-	USBHDBGSerial.println(((uint32_t)transfer & 0xFFFFFFE0), HEX);
+	USBHDBGSerial.print(((uint32_t)transfer), HEX);
+	Pipe_t *pipe = transfer->pipe;
+	if (pipe) {
+		uint32_t caps0 = pipe->qh.capabilities[0]; // rt1062 ref manual, page 2280,2282
+		USBHDBGSerial.print(" on device addr=");
+		USBHDBGSerial.print(caps0 & 0x7F);
+		USBHDBGSerial.print(", endpoint ");
+		USBHDBGSerial.print((caps0 >> 8) & 0xF);
+		int type = pipe->type;
+		if (type == 0) {
+			USBHDBGSerial.print(" CONTROL");
+		} else if (type <= 3) {
+			USBHDBGSerial.print((pipe->direction == 0) ? " OUT" : " IN");
+			if (type == 1) USBHDBGSerial.print(" ISOCH");
+			if (type == 2) USBHDBGSerial.print(" BULK");
+			if (type == 3) USBHDBGSerial.print(" INTERRUPT");
+		} else {
+			USBHDBGSerial.print(" unknown type=");
+			USBHDBGSerial.print(type);
+		}
+	} else {
+		USBHDBGSerial.print(" No Pipe!");
+	}
+	USBHDBGSerial.println();
 	USBHDBGSerial.print("   next:  ");
 	USBHDBGSerial.println(transfer->qtd.next, HEX);
 	USBHDBGSerial.print("   anext: ");
 	USBHDBGSerial.println(transfer->qtd.alt_next, HEX);
 	USBHDBGSerial.print("   token: ");
-	USBHDBGSerial.println(transfer->qtd.token, HEX);
-	USBHDBGSerial.print("   bufs:  ");
+	uint32_t token = transfer->qtd.token;
+	USBHDBGSerial.println(token, HEX);
+	USBHDBGSerial.print("    ");
+	print_token(token);
+	if (token & (1<<15)) USBHDBGSerial.println("     interrupt on completion");
+	USBHDBGSerial.print("     bytes to transfer:");
+	USBHDBGSerial.println((token >> 16) & 0x7FFF);
+	uint32_t cerr = (token >> 12) & 3;
+	if (cerr) {
+		USBHDBGSerial.print("     cerr=");
+		USBHDBGSerial.print(cerr);
+	}
+	if (token & 0xFF) USBHDBGSerial.print("     status: ");
+	if (token & (1<<7)) USBHDBGSerial.print(" active");
+	if (token & (1<<6)) USBHDBGSerial.print(" halted");
+	if (token & (1<<5)) USBHDBGSerial.print(" buffer_error");
+	if (token & (1<<4)) USBHDBGSerial.print(" babble");
+	if (token & (1<<3)) USBHDBGSerial.print(" transaction_error");
+	if (token & (1<<2)) USBHDBGSerial.print(" missed_micro_frame");
+	if (token & (1<<1)) USBHDBGSerial.print(" do_complete_split");
+	if (token & (1<<0)) USBHDBGSerial.print(" do_ping");
+	USBHDBGSerial.println();
+
+	USBHDBGSerial.print("   buffers:  ");
 	for (int i=0; i < 5; i++) {
 		USBHDBGSerial.print(transfer->qtd.buffer[i], HEX);
 		if (i < 4) USBHDBGSerial.print(',');

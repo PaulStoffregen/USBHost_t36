@@ -742,6 +742,7 @@ bool USBHost::queue_Control_Transfer(Device_t *dev, setup_t *setup, void *buf, U
 		init_qTD(data, buf, setup->wLength, pid, 1, false);
 		transfer->qtd.next = (uint32_t)data;
 		data->qtd.next = (uint32_t)status;
+		data->pipe = dev->control_pipe;
 		status_direction = pid ^ 1;
 	} else {
 		transfer->qtd.next = (uint32_t)status;
@@ -796,8 +797,8 @@ bool USBHost::queue_Data_Transfer(Pipe_t *pipe, void *buffer, uint32_t len, USBD
 				transfer = next;
 			}
 			if (irq_was_enabled) NVIC_ENABLE_IRQ(IRQ_USBHS);
-            return false;
-        }
+			return false;
+		}
 		data->qtd.next = (uint32_t)next;
 		data = next;
 	}
@@ -884,21 +885,21 @@ bool USBHost::queue_Transfer(Pipe_t *pipe, Transfer_t *transfer)
 	return true;
 }
 
+// Perform transfer completion tasks if the tranfers completed sucessfully
+//  return true if the transfer is complete, no further action needed
+//  rerurn false if the tranfer is still active, or if it has any error
 bool USBHost::followup_Transfer(Transfer_t *transfer)
 {
 	//print("  Followup ", (uint32_t)transfer, HEX);
 	//println("    token=", transfer->qtd.token, HEX);
 
-	if (!(transfer->qtd.token & 0x80)) {
-		// TODO: check error status
-		if (transfer->qtd.token & 0x8000) {
-			// this transfer caused an interrupt
-			if (transfer->pipe->callback_function) {
-				// do the callback
-				(*(transfer->pipe->callback_function))(transfer);
-			}
+	uint32_t token = transfer->qtd.token;
+	if ((token & 0xFC) == 0) {
+		// transfer is no longer active and does not have any error flags
+		if ((token & 0x8000) && (transfer->pipe->callback_function != NULL)) {
+			// do the callback
+			(*(transfer->pipe->callback_function))(transfer);
 		}
-		// do callback function...
 		//println("    completed");
 		return true;
 	}
@@ -908,86 +909,99 @@ bool USBHost::followup_Transfer(Transfer_t *transfer)
 void USBHost::followup_Error(void)
 {
 	println("ERROR Followup");
-	Transfer_t *p = async_followup_first;
-	while (p) {
-		if (followup_Transfer(p)) {
-			// transfer completed
-			Transfer_t *next = p->next_followup;
-			remove_from_async_followup_list(p);
-			println("    remove from followup list");
-			if (p->qtd.token & 0x40) {
-				Pipe_t *haltedpipe = p->pipe;
-				free_Transfer(p);
-				// traverse the rest of the list for unfinished work
-				// from this halted pipe.  Remove from the followup
-				// list and put onto our own temporary list
-				Transfer_t *first = NULL;
-				Transfer_t *last = NULL;
-				p = next;
-				while (p) {
-					Transfer_t *next2 = p->next_followup;
-					if (p->pipe == haltedpipe) {
-						println("    stray halted ", (uint32_t)p, HEX);
-						remove_from_async_followup_list(p);
-						if (first == NULL) {
-							first = p;
-							last = p;
-						} else {
-							last->next_followup = p;
-						}
-						p->next_followup = NULL;
-						if (next == p) next = next2;
-					}
-					p = next2;
-				}
-				// halted pipe (probably) still has unfinished transfers
-				// find the halted pipe's dummy halt transfer
-				p = (Transfer_t *)(haltedpipe->qh.next & ~0x1F);
-				while (p && ((p->qtd.token & 0x40) == 0)) {
-					print("  qtd: ", (uint32_t)p, HEX);
-					print(", token=", (uint32_t)p->qtd.token, HEX);
-					println(", next=", (uint32_t)p->qtd.next, HEX);
-					p = (Transfer_t *)(p->qtd.next & ~0x1F);
-				}
-				if (p) {
-					// unhalt the pipe, "forget" unfinished transfers
-					// hopefully they're all on the list we made!
-					println("  dummy halt: ", (uint32_t)p, HEX);
-					haltedpipe->qh.next = (uint32_t)p;
-					haltedpipe->qh.current = 0;
-					haltedpipe->qh.token = 0;
-				} else {
-					println("  no dummy halt found, yikes!");
-					// TODO: this should never happen, but what if it does?
-				}
-
-				// Do any driver callbacks belonging to the unfinished
-				// transfers.  This is done last, after retoring the
-				// pipe to a working state (if possible) so the driver
-				// callback can use the pipe.
-				p = first;
-				while (p) {
-					uint32_t token = p->qtd.token;
-					if (token & 0x8000 && haltedpipe->callback_function) {
-						// driver expects a callback
-						p->qtd.token = token | 0x40;
-						(*(p->pipe->callback_function))(p);
-					}
-					Transfer_t *next2 = p->next_followup;
-					free_Transfer(p);
-					p = next2;
-				}
-			} else {
-				free_Transfer(p);
-			}
-			p = next;
-		} else {
-			// transfer still pending
-			println("    remain on followup list");
-			p = p->next_followup;
+#if 0
+	println("Async followup list:");
+	Transfer_t *t = async_followup_first;
+	while (t) {
+		print_(t);
+		Pipe_t *p = t->pipe;
+		print("   pipe current:", p->qh.current, HEX);
+		println();
+		Transfer_t *next = t->next_followup;
+		if (next == NULL && t != async_followup_last) {
+			print("Yikes, last transfer is not async_followup_last=");
+			println((uint32_t)async_followup_last, HEX);
 		}
+		t = next;
 	}
-	// TODO: handle errors from periodic schedule!
+	println();
+#endif
+	Transfer_t *transfer = async_followup_first;
+	while (transfer) {
+		uint32_t token = transfer->qtd.token;
+		// Skip past all active and normally completed transfers
+		if ((token & 0x80) || (token & 0x7C) == 0) {
+			transfer = transfer->next_followup;
+			continue;
+		}
+		// Remove the error transfer from followup list
+		Transfer_t *next = transfer->next_followup;
+		remove_from_async_followup_list(transfer);
+		println("Remove ERROR transfer: ", (uint32_t)transfer, HEX);
+		print_(transfer);
+		transfer->prev_followup = NULL;
+		transfer->next_followup = NULL;
+		// Traverse the rest of the followup list to also remove
+		// all transfers using same pipe.  But do not touch any
+		// transfers using other pipes.  Create a simple forward
+		// only list of the removed transfers, so we can later
+		// free them.
+		Transfer_t *last_from_pipe = transfer;
+		Pipe_t *pipe = transfer->pipe;
+		Transfer_t *t = next;
+		while (t) {
+			if (t->pipe == pipe) {
+				Transfer_t *n = t->next_followup;
+				remove_from_async_followup_list(t);
+				println("Remove extra transfer: ", (uint32_t)t, HEX);
+				print_(t);
+				t->prev_followup = NULL;
+				t->next_followup = NULL;
+				last_from_pipe->next_followup = t;
+				last_from_pipe = t;
+				if (t == next) next = n;
+				t = n;
+			} else {
+				t = t->next_followup;
+			}
+		}
+		// Assume last followup transfer links to pipe's dummy halt.
+		// Restore the pipe to a usable state
+		Transfer_t *dummy_halt = (Transfer_t *)last_from_pipe->qtd.next;
+		println("pipe's next will be dummy halt at ", (uint32_t)dummy_halt, HEX);
+		print_(dummy_halt);
+		pipe->qh.next = last_from_pipe->qtd.next;
+		pipe->qh.current = 0;
+		pipe->qh.token = 0;
+		// free all but the first transfer with the error status
+		t = transfer->next_followup;
+		while (t) {
+			Transfer_t *n = t->next_followup;
+			println("free ", (uint32_t)t, HEX);
+			free_Transfer(t);
+			t = n;
+		}
+		// If this pipe has an error callback, inform the driver of
+		// the transfer with error status
+		if (pipe->error_callback_function != NULL) {
+			println("calling driver's error callback function");
+			transfer->next_followup = NULL;
+			(*(pipe->error_callback_function))(transfer);
+		}
+		println("free ", (uint32_t)transfer, HEX);
+		free_Transfer(transfer);
+
+		// TODO: for halt condition on non-control pipes (presumably
+		// because the device answered with a STALL token), do we
+		// need to queue a Clear Feature control transfer to get
+		// device out of stall mode?? - WANTED: any commerical USB
+		// products which stall their non-control endpoints...
+
+		transfer = next;
+	}
+	// TODO: handle errors from periodic schedule!  USB devices which
+	// give this sort of error wanted for testing...
+	println("end of error followu");
 }
 
 static void add_to_async_followup_list(Transfer_t *first, Transfer_t *last)
